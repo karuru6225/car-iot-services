@@ -1,0 +1,136 @@
+/*
+ * LTE Phase 2: TinyGSM + SORACOM Harvest Data HTTP PUT
+ * M5Atom S3 + M5Stack U128 (SIM7080G) + SORACOM plan-D SIM
+ *
+ * 確認済み事項 (Phase 1):
+ *   - RX=G1(GPIO1), TX=G2(GPIO2)  ※逆注意
+ *   - 115200 baud
+ *   - APN は CFUN=0 → CGDCONT → CFUN=1 の順で設定が必要
+ */
+
+#define TINY_GSM_MODEM_SIM7080
+#define TINY_GSM_DEBUG Serial
+#define TINY_GSM_RX_BUFFER 650
+#define SerialAT Serial2
+
+#include <TinyGsmClient.h>
+#include <Arduino.h>
+
+static const uint8_t  LTE_RX_PIN = 1;           // G1 ← U128 TXD
+static const uint8_t  LTE_TX_PIN = 2;           // G2 → U128 RXD
+static const char*    APN        = "soracom.io";
+static const char*    APN_USER   = "sora";
+static const char*    APN_PASS   = "sora";
+static const char*    HOST       = "unified.soracom.io";
+static const int      PORT       = 80;
+
+TinyGsm       modem(SerialAT);
+TinyGsmClient client(modem);
+
+static void log(const char* msg) { Serial.println(msg); }
+static void logf(const char* fmt, ...) {
+  char buf[128]; va_list a; va_start(a, fmt); vsnprintf(buf, sizeof(buf), fmt, a); va_end(a);
+  Serial.println(buf);
+}
+
+// AT コマンドを送って OK/応答を待つ
+static bool sendCmd(const char* cmd, uint32_t timeoutMs = 3000)
+{
+  SerialAT.println(cmd);
+  unsigned long t = millis();
+  String resp = "";
+  while (millis() - t < timeoutMs)
+  {
+    if (SerialAT.available()) resp += (char)SerialAT.read();
+    if (resp.indexOf("OK") >= 0 || resp.indexOf("ERROR") >= 0) break;
+  }
+  resp.trim();
+  logf("  [AT] %s => %s", cmd, resp.c_str());
+  return resp.indexOf("OK") >= 0;
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  delay(1000);
+  log("\n=== LTE Phase 2: HTTP PUT テスト ===\n");
+
+  SerialAT.begin(115200, SERIAL_8N1, LTE_RX_PIN, LTE_TX_PIN);
+  delay(3000);
+
+  // Step 1: モデム初期化
+  log("[Step 1] モデム初期化");
+  modem.init();
+  String info = modem.getModemInfo();
+  logf("  Modem: %s", info.c_str());
+
+  // Step 2: APN 設定（CFUN=0 → CGDCONT → CFUN=1）
+  // ※ この順序でないとネットワーク登録できない（Phase 1 で確認済み）
+  log("\n[Step 2] APN 設定");
+  sendCmd("AT+CFUN=0", 5000);
+  delay(2000);
+  sendCmd("AT+CGDCONT=1,\"IP\",\"soracom.io\"");
+  sendCmd("AT+CFUN=1", 5000);
+
+  // SMS Ready 待ち
+  log("  SMS Ready 待ち...");
+  unsigned long t0 = millis();
+  while (millis() - t0 < 15000)
+  {
+    if (SerialAT.available())
+    {
+      String line = SerialAT.readStringUntil('\n');
+      if (line.indexOf("SMS Ready") >= 0) { log("  SMS Ready!"); break; }
+    }
+  }
+
+  // Step 3: ネットワーク登録待ち
+  log("\n[Step 3] ネットワーク登録待ち（最大 60 秒）");
+  bool net = modem.waitForNetwork(60000);
+  logf("  Network: %s", net ? "OK" : "NG");
+  if (!net) { log("  → 登録失敗。終了。"); return; }
+  logf("  Signal: %d", modem.getSignalQuality());
+
+  // Step 4: GPRS 接続
+  log("\n[Step 4] GPRS 接続");
+  bool gprs = modem.gprsConnect(APN, APN_USER, APN_PASS);
+  logf("  GPRS: %s", gprs ? "OK" : "NG");
+  if (!gprs) { log("  → GPRS 失敗。終了。"); return; }
+  logf("  IP: %s", modem.localIP().toString().c_str());
+
+  // Step 5: HTTP PUT
+  log("\n[Step 5] SORACOM Harvest Data HTTP PUT");
+  const char* payload = "{\"test\":true,\"temp\":23.4,\"hum\":55,\"bat\":80}";
+
+  bool conn = client.connect(HOST, PORT);
+  logf("  TCP connect: %s", conn ? "OK" : "NG");
+  if (!conn) { modem.gprsDisconnect(); return; }
+
+  client.printf(
+    "POST / HTTP/1.1\r\n"
+    "Host: %s\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: %d\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+    "%s",
+    HOST, (int)strlen(payload), payload);
+
+  // レスポンス受信
+  unsigned long t = millis();
+  while (!client.available() && millis() - t < 15000) delay(100);
+
+  String resp = "";
+  while (client.available()) resp += (char)client.read();
+  client.stop();
+  modem.gprsDisconnect();
+
+  log("  HTTP Response:");
+  log(resp.c_str());
+
+  bool ok = resp.indexOf("201") >= 0 || resp.indexOf("204") >= 0;
+  logf("  結果: %s", ok ? "★ 成功 (HTTP 201/204)" : "× 失敗");
+  log("\n=== 完了 ===");
+}
+
+void loop() { delay(10000); }

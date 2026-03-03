@@ -1,0 +1,107 @@
+/*
+ * SwitchBot 防水温湿度計 BLE スキャナー
+ * M5Atom S3 (ESP32-S3)
+ *
+ * Deep Sleep モード（デフォルト）: スキャン → 表示 → Deep Sleep → タイマー復帰
+ * 通常モード（起動時ボタン押下）: スキャン → 表示 → 待機ループ
+ * 登録モード（通常モード中に長押し）: デバイス一覧 → 短押しで選択 → 長押しで登録
+ */
+
+#include "view.h" // M5Unified を BLE より先にインクルード
+#include "config.h"
+#include "domain__targets.h"
+#include "infra__ble_scan.h"
+#include "infra__button.h"
+#include "register_mode.h"
+
+enum Mode
+{
+  MODE_SCAN,
+  MODE_REGISTER
+};
+Mode gMode     = MODE_SCAN;
+bool gNormalMode = false; // 起動時ボタン押下で true（通常モード）
+
+static void flushQueue()
+{
+  SwitchBotData d;
+  view.clear();
+  while (xQueueReceive(scanner.queue, &d, 0) == pdTRUE)
+  {
+    view.sensorData(d);
+  }
+}
+
+void setup()
+{
+  M5.begin();
+  Serial.begin(115200);
+  targets.load();
+
+  // Active-LOW: ハードウェアプルアップ内蔵だが明示的に有効化
+  pinMode(BTN_PIN, INPUT_PULLUP);
+
+  // 起動時ボタン押下 → 通常モード、押さない → Deep Sleep モード (ISR 登録前にポーリング)
+  gNormalMode = (digitalRead(BTN_PIN) == LOW);
+  if (gNormalMode)
+  {
+    while (digitalRead(BTN_PIN) == LOW) delay(10); // リリース待ち
+  }
+
+  button.setup();
+  delay(1000);
+  view.message("SwitchBot BLE Scanner");
+  if (gNormalMode)
+  {
+    view.message("[長押し: 登録モード]");
+  }
+  else
+  {
+    view.message("[Deep Sleep mode]");
+    view.message("[起動時ボタン: 通常モード]");
+  }
+
+  scanner.setup();
+}
+
+void loop()
+{
+  // Deep Sleep モード: スキャン → 表示 → スリープ → (タイマー復帰で再起動)
+  if (!gNormalMode)
+  {
+    scanner.start(SCAN_TIME);
+    scanner.clearResults();
+    flushQueue();
+    delay(3000);
+    M5.Display.sleep();
+    esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
+    esp_deep_sleep_start();
+    return;
+  }
+
+  if (gMode == MODE_REGISTER)
+  {
+    regMode.run();
+    gMode = MODE_SCAN;
+    return;
+  }
+
+  // 通常スキャン (ブロック中でも ISR がボタンイベントを記録する)
+  scanner.start(SCAN_TIME);
+  scanner.clearResults();
+
+  // スキャン中に長押しされていたら登録モードへ
+  if (button.check() == BTN_LONG)
+  {
+    gMode = MODE_REGISTER;
+    return;
+  }
+
+  flushQueue();
+
+  // スキャン後の待機中も監視
+  if (button.waitFor(10000) == BTN_LONG)
+  {
+    gMode = MODE_REGISTER;
+  }
+}

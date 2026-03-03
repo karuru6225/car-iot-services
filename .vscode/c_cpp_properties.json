@@ -1,0 +1,33 @@
+{
+  "configurations": [
+    {
+      "name": "ESP32-S3 (M5Atom S3)",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "C:/Users/e2hjh/AppData/Local/Arduino15/packages/m5stack/hardware/esp32/3.2.5/cores/esp32",
+        "C:/Users/e2hjh/AppData/Local/Arduino15/packages/m5stack/hardware/esp32/3.2.5/variants/m5stack_atoms3",
+        "C:/Users/e2hjh/AppData/Local/Arduino15/packages/m5stack/hardware/esp32/3.2.5/libraries/**",
+        "C:/Users/e2hjh/AppData/Local/Arduino15/packages/m5stack/tools/esp32-arduino-libs/idf-release_v5.4-858a988d-v1/esp32s3/include/**",
+        "C:/Users/e2hjh/Documents/Arduino/libraries/**",
+        "C:/Users/e2hjh/Documents/Arduino/libraries/M5Unified/src",
+        "C:/Users/e2hjh/Documents/Arduino/libraries/M5GFX/src",
+        "C:/Users/e2hjh/AppData/Local/Arduino15/packages/m5stack/tools/esp-x32/2411/lib/gcc/xtensa-esp-elf/14.2.0/include",
+        "C:/Users/e2hjh/AppData/Local/Arduino15/packages/m5stack/tools/esp-x32/2411/picolibc/include",
+        "C:/Users/e2hjh/AppData/Local/Arduino15/packages/m5stack/tools/esp-x32/2411/xtensa-esp-elf/include/**"
+      ],
+      "defines": [
+        "ARDUINO=10607",
+        "ARDUINO_M5STACK_ATOMS3",
+        "ARDUINO_ARCH_ESP32",
+        "ESP_PLATFORM",
+        "CONFIG_IDF_TARGET_ESP32S3=1",
+        "F_CPU=240000000L"
+      ],
+      "compilerPath": "C:/Users/e2hjh/AppData/Local/Arduino15/packages/m5stack/tools/esp-x32/2411/bin/xtensa-esp32s3-elf-gcc.exe",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "gcc-x64"
+    }
+  ],
+  "version": 4
+}
