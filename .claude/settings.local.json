@@ -1,5 +1,6 @@
 {
   "permissions": {
-    "allow": ["WebFetch(domain:docs.m5stack.com)"]
+    "allow": ["WebFetch(domain:docs.m5stack.com)"],
+    "deny": ["Read(m5stamp_iot_gateway/certs.h)"]
   }
 }

@@ -1,4 +1,5 @@
 #include "view.h"
+#include "infra__logger.h"
 
 class MultiOutput : public Print
 {

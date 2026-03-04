@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>センサーデータ管理</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 16px; }
+    h1 { color: #4f8ef7; margin-bottom: 16px; font-size: 1.3em; }
+    .card { background: #16213e; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    label { font-size: 0.8em; color: #888; display: block; margin-bottom: 4px; }
+    input, select {
+      background: #0f3460; color: #e0e0e0; border: 1px solid #3a5a8a;
+      border-radius: 4px; padding: 6px 10px; font-size: 0.9em;
+    }
+    input:focus, select:focus { outline: none; border-color: #4f8ef7; }
+    button {
+      background: #4f8ef7; color: white; border: none;
+      border-radius: 4px; padding: 7px 16px; cursor: pointer; font-size: 0.9em;
+    }
+    button:hover { background: #3a7de4; }
+    button.danger { background: #c0392b; }
+    button.danger:hover { background: #a93226; }
+    button.secondary { background: #2a4a6a; }
+    button.secondary:hover { background: #3a5a7a; }
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .form-group { display: flex; flex-direction: column; }
+    .chart-container { position: relative; height: 280px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82em; }
+    th { background: #0f3460; padding: 8px 10px; text-align: left; color: #aac0e0; font-weight: normal; }
+    td { padding: 7px 10px; border-bottom: 1px solid #1e2d4a; }
+    tr:hover td { background: #1e2d4a; }
+    tbody tr { cursor: pointer; }
+    tbody.no-select { user-select: none; }
+    tbody tr.row-selected td { background: #1a3a60; }
+    tbody tr.row-selected:hover td { background: #1e4070; }
+    .status { color: #888; font-size: 0.85em; }
+    .tag-voltage { color: #4f8ef7; }
+    .tag-switchbot { color: #4fc87f; }
+    a.settings-toggle { color: #888; font-size: 0.8em; cursor: pointer; text-decoration: underline; }
+    #empty-msg { text-align: center; color: #555; padding: 24px; font-size: 0.9em; }
+    .label-item { display:flex; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid #1e2d4a; font-size:0.85em; }
+    .label-item .label-key { color:#888; }
+    .label-item .label-arrow { color:#4f8ef7; }
+    .label-item .label-name { color:#e0e0e0; flex:1; }
+    .section-title { font-size:0.9em; color:#aac0e0; cursor:pointer; user-select:none; }
+    .section-title:hover { color:#e0e0e0; }
+  </style>
+</head>
+<body>
+
+<h1>センサーデータ管理</h1>
+
+<!-- 設定 -->
+<div class="card" id="settings-card">
+  <div class="form-row">
+    <div class="form-group">
+      <label>API エンドポイント（terraform output api_endpoint）</label>
+      <input type="text" id="api-base" placeholder="https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com" style="width:420px">
+    </div>
+    <div class="form-group">
+      <label>API Key</label>
+      <input type="password" id="api-key" placeholder="your-api-key" style="width:200px">
+    </div>
+    <button onclick="saveSettings()">保存</button>
+    <span class="status" id="settings-status"></span>
+  </div>
+</div>
+
+<!-- ラベル設定 -->
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+    <span class="section-title" onclick="toggleLabels()">▶ ラベル設定（addr / id に表示名を付ける）</span>
+  </div>
+  <div id="label-section" style="display:none">
+    <div class="form-row" style="margin-bottom:10px">
+      <div class="form-group">
+        <label>addr (XX:XX:XX:XX:XX:XX) または id (voltage_1)</label>
+        <input type="text" id="label-key" placeholder="AA:BB:CC:DD:EE:FF" style="width:240px">
+      </div>
+      <div class="form-group">
+        <label>表示名</label>
+        <input type="text" id="label-name" placeholder="リビング温湿度計" style="width:180px">
+      </div>
+      <button onclick="addLabel()">追加</button>
+    </div>
+    <div id="label-list"></div>
+  </div>
+</div>
+
+<!-- 検索フォーム -->
+<div class="card">
+  <div class="form-row">
+    <div class="form-group">
+      <label>タイプ</label>
+      <select id="type">
+        <option value="">全て</option>
+        <option value="voltage">電圧</option>
+        <option value="switchbot">温湿度</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>addr (XX:XX:XX:XX:XX:XX) または id (voltage_1)</label>
+      <input type="text" id="filter" placeholder="省略可" style="width:220px">
+    </div>
+    <div class="form-group">
+      <label>期間</label>
+      <select id="hours">
+        <option value="24">24時間</option>
+        <option value="48">48時間</option>
+        <option value="72">72時間</option>
+        <option value="168">1週間</option>
+      </select>
+    </div>
+    <button onclick="search()">検索</button>
+    <span class="status" id="search-status"></span>
+  </div>
+</div>
+
+<!-- グラフ -->
+<div class="card">
+  <div class="chart-container">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<!-- テーブル -->
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+    <span class="status" id="count"></span>
+    <div style="display:flex; gap:8px; align-items:center">
+      <span id="selection-count" style="font-size:0.85em; color:#4f8ef7; display:none"></span>
+      <button class="danger" id="btn-delete-selected" style="display:none" onclick="deleteSelected()">選択削除</button>
+      <button class="danger" id="btn-delete-all" style="display:none" onclick="deleteAll()">検索条件で全削除</button>
+    </div>
+  </div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>タイムスタンプ (UTC)</th>
+          <th>デバイス</th>
+          <th>タイプ</th>
+          <th>addr / id</th>
+          <th>値</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div id="empty-msg" style="display:none">データなし</div>
+  </div>
+</div>
+
+<script>
+// ─── 状態 ────────────────────────────────────────────────────────────────────
+let apiBase = localStorage.getItem('apiBase') || '';
+let apiKey  = localStorage.getItem('apiKey')  || '';
+let labels  = JSON.parse(localStorage.getItem('labels') || '{}');
+let chart          = null;
+let rows           = [];
+let selectedIndices = new Set();
+let lastClickedIdx  = -1;
+
+const COLORS = ['#4f8ef7', '#f79f4f', '#4fc87f', '#e74c3c', '#af4ff7', '#4fd4f7'];
+
+// ─── 初期化 ──────────────────────────────────────────────────────────────────
+window.onload = () => {
+  document.getElementById('api-base').value = apiBase;
+  document.getElementById('api-key').value  = apiKey;
+  if (!apiBase || !apiKey) {
+    document.getElementById('settings-status').textContent = '← 先に設定を入力してください';
+  }
+  renderLabelList();
+
+  // Shift 押下中はテーブルのテキスト選択を無効化
+  const setNoSelect = on => document.getElementById('tbody').classList.toggle('no-select', on);
+  document.addEventListener('keydown', e => { if (e.key === 'Shift') setNoSelect(true);  });
+  document.addEventListener('keyup',   e => { if (e.key === 'Shift') setNoSelect(false); });
+};
+
+// ─── ラベル管理 ───────────────────────────────────────────────────────────────
+function getLabel(key) {
+  return labels[key] || key;
+}
+
+function toggleLabels() {
+  const sec = document.getElementById('label-section');
+  const title = document.querySelector('.section-title');
+  const open = sec.style.display === 'none';
+  sec.style.display = open ? '' : 'none';
+  title.textContent = (open ? '▼' : '▶') + ' ラベル設定（addr / id に表示名を付ける）';
+}
+
+function addLabel() {
+  const key  = document.getElementById('label-key').value.trim();
+  const name = document.getElementById('label-name').value.trim();
+  if (!key || !name) return;
+  labels[key] = name;
+  localStorage.setItem('labels', JSON.stringify(labels));
+  document.getElementById('label-key').value  = '';
+  document.getElementById('label-name').value = '';
+  renderLabelList();
+  // 既に表示中のデータがあれば再描画
+  if (rows.length) { renderTable(rows); renderChart(rows); }
+}
+
+function removeLabel(key) {
+  delete labels[key];
+  localStorage.setItem('labels', JSON.stringify(labels));
+  renderLabelList();
+  if (rows.length) { renderTable(rows); renderChart(rows); }
+}
+
+function renderLabelList() {
+  const container = document.getElementById('label-list');
+  const entries = Object.entries(labels);
+  if (!entries.length) {
+    container.innerHTML = '<span style="color:#555; font-size:0.85em">登録なし</span>';
+    return;
+  }
+  container.innerHTML = entries.map(([k, v]) => `
+    <div class="label-item">
+      <span class="label-key">${k}</span>
+      <span class="label-arrow">→</span>
+      <span class="label-name">${v}</span>
+      <button class="danger" style="padding:2px 8px; font-size:0.78em"
+        onclick="removeLabel('${k.replace(/'/g, "\\'")}')">削除</button>
+    </div>
+  `).join('');
+}
+
+// ─── 設定 ────────────────────────────────────────────────────────────────────
+function saveSettings() {
+  apiBase = document.getElementById('api-base').value.trim().replace(/\/$/, '');
+  apiKey  = document.getElementById('api-key').value.trim();
+  localStorage.setItem('apiBase', apiBase);
+  localStorage.setItem('apiKey',  apiKey);
+  const s = document.getElementById('settings-status');
+  s.textContent = '保存しました';
+  setTimeout(() => s.textContent = '', 2000);
+}
+
+// ─── API 呼び出し ─────────────────────────────────────────────────────────────
+async function apiFetch(path, options = {}) {
+  if (!apiBase || !apiKey) {
+    alert('API エンドポイントと API Key を設定してください');
+    throw new Error('設定未完了');
+  }
+  const res = await fetch(apiBase + path, {
+    ...options,
+    headers: { 'x-api-key': apiKey, ...(options.headers || {}) },
+  });
+  if (res.status === 401 || res.status === 403) {
+    alert('API Key が無効です');
+    throw new Error('Unauthorized');
+  }
+  return res;
+}
+
+// ─── 検索（非同期ポーリング方式） ────────────────────────────────────────────
+async function search() {
+  const type   = document.getElementById('type').value;
+  const filter = document.getElementById('filter').value.trim();
+  const hours  = document.getElementById('hours').value;
+
+  const params = new URLSearchParams({ hours });
+  if (type)   params.set('type', type);
+  if (filter) {
+    if (filter.includes(':')) params.set('addr', filter);
+    else                      params.set('id',   filter);
+  }
+
+  try {
+    // 1. クエリ投入 → execution_id を受け取る
+    setStatus('search', 'クエリ投入中...');
+    const res  = await apiFetch('/data?' + params);
+    const json = await res.json();
+
+    if (json.error) { setStatus('search', `エラー: ${json.error}`); return; }
+
+    const eid = json.execution_id;
+    if (!eid) { setStatus('search', 'execution_id が返りませんでした'); return; }
+
+    // 2. 完了までポーリング（2秒間隔、最大60秒）
+    let elapsed = 0;
+    while (elapsed < 60000) {
+      await new Promise(r => setTimeout(r, 2000));
+      elapsed += 2000;
+      setStatus('search', `集計中... (${elapsed / 1000}s)`);
+
+      const pollRes  = await apiFetch(`/data?execution_id=${eid}`);
+      const pollJson = await pollRes.json();
+
+      if (pollJson.status === 'SUCCEEDED') {
+        rows = pollJson.data || [];
+        renderChart(rows);
+        renderTable(rows);
+        document.getElementById('count').textContent = `${rows.length} 件`;
+        document.getElementById('btn-delete-all').style.display = filter ? '' : 'none';
+        setStatus('search', `${rows.length} 件取得`);
+        return;
+      }
+      if (pollJson.status === 'FAILED' || pollJson.status === 'CANCELLED') {
+        setStatus('search', `クエリ失敗: ${pollJson.error || pollJson.status}`);
+        return;
+      }
+      // RUNNING / QUEUED → 継続
+    }
+    setStatus('search', 'タイムアウト（60s）');
+  } catch (e) {
+    if (e.message !== '設定未完了' && e.message !== 'Unauthorized') {
+      setStatus('search', `エラー: ${e.message}`);
+    }
+  }
+}
+
+// ─── グラフ ───────────────────────────────────────────────────────────────────
+function renderChart(data) {
+  const ctx = document.getElementById('chart').getContext('2d');
+  if (chart) { chart.destroy(); chart = null; }
+  if (!data.length) return;
+
+  const voltageRows   = data.filter(r => r.sensor_type === 'voltage' || r.voltage != null);
+  const switchbotRows = data.filter(r => r.sensor_type === 'switchbot' || r.temp != null);
+
+  const datasets = [];
+  let colorIdx = 0;
+
+  // 電圧: device_id でグループ化
+  const vGroups = groupBy(voltageRows, 'device_id');
+  Object.entries(vGroups).forEach(([did, pts]) => {
+    const color = COLORS[colorIdx++ % COLORS.length];
+    // id フィールドがあればそちらをラベルキーに使う（"voltage_1" など）
+    const idKey = pts[0]?.id || did;
+    datasets.push({
+      label: `${getLabel(idKey)} 電圧(V)`,
+      data: pts.map(r => ({ x: new Date(r.ts), y: r.voltage })),
+      borderColor: color,
+      backgroundColor: 'transparent',
+      tension: 0.2,
+      yAxisID: 'y',
+    });
+  });
+
+  // 温湿度: addr でグループ化（温度と湿度を別データセット）
+  const sbGroups = groupBy(switchbotRows, 'addr');
+  Object.entries(sbGroups).forEach(([addr, pts]) => {
+    const color = COLORS[colorIdx++ % COLORS.length];
+    const displayAddr = getLabel(addr);
+    datasets.push({
+      label: `${displayAddr} 温度(°C)`,
+      data: pts.map(r => ({ x: new Date(r.ts), y: r.temp })),
+      borderColor: color,
+      backgroundColor: 'transparent',
+      tension: 0.2,
+      yAxisID: switchbotRows.length > 0 && voltageRows.length === 0 ? 'y' : 'y2',
+    });
+    datasets.push({
+      label: `${displayAddr} 湿度(%)`,
+      data: pts.map(r => ({ x: new Date(r.ts), y: r.humidity })),
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderDash: [5, 4],
+      tension: 0.2,
+      yAxisID: 'y2',
+    });
+  });
+
+  if (!datasets.length) return;
+
+  const hasBothAxes = datasets.some(d => d.yAxisID === 'y') &&
+                      datasets.some(d => d.yAxisID === 'y2');
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          type: 'time',
+          time: {
+            tooltipFormat: 'yyyy/MM/dd HH:mm',
+            displayFormats: { hour: 'MM/dd HH:mm', minute: 'HH:mm' },
+          },
+          ticks: { color: '#888' },
+          grid:  { color: '#1e2d4a' },
+        },
+        y: {
+          type: 'linear',
+          position: 'left',
+          ticks: { color: '#888' },
+          grid:  { color: '#1e2d4a' },
+        },
+        y2: {
+          type: 'linear',
+          position: 'right',
+          display: hasBothAxes,
+          ticks: { color: '#888' },
+          grid:  { drawOnChartArea: false },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: '#e0e0e0', boxWidth: 20, padding: 12 } },
+      },
+    },
+  });
+}
+
+// ─── テーブル ─────────────────────────────────────────────────────────────────
+function renderTable(data) {
+  const tbody    = document.getElementById('tbody');
+  const emptyMsg = document.getElementById('empty-msg');
+  tbody.innerHTML = '';
+  selectedIndices.clear();
+  lastClickedIdx = -1;
+  updateSelectionUI();
+
+  if (!data.length) {
+    emptyMsg.style.display = '';
+    return;
+  }
+  emptyMsg.style.display = 'none';
+
+  data.forEach((r, idx) => {
+    const isVoltage   = r.sensor_type === 'voltage'   || r.voltage != null;
+    const isSwitchbot = r.sensor_type === 'switchbot' || r.temp != null;
+    const typeLabel   = isVoltage
+      ? '<span class="tag-voltage">電圧</span>'
+      : '<span class="tag-switchbot">温湿度</span>';
+    const rawKey  = r.addr || r.id || '-';
+    const dispKey = rawKey !== '-' ? getLabel(rawKey) : '-';
+    const addrCell = (dispKey !== rawKey)
+      ? `${dispKey} <span style="color:#555; font-size:0.8em">(${rawKey})</span>`
+      : rawKey;
+    let valueStr = '-';
+    if (isVoltage)   valueStr = `${r.voltage?.toFixed(2)} V`;
+    if (isSwitchbot) valueStr = `${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}% / RSSI:${r.rssi}`;
+
+    const safeAddr = (r.addr || '').replace(/'/g, '');
+    const safeId   = (r.id   || '').replace(/'/g, '');
+    const hours    = document.getElementById('hours').value;
+
+    const tr = document.createElement('tr');
+    tr.dataset.index = idx;
+    tr.innerHTML = `
+      <td>${r.ts || '-'}</td>
+      <td>${r.device_id || '-'}</td>
+      <td>${typeLabel}</td>
+      <td>${addrCell}</td>
+      <td>${valueStr}</td>
+      <td>
+        <button class="danger" style="padding:4px 10px; font-size:0.8em"
+          onclick="deleteOne('${safeAddr}', '${safeId}', ${hours})">削除</button>
+      </td>
+    `;
+    tr.addEventListener('click', e => handleRowClick(e, idx));
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── 行選択 ───────────────────────────────────────────────────────────────────
+function handleRowClick(e, index) {
+  if (e.target.tagName === 'BUTTON') return;
+
+  if (e.shiftKey && lastClickedIdx >= 0) {
+    const from = Math.min(lastClickedIdx, index);
+    const to   = Math.max(lastClickedIdx, index);
+    for (let i = from; i <= to; i++) selectedIndices.add(i);
+  } else if (e.ctrlKey || e.metaKey) {
+    if (selectedIndices.has(index)) selectedIndices.delete(index);
+    else selectedIndices.add(index);
+    lastClickedIdx = index;
+  } else {
+    // 単一クリック: 既にその1行だけ選択中ならクリアし直す
+    if (selectedIndices.size === 1 && selectedIndices.has(index)) {
+      selectedIndices.clear();
+    } else {
+      selectedIndices.clear();
+      selectedIndices.add(index);
+    }
+    lastClickedIdx = index;
+  }
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  const n = selectedIndices.size;
+  document.querySelectorAll('#tbody tr').forEach(tr => {
+    tr.classList.toggle('row-selected', selectedIndices.has(Number(tr.dataset.index)));
+  });
+  const selCount = document.getElementById('selection-count');
+  const btnSel   = document.getElementById('btn-delete-selected');
+  if (n > 0) {
+    selCount.textContent = `${n} 行選択中`;
+    selCount.style.display = '';
+    btnSel.textContent = `選択した ${n} 件を削除`;
+    btnSel.style.display = '';
+  } else {
+    selCount.style.display = 'none';
+    btnSel.style.display   = 'none';
+  }
+}
+
+// ─── 削除 ────────────────────────────────────────────────────────────────────
+async function deleteOne(addr, id, hours) {
+  const target = addr || id;
+  if (!confirm(`"${target}" の直近 ${hours} 時間分のデータをすべて削除しますか？`)) return;
+  await doDelete(addr, id, hours);
+}
+
+async function deleteAll() {
+  const filter = document.getElementById('filter').value.trim();
+  const hours  = document.getElementById('hours').value;
+  if (!filter) return;
+  if (!confirm(`検索条件 "${filter}" の直近 ${hours} 時間分のデータをすべて削除しますか？`)) return;
+  const addr = filter.includes(':') ? filter : '';
+  const id   = filter.includes(':') ? '' : filter;
+  await doDelete(addr, id, hours);
+}
+
+async function deleteSelected() {
+  if (!selectedIndices.size) return;
+  const hours = document.getElementById('hours').value;
+
+  // 選択行の addr/id をユニークに集める
+  const targets = new Map(); // key(addr or id) → {addr, id}
+  for (const i of selectedIndices) {
+    const r    = rows[i];
+    const addr = r.addr || '';
+    const id   = r.id   || '';
+    const key  = addr || id;
+    if (key) targets.set(key, { addr, id });
+  }
+
+  const labelList = [...targets.keys()].map(k => getLabel(k)).join('、');
+  if (!confirm(`選択した ${selectedIndices.size} 行（対象: ${labelList}）の直近 ${hours} 時間分のデータをすべて削除しますか？`)) return;
+
+  for (const { addr, id } of targets.values()) {
+    await doDelete(addr, id, hours);
+  }
+  selectedIndices.clear();
+  updateSelectionUI();
+}
+
+async function doDelete(addr, id, hours) {
+  const params = new URLSearchParams({ hours });
+  if (addr) params.set('addr', addr);
+  else      params.set('id',   id);
+
+  setStatus('search', '削除中...');
+  try {
+    const res  = await apiFetch('/data?' + params, { method: 'DELETE' });
+    const json = await res.json();
+    setStatus('search', `${json.deleted} 件削除しました`);
+    await search(); // 再検索
+  } catch (e) {
+    if (e.message !== '設定未完了' && e.message !== 'Unauthorized') {
+      setStatus('search', `削除エラー: ${e.message}`);
+    }
+  }
+}
+
+// ─── ユーティリティ ───────────────────────────────────────────────────────────
+function groupBy(arr, key) {
+  return arr.reduce((acc, item) => {
+    const k = item[key] || 'unknown';
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(item);
+    return acc;
+  }, {});
+}
+
+function setStatus(area, msg) {
+  document.getElementById(area === 'search' ? 'search-status' : 'settings-status').textContent = msg;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# Terraform
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfvars
+infra/*.tfplan
+
+# 証明書・秘密鍵（実機用、公開禁止）
+m5stamp_iot_gateway/certs.h
+
+# Arduino ビルド成果物
+build/
+*.elf
+*.bin
+*.map
+
+# OS
+.DS_Store
+Thumbs.db
+
+# エディタ
+.vscode/settings.json
+*.swp
