@@ -50,6 +50,12 @@ void Lte::disconnect()
   _modem.gprsDisconnect();
 }
 
+void Lte::radioOff()
+{
+  sendCmd("AT+CFUN=0", 5000);
+  logger.println("[LTE] ラジオオフ");
+}
+
 bool Lte::isConnected()
 {
   return _modem.isGprsConnected();
@@ -239,7 +245,8 @@ void Lte::setup()
   SerialAT.begin(115200, SERIAL_8N1, LTE_RX_PIN, LTE_TX_PIN);
   delay(3000);
   _modem.init();
-  sendCmd("ATE0"); // エコー無効化
+  sendCmd("ATE0");         // エコー無効化
+  sendCmd("AT+CSCLK=0"); // スロークロック無効化（NVRAM 保存値を上書き）
   for (int i = 0; i < 5; i++)
   {
     if (sendCmd("AT"))

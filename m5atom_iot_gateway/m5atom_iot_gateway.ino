@@ -32,6 +32,7 @@
 #include <Adafruit_ADS1X15.h>
 #include "infra__lte.h"
 #include "infra__logger.h"
+#include "bypass_mode.h"
 
 // ─── ADS1115 ─────────────────────────────────────────────────────────────
 // 分圧回路（差動）: +/− → R1(680kΩ) → AIN0/AIN1 → R2(11kΩ) → GND
@@ -114,6 +115,8 @@ void setup()
   view.clear();
   initButton();
 
+  // bypassMode.run();
+
   initAds();
   initBle();
   lte.setup();
@@ -121,15 +124,31 @@ void setup()
   view.message("=== セットアップ完了 ===");
 }
 
+time_t prevLoopTime = 0;
+
 void loop()
 {
-  // 登録モード（前ループで長押し検出済みの場合）
-  if (gMode == MODE_REGISTER)
+#ifdef DEBUG_MODE
+  // バイパスモード: スキャン・MQTT 送信・登録モード遷移を行わずシリアル転送のみ行う
+  if (Serial.available())
   {
-    regMode.run();
-    gMode = MODE_SCAN;
+    bypassMode.run();
+    button.check(); // バイパス中に蓄積したボタンイベントを破棄
     return;
   }
+#endif
+
+  // 登録モード（前ループで長押し検出済みの場合）
+  if (button.check() == BTN_LONG)
+  {
+    regMode.run();
+    return;
+  }
+
+  if (time(nullptr) < prevLoopTime + SEND_INTERVAL_SEC * 1000UL)
+    return;
+
+  prevLoopTime = time(nullptr);
 
   // BLE スキャン（スキャン中も ISR がボタンイベントを記録する）
   logger.printf("\n--- BLE スキャン (%d秒) ---\n", SCAN_TIME);
@@ -175,10 +194,8 @@ void loop()
              d.address, d.temp, d.humidity, d.battery, d.rssi, tsField);
     lte.publish(MQTT_TOPIC_DATA, payload);
   }
-  // 待機中も長押しを監視（長押しで即座に登録モードへ）
+  // 待機中も長押しを監視
   logger.printf("[WAIT] %d秒待機... [長押し: 登録モード]\n", SEND_INTERVAL_SEC);
-  if (button.waitFor((uint32_t)SEND_INTERVAL_SEC * 1000UL) == BTN_LONG)
-    gMode = MODE_REGISTER;
 
 #else
   // ─── 本番モード: ペイロード収集 → 3分間リトライ → DeepSleep ──────────
@@ -223,11 +240,33 @@ void loop()
   }
 
   logger.println(allOk ? "[SLEEP] 5分 DeepSleep" : "[SLEEP] タイムアウト → 5分 DeepSleep");
+
+  if (button.check() == BTN_LONG)
+  {
+    regMode.run();
+  }
   // DeepSleep前にMQTT/GPRS切断（モジュールのSMSTATEをリセットする）
   // これがないと復帰後にSMSTATE=1の誤認のままpublishしてデータが届かない
   delay(2000); // publish後のパケット送信完了を待つ
   lte.disconnect();
-  esp_sleep_enable_timer_wakeup(5ULL * 60 * 1000000ULL);
+  lte.radioOff(); // ラジオオフでスリープ中の電力消費を抑える
+
+  // 消費電力低減: UART / I2C を終了しピンをハイインピーダンスに設定
+  // gpio_config でプルアップ/プルダウンも明示的に無効化する
+  SerialAT.end();
+  Wire.end();
+  {
+    gpio_config_t io_conf = {};
+    io_conf.pin_bit_mask   = (1ULL << LTE_TX_PIN) | (1ULL << LTE_RX_PIN)
+                           | (1ULL << SDA_PIN)     | (1ULL << SCL_PIN);
+    io_conf.mode           = GPIO_MODE_INPUT;
+    io_conf.pull_up_en     = GPIO_PULLUP_DISABLE;
+    io_conf.pull_down_en   = GPIO_PULLDOWN_DISABLE;
+    io_conf.intr_type      = GPIO_INTR_DISABLE;
+    gpio_config(&io_conf);
+  }
+
+  esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
   esp_deep_sleep_start();
 #endif
 }
