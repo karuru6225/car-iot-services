@@ -120,10 +120,39 @@
   </div>
 </div>
 
-<!-- グラフ -->
-<div class="card">
-  <div class="chart-container">
-    <canvas id="chart"></canvas>
+<!-- グラフ（電圧） -->
+<div class="card" id="chart-voltage-card" style="display:none">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+    <span class="section-title" onclick="toggleChart('voltage')">▼ 電圧グラフ</span>
+  </div>
+  <div id="chart-voltage-section">
+    <div class="chart-container">
+      <canvas id="chart-voltage"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- グラフ（温度） -->
+<div class="card" id="chart-temp-card" style="display:none">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+    <span class="section-title" onclick="toggleChart('temp')">▼ 温度グラフ</span>
+  </div>
+  <div id="chart-temp-section">
+    <div class="chart-container">
+      <canvas id="chart-temp"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- グラフ（湿度） -->
+<div class="card" id="chart-humidity-card" style="display:none">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+    <span class="section-title" onclick="toggleChart('humidity')">▼ 湿度グラフ</span>
+  </div>
+  <div id="chart-humidity-section">
+    <div class="chart-container">
+      <canvas id="chart-humidity"></canvas>
+    </div>
   </div>
 </div>
 
@@ -160,7 +189,11 @@
 let apiBase = localStorage.getItem('apiBase') || '';
 let apiKey  = localStorage.getItem('apiKey')  || '';
 let labels  = JSON.parse(localStorage.getItem('labels') || '{}');
-let chart          = null;
+let chartVoltage          = null;
+let chartTemp             = null;
+let chartHumidity         = null;
+let crosshairTimestamp    = null;
+let crosshairAbortCtrl    = null;
 let rows           = [];
 let selectedIndices = new Set();
 let lastClickedIdx  = -1;
@@ -319,98 +352,185 @@ async function search() {
 }
 
 // ─── グラフ ───────────────────────────────────────────────────────────────────
-function renderChart(data) {
-  const ctx = document.getElementById('chart').getContext('2d');
-  if (chart) { chart.destroy(); chart = null; }
-  if (!data.length) return;
 
-  const voltageRows   = data.filter(r => r.sensor_type === 'voltage' || r.voltage != null);
-  const switchbotRows = data.filter(r => r.sensor_type === 'switchbot' || r.temp != null);
+// 縦線プラグイン（全チャート共通）
+Chart.register({
+  id: 'crosshair',
+  afterDraw(chart) {
+    if (crosshairTimestamp == null || !chart.scales.x || !chart.scales.y) return;
+    const x = chart.scales.x.getPixelForValue(crosshairTimestamp);
+    if (x < chart.scales.x.left || x > chart.scales.x.right) return;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x, chart.scales.y.top);
+    ctx.lineTo(x, chart.scales.y.bottom);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.restore();
+  },
+});
 
-  const datasets = [];
-  let colorIdx = 0;
+function getActiveCharts() {
+  return [chartVoltage, chartTemp, chartHumidity].filter(Boolean);
+}
 
-  // 電圧: device_id でグループ化
-  const vGroups = groupBy(voltageRows, 'device_id');
-  Object.entries(vGroups).forEach(([did, pts]) => {
-    const color = COLORS[colorIdx++ % COLORS.length];
-    // id フィールドがあればそちらをラベルキーに使う（"voltage_1" など）
-    const idKey = pts[0]?.id || did;
-    datasets.push({
-      label: `${getLabel(idKey)} 電圧(V)`,
-      data: pts.map(r => ({ x: new Date(r.ts), y: r.voltage })),
-      borderColor: color,
-      backgroundColor: 'transparent',
-      tension: 0.2,
-      yAxisID: 'y',
-    });
+function setupCrosshairSync() {
+  if (crosshairAbortCtrl) crosshairAbortCtrl.abort();
+  crosshairAbortCtrl = new AbortController();
+  const { signal } = crosshairAbortCtrl;
+
+  getActiveCharts().forEach(src => {
+    src.canvas.addEventListener('mousemove', (e) => {
+      const rect = src.canvas.getBoundingClientRect();
+      crosshairTimestamp = src.scales.x.getValueForPixel(e.clientX - rect.left);
+
+      getActiveCharts().forEach(c => {
+        if (c === src) return;
+        const px = c.scales.x.getPixelForValue(crosshairTimestamp);
+        const elements = [];
+        c.data.datasets.forEach((_, di) => {
+          const meta = c.getDatasetMeta(di);
+          if (meta.hidden || !meta.data.length) return;
+          let nearestIdx = 0, minDist = Infinity;
+          meta.data.forEach((el, i) => {
+            const d = Math.abs(el.x - px);
+            if (d < minDist) { minDist = d; nearestIdx = i; }
+          });
+          elements.push({ datasetIndex: di, index: nearestIdx });
+        });
+        c.tooltip.setActiveElements(elements, { x: px, y: c.scales.y.top });
+        c.update('none');
+      });
+    }, { signal });
+
+    src.canvas.addEventListener('mouseleave', () => {
+      crosshairTimestamp = null;
+      getActiveCharts().forEach(c => {
+        if (c === src) return;
+        c.tooltip.setActiveElements([], {});
+        c.update('none');
+      });
+    }, { signal });
   });
+}
 
-  // 温湿度: addr でグループ化（温度と湿度を別データセット）
-  const sbGroups = groupBy(switchbotRows, 'addr');
-  Object.entries(sbGroups).forEach(([addr, pts]) => {
-    const color = COLORS[colorIdx++ % COLORS.length];
-    const displayAddr = getLabel(addr);
-    datasets.push({
-      label: `${displayAddr} 温度(°C)`,
-      data: pts.map(r => ({ x: new Date(r.ts), y: r.temp })),
-      borderColor: color,
-      backgroundColor: 'transparent',
-      tension: 0.2,
-      yAxisID: switchbotRows.length > 0 && voltageRows.length === 0 ? 'y' : 'y2',
-    });
-    datasets.push({
-      label: `${displayAddr} 湿度(%)`,
-      data: pts.map(r => ({ x: new Date(r.ts), y: r.humidity })),
-      borderColor: color,
-      backgroundColor: 'transparent',
-      borderDash: [5, 4],
-      tension: 0.2,
-      yAxisID: 'y2',
-    });
-  });
+const CHART_LABELS = { voltage: '電圧グラフ', temp: '温度グラフ', humidity: '湿度グラフ' };
 
-  if (!datasets.length) return;
+function toggleChart(type) {
+  const section = document.getElementById(`chart-${type}-section`);
+  const title   = document.querySelector(`#chart-${type}-card .section-title`);
+  const open    = section.style.display !== 'none';
+  section.style.display = open ? 'none' : '';
+  title.textContent = (open ? '▶' : '▼') + ' ' + CHART_LABELS[type];
+}
 
-  const hasBothAxes = datasets.some(d => d.yAxisID === 'y') &&
-                      datasets.some(d => d.yAxisID === 'y2');
-
-  chart = new Chart(ctx, {
-    type: 'line',
-    data: { datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: {
-          type: 'time',
-          time: {
-            tooltipFormat: 'yyyy/MM/dd HH:mm',
-            displayFormats: { hour: 'MM/dd HH:mm', minute: 'HH:mm' },
-          },
-          ticks: { color: '#888' },
-          grid:  { color: '#1e2d4a' },
-        },
-        y: {
-          type: 'linear',
-          position: 'left',
-          ticks: { color: '#888' },
-          grid:  { color: '#1e2d4a' },
-        },
-        y2: {
-          type: 'linear',
-          position: 'right',
-          display: hasBothAxes,
-          ticks: { color: '#888' },
-          grid:  { drawOnChartArea: false },
-        },
-      },
-      plugins: {
-        legend: { labels: { color: '#e0e0e0', boxWidth: 20, padding: 12 } },
-      },
+function makeChartOptions(scales) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    scales,
+    plugins: {
+      legend: { labels: { color: '#e0e0e0', boxWidth: 20, padding: 12 } },
     },
+  };
+}
+
+const timeScale = {
+  type: 'time',
+  time: {
+    tooltipFormat: 'yyyy/MM/dd HH:mm',
+    displayFormats: { hour: 'MM/dd HH:mm', minute: 'HH:mm' },
+  },
+  ticks: { color: '#888' },
+  grid:  { color: '#1e2d4a' },
+};
+
+function renderChart(data) {
+  if (chartVoltage)  { chartVoltage.destroy();  chartVoltage  = null; }
+  if (chartTemp)     { chartTemp.destroy();      chartTemp     = null; }
+  if (chartHumidity) { chartHumidity.destroy();  chartHumidity = null; }
+
+  const voltageRows   = data.filter(r => r.sensor_type === 'voltage'  || r.voltage != null);
+  const switchbotRows = data.filter(r => r.sensor_type === 'switchbot' || r.temp    != null);
+
+  const linearScale = (pos) => ({
+    type: 'linear', position: pos,
+    ticks: { color: '#888' },
+    grid: pos === 'left' ? { color: '#1e2d4a' } : { drawOnChartArea: false },
   });
+
+  // 電圧グラフ
+  const vCard = document.getElementById('chart-voltage-card');
+  if (voltageRows.length) {
+    vCard.style.display = '';
+    let colorIdx = 0;
+    const vDatasets = [];
+    Object.entries(groupBy(voltageRows, 'device_id')).forEach(([did, pts]) => {
+      const color = COLORS[colorIdx++ % COLORS.length];
+      const idKey = pts[0]?.id || did;
+      vDatasets.push({
+        label: `${getLabel(idKey)} 電圧(V)`,
+        data: pts.map(r => ({ x: new Date(r.ts), y: r.voltage })),
+        borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+      });
+    });
+    chartVoltage = new Chart(
+      document.getElementById('chart-voltage').getContext('2d'),
+      { type: 'line', data: { datasets: vDatasets }, options: makeChartOptions({ x: timeScale, y: linearScale('left') }) }
+    );
+  } else {
+    vCard.style.display = 'none';
+  }
+
+  // 温度グラフ
+  const tCard = document.getElementById('chart-temp-card');
+  if (switchbotRows.length) {
+    tCard.style.display = '';
+    let colorIdx = 0;
+    const tDatasets = [];
+    Object.entries(groupBy(switchbotRows, 'addr')).forEach(([addr, pts]) => {
+      const color = COLORS[colorIdx++ % COLORS.length];
+      tDatasets.push({
+        label: `${getLabel(addr)} 温度(°C)`,
+        data: pts.map(r => ({ x: new Date(r.ts), y: r.temp })),
+        borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+      });
+    });
+    chartTemp = new Chart(
+      document.getElementById('chart-temp').getContext('2d'),
+      { type: 'line', data: { datasets: tDatasets }, options: makeChartOptions({ x: timeScale, y: linearScale('left') }) }
+    );
+  } else {
+    tCard.style.display = 'none';
+  }
+
+  // 湿度グラフ
+  const hCard = document.getElementById('chart-humidity-card');
+  if (switchbotRows.length) {
+    hCard.style.display = '';
+    let colorIdx = 0;
+    const hDatasets = [];
+    Object.entries(groupBy(switchbotRows, 'addr')).forEach(([addr, pts]) => {
+      const color = COLORS[colorIdx++ % COLORS.length];
+      hDatasets.push({
+        label: `${getLabel(addr)} 湿度(%)`,
+        data: pts.map(r => ({ x: new Date(r.ts), y: r.humidity })),
+        borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+      });
+    });
+    chartHumidity = new Chart(
+      document.getElementById('chart-humidity').getContext('2d'),
+      { type: 'line', data: { datasets: hDatasets }, options: makeChartOptions({ x: timeScale, y: linearScale('left') }) }
+    );
+  } else {
+    hCard.style.display = 'none';
+  }
+
+  setupCrosshairSync();
 }
 
 // ─── テーブル ─────────────────────────────────────────────────────────────────

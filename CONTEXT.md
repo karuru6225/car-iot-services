@@ -2,9 +2,12 @@
 
 ## 概要
 
-SwitchBot 防水温湿度計（WoIOSensor）の BLE アドバタイズを M5Atom S3 でスキャンし、
-温度・湿度・バッテリーを Serial および内蔵ディスプレイに表示するスケッチ。
-将来的に LTE（SORACOM Cat-M）でサーバーへのデータ送信を追加予定。
+車載 IoT システム。M5Atom S3 が ADS1115 で車載バッテリー電圧を測定し、
+SwitchBot 防水温湿度計（WoIOSensor）の BLE アドバタイズをスキャンして、
+SIM7080G（SORACOM Cat-M）経由で AWS IoT Core に MQTT over TLS で送信する。
+
+クラウド側では S3 + Athena でデータを蓄積し、API Gateway + Lambda 経由で
+CloudFront ホスティングの Web 管理画面からグラフ表示・削除操作を行える。
 
 ## ハードウェア
 
@@ -13,38 +16,30 @@ SwitchBot 防水温湿度計（WoIOSensor）の BLE アドバタイズを M5Atom
 | MCU | M5Atom S3（ESP32-S3） |
 | ディスプレイ | 内蔵 0.85" IPS LCD 128×128（GC9107） |
 | ボタン | GPIO 41（Active-LOW、ハードウェアプルアップ内蔵） |
+| ADC | ADS1115（I2C: SDA=G38, SCL=G39, ADDR=0x49） |
+| 電圧測定回路 | 差動入力（AIN0-AIN1）、分圧回路 R1=680kΩ / R2=11kΩ、GAIN_EIGHT(±0.512V) |
 | センサー | SwitchBot WoIOSensor（BLE アドバタイズのみ、接続不要） |
-| 電源 | 12V バッテリー → DC-DC / レギュレータ → M5Atom S3 |
-| LTE（予定） | M5Stack U128（SIM7080G CAT-M/NB-IoT）、SORACOM Cat-M SIM |
-
-### ADC ピン（外部アクセス可能）
-
-| GPIO | ADC ch | 用途 |
-|---|---|---|
-| G7 | ACH6 | バッテリー監視①（12V 系 分圧入力）予定 |
-| G8 | ACH7 | バッテリー監視②（外部バッテリー 分圧入力）予定 |
-| G5/G6 | ACH4/5 | 将来の拡張用 |
-
-全ピン ADC1（GPIO 1〜10）のため BLE 使用中も利用可能。
+| LTE | M5Stack U128（SIM7080G CAT-M/NB-IoT）、SORACOM SIM |
+| LTE ピン | RX=G6(GPIO6) ← U128 TXD、TX=G5(GPIO5) → U128 RXD |
+| 電源 | 車載 12V バッテリー → DC-DC / レギュレータ → M5Atom S3 |
 
 ## 動作モード
 
-### Deep Sleep モード（デフォルト）
+### 本番モード（デフォルト、`#define DEBUG_MODE` コメントアウト時）
 
 1. BLE スキャン（5 秒）
-2. 登録済みアドレスのデータのみキューに投入
-3. 表示（約 3 秒）
-4. `M5.Display.sleep()` → `esp_deep_sleep_start()`
-5. `SLEEP_INTERVAL_SEC` 秒後にタイマー復帰 → `setup()` から再実行
+2. ADS1115 から電圧読み取り + キューから BLE データを収集してペイロード生成
+3. LTE 接続確認・再接続（切断時）
+4. 全ペイロードを AWS IoT Core に MQTT publish（最大 3 分リトライ）
+5. MQTT/GPRS 切断 → DeepSleep 5 分 → `setup()` から再起動
 
-### 通常モード（起動時ボタン押下）
+### デバッグモード（`#define DEBUG_MODE` 有効時）
 
-1. BLE スキャン（5 秒）
-2. 登録済みアドレスのデータのみキューに投入
-3. 表示後 10 秒待機（待機中もボタン監視）
-4. 繰り返し
+1. BLE スキャン → 電圧測定 → MQTT publish → SEND_INTERVAL_SEC（60 秒）待機
+2. 待機中に長押し検出で登録モードへ
+3. DeepSleep しない（繰り返しループ）
 
-### 登録モード（通常モード中に長押しで起動）
+### 登録モード（デバッグモード中に長押しで起動）
 
 1. BLE スキャンで SwitchBot デバイスを検索
 2. 見つかったデバイス一覧を表示（登録済み / 未登録を区別）
@@ -54,19 +49,86 @@ SwitchBot 防水温湿度計（WoIOSensor）の BLE アドバタイズを M5Atom
 ## ファイル構成
 
 ```
-m5stamp_lite_test01/
-├── m5stamp_lite_test01.ino   Application: モード管理・メインループ
-├── config.h                  定数（スキャン時間・ピン番号・閾値等）
-├── register_mode.h/.cpp      Application Service: 登録ユースケース
-├── view.h / view.cpp         Presentation: Serial + Display 出力
-├── domain__switchbot_data.h/.cpp  Value Object: センサーデータ・パース
-├── domain__targets.h/.cpp         Aggregate + Repository: 監視対象リスト
-├── infra__ble_scan.h/.cpp         Infrastructure: BLE スキャン
-├── infra__button.h/.cpp           Infrastructure: GPIO ボタン
-├── ARCHITECTURE.md           アーキテクチャ・命名規則ドキュメント
-├── CONTEXT.md                引き継ぎコンテキスト（本ファイル）
-└── LTE_IMPL_PLAN.md          LTE 実装計画（Unit Cat-M / SIM7080G）
+car-iot-services/
+├── m5atom_iot_gateway/                    デバイス側スケッチ
+│   ├── m5atom_iot_gateway.ino             Application: メインループ・モード管理
+│   ├── config.h                           定数（スキャン時間・ピン番号・閾値等）
+│   ├── certs.h                            AWS IoT Core 証明書・秘密鍵（gitignore）
+│   ├── certs.example.h                    証明書のサンプルテンプレート
+│   ├── register_mode.h/.cpp               Application Service: 登録ユースケース
+│   ├── view.h / view.cpp                  Presentation: Serial + Display 出力
+│   ├── domain__switchbot_data.h/.cpp      Value Object: センサーデータ・パース
+│   ├── domain__targets.h/.cpp             Aggregate + Repository: 監視対象リスト
+│   ├── infra__ble_scan.h/.cpp             Infrastructure: BLE スキャン
+│   ├── infra__button.h/.cpp               Infrastructure: GPIO ボタン
+│   ├── infra__lte.h/.cpp                  Infrastructure: SIM7080G MQTT over TLS
+│   └── infra__logger.h/.cpp               Infrastructure: Serial デバッグ出力
+├── infra/                                 クラウドインフラ（Terraform）
+│   ├── main.tf                            プロバイダ・IoT エンドポイント
+│   ├── iot.tf                             IoT Core: Thing・証明書・Policy・Topic Rule
+│   ├── s3.tf                              S3・Glue・Athena
+│   ├── lambda.tf                          Lambda 4 本 + API Gateway HTTP API
+│   ├── iam.tf                             IAM ロール・ポリシー
+│   ├── web.tf                             S3(Web) + CloudFront
+│   ├── variables.tf / outputs.tf
+│   └── lambda_src/
+│       ├── ingest/index.py                IoT Core → S3 書き込み
+│       ├── query/index.py                 Athena 非同期クエリ発行・結果取得
+│       ├── delete/index.py                Athena で対象特定 → S3 削除
+│       └── authorizer/index.py            x-api-key 検証
+├── web/
+│   └── index.html                         Web 管理画面（単一ファイル SPA）
+├── ARCHITECTURE.md
+└── CONTEXT.md
 ```
+
+## データフロー
+
+```
+M5Atom S3
+  → MQTT over TLS（SIM7080G）
+  → AWS IoT Core  topic: sensors/{device_id}/data
+  → Topic Rule SQL: SELECT *, topic(2) AS device_id FROM 'sensors/+/data'
+  → Lambda ingest
+  → S3: raw/year=YYYY/month=MM/day=DD/hour=HH/{device_id}-{uuid8}.json
+
+Web 管理画面
+  → GET /data?hours=24  → Lambda query → Athena（非同期ポーリング）→ S3
+  → DELETE /data?addr=XX:XX:XX → Lambda delete → Athena → S3
+  ※ 認証: x-api-key ヘッダを Lambda authorizer で検証
+```
+
+## MQTT ペイロード形式
+
+### 電圧（battery タイプ）
+
+```json
+{"type":"battery","id":"voltage_1","voltage":12.34,"ts":"2026-03-05T12:00:00Z"}
+```
+
+### 温湿度（thermometer タイプ）
+
+```json
+{"type":"thermometer","addr":"AA:BB:CC:DD:EE:FF","temp":25.0,"humidity":60,"battery":80,"rssi":-70,"ts":"2026-03-05T12:00:00Z"}
+```
+
+ingest Lambda で `sensor_type` フィールドを付加して S3 に保存する（`"voltage"` / `"switchbot"`）。
+
+## S3 / Glue テーブルスキーマ
+
+| カラム | 型 | 説明 |
+|---|---|---|
+| `ts` | string | ISO8601 UTC タイムスタンプ |
+| `device_id` | string | IoT Thing 名（topic から抽出） |
+| `sensor_type` | string | `"voltage"` / `"switchbot"` |
+| `voltage` | double | 電圧（V） |
+| `id` | string | 電圧センサー識別子（`"voltage_1"` 等） |
+| `addr` | string | BLE MAC アドレス |
+| `temp` | double | 温度（°C） |
+| `humidity` | int | 湿度（%） |
+| `battery` | int | BLE デバイスバッテリー（%） |
+| `rssi` | int | RSSI（dBm） |
+| `year/month/day/hour` | string | Hive パーティション（プロジェクション） |
 
 ## 主要クラスとインスタンス
 
@@ -77,36 +139,42 @@ m5stamp_lite_test01/
 | `button` | `Button` | ISR ベースのボタンイベント検出 |
 | `regMode` | `RegisterMode` | 登録モードのロジック |
 | `view` | `View` | 出力（`MultiOutput MOut` を内部に持つ） |
+| `lte` | `Lte` | SIM7080G 制御・MQTT over TLS publish |
+| `logger` | `Logger` | Serial デバッグ出力（`printf`/`println`） |
 
 ## 重要な設計決定
 
 ### MultiOutput（Serial + Display 同時出力）
+
 `view.cpp` 内部の `static MultiOutput MOut` が `Print` を継承し、
 `write()` で Serial と M5.Display 両方に書き込む。
 外部からは `view.sensorData(d)` 等のメソッドのみ見える。
 
 ### BLE コールバックと FreeRTOS キュー
+
 `SwitchBotCallback::onResult()` は BLE タスクから呼ばれる。
 スレッドセーフな `xQueueSend(scanner.queue, &d, 0)` でメインタスクに渡す。
-メインタスクは `xQueueReceive` でキューを消費して表示する。
-`scanner.queue` は単一の汎用キュー。誰が消費するかは Application 層の責務。
+メインタスクは `xQueueReceive` でキューを消費して送信する。
 
 ### ボタン ISR
+
 `btnISR()` は `IRAM_ATTR` 付きの静的関数。
 Arduino の制約でメンバ関数にできないため、ファイルスコープの
 `static volatile bool sLongFired / sShortFired` で状態を持つ。
 
 ### NVS 永続化
+
 `Preferences` ライブラリで namespace `"switchbot"` に保存。
 キー `"count"` + `"a0"` ～ `"a9"` で最大 10 件の MAC アドレスを管理。
 
 ### SwitchBotData のパース
+
 `SwitchBotData::parse()` が Manufacturer Data / Service Data の生バイト列を
-Value Object に変換する責務を持つ。Infrastructure 層には一切パースロジックを置かない。
-`raw[]` / `rawLen` フィールドはパース後未使用のため削除済み。
+Value Object に変換する。Infrastructure 層にはパースロジックを置かない。
 
 パースフォーマット（WoIOSensor）:
-```
+
+```text
 Manufacturer Data:
   [0-1]  Company ID (0x0969)
   [2-7]  MAC アドレス
@@ -117,24 +185,33 @@ Service Data:
   [2]    バッテリー (%)
 ```
 
+### LTE / MQTT（SIM7080G + AWS IoT Core）
+
+- TinyGSM ライブラリで AT コマンド制御
+- SIM7080G 内蔵 MQTT クライアント（AT+SMCONN / AT+SMPUB）を使用
+- TLS 接続に必要な CA 証明書・クライアント証明書・秘密鍵を `certs.h` に格納し、
+  起動時にモデムのファイルシステムへ書き込む
+- DeepSleep 前に必ず `lte.disconnect()`（MQTT+GPRS 切断）を呼ぶ。
+  呼ばないと復帰後に SMSTATE=1 誤認のまま publish してデータが届かない
+- APN 設定は `CFUN=0 → CGDCONT → CFUN=1` の順（必須）
+- `modem.restart()` は使わず `modem.init()` を使う
+
+### Athena 非同期クエリ（query Lambda）
+
+1. `GET /data?hours=24` で execution_id を返す
+2. Web 側が 2 秒ポーリングで `GET /data?execution_id=xxx` を叩く
+3. `SUCCEEDED` になったら結果を返す
+
 ### include 順序（M5Unified / BLE）
+
 M5Unified を BLE ヘッダより先に include しないとコンフリクトが発生する。
 `view.h` が先頭で `<M5Unified.h>` を取り込むため、
 `#include "view.h"` を最初に書くことで順序を保証している。
 
-### Deep Sleep モードの起動判定
-
-`setup()` 内で ISR 登録前にボタンをポーリング。
-
-```cpp
-gNormalMode = (digitalRead(BTN_PIN) == LOW);
-```
-`true`（ボタン押下）→ 通常モード、`false` → Deep Sleep モード。
-
 ## config.h 定数一覧
 
 | 定数 | 値 | 用途 |
-|---|---|---|
+| --- | --- | --- |
 | `SWITCHBOT_COMPANY_ID` | `0x0969` | BLE フィルタリング |
 | `SCAN_TIME` | `5` | BLE スキャン秒数 |
 | `QUEUE_SIZE` | `20` | FreeRTOS キューサイズ |
@@ -143,7 +220,16 @@ gNormalMode = (digitalRead(BTN_PIN) == LOW);
 | `BTN_PIN` | `41` | ボタン GPIO 番号 |
 | `LONG_PRESS_MS` | `1000` | 長押し判定ミリ秒 |
 | `DEBOUNCE_MS` | `50` | チャタリング除去ミリ秒 |
-| `SLEEP_INTERVAL_SEC` | `300` | Deep Sleep 間隔（秒） |
+| `SLEEP_INTERVAL_SEC` | `300` | Deep Sleep 間隔（秒）※ .ino 内で直接指定しているため現在未使用 |
+
+infra__lte.h の定数:
+
+| 定数 | 値 | 用途 |
+| --- | --- | --- |
+| `LTE_RX_PIN` | `6` | G6 ← U128 TXD |
+| `LTE_TX_PIN` | `5` | G5 → U128 RXD |
+| `APN` | `"soracom.io"` | SORACOM APN |
+| `SEND_INTERVAL_SEC` | `60` | デバッグモード送信間隔（秒） |
 
 ## ディスプレイ制約
 
@@ -153,44 +239,21 @@ gNormalMode = (digitalRead(BTN_PIN) == LOW);
 - MAC アドレス `XX:XX:XX:XX:XX:XX`: 17 文字 = 102px（収まる）
 - 日本語 + ASCII 混在は折り返し発生に注意
 
-## 将来の拡張予定
-
-### LTE 送信（Unit Cat-M / SIM7080G）
-
-詳細は `LTE_IMPL_PLAN.md` を参照。
-
-- `infra__lte.h/.cpp` を追加（`LteModem::enqueue/flush`）
-- `flushQueue()` に `lte.enqueue(d)` を追加、`lte.flush()` を呼び出し
-- Application 層がファンアウトを担当（BleScanner は変更不要）
-- SORACOM Harvest Data（HTTP POST → 201）で送信
-
-### バッテリー電圧監視（ADC）
-
-- G7(ACH6): 12V バッテリー系統（分圧抵抗で 3.3V 以下に降圧）
-- G8(ACH7): 外部バッテリー系統
-- `domain__battery.h/.cpp` で Value Object 化予定
-
-### マルチコア化
-
-LTE 送信が不安定なことが判明した時点で対応。
-
-- Core 0: BLE scan タスク（常時スキャン）
-- Core 1: 表示・ボタン・LTE タスク
-
-### 複数センサー種別への対応（B案 DI）
-
-現在 `SwitchBotData::parse()` は WoIOSensor 専用の static factory。
-別の SwitchBot センサーを追加する際は：
-
-1. `IDeviceParser` インターフェースを作成（Domain 層）
-2. `WoIOSensorParser : public IDeviceParser` を実装
-3. `BleScanner::setup(IDeviceParser& parser)` で注入
-
 ## ビルド環境
 
 | 項目 | 内容 |
 |---|---|
 | IDE | Arduino IDE 2.x / VS Code + Arduino 拡張 |
 | ボードパッケージ | M5Stack ESP32 (m5stack) 3.2.5 |
-| 主要ライブラリ | M5Unified, ESP32 BLE Arduino, Preferences |
-| Arduino制約 | サブディレクトリの .cpp は自動コンパイルされない → 全 .cpp をルートに配置 |
+| 主要ライブラリ | M5Unified, ESP32 BLE Arduino, Preferences, Adafruit ADS1X15, TinyGSM |
+| Arduino 制約 | サブディレクトリの .cpp は自動コンパイルされない → 全 .cpp をルートに配置 |
+| Terraform | >= 1.5、AWS プロバイダ ~> 5.0 |
+| Lambda ランタイム | Python 3.12 |
+
+## 将来の拡張候補
+
+- **マルチコア化**: LTE 送信が不安定なことが判明した時点で対応
+  - Core 0: BLE scan タスク（常時スキャン）
+  - Core 1: 表示・ボタン・LTE タスク
+- **複数センサー種別**: `IDeviceParser` インターフェースを Domain 層に追加し、DI で対応
+- **Web 管理画面**: デバイス設定（登録アドレス）のリモート管理
