@@ -85,6 +85,8 @@ car-iot-services/
 │   ├── iam.tf                             IAM ロール・ポリシー
 │   ├── web.tf                             S3(Web) + CloudFront
 │   ├── variables.tf / outputs.tf
+│   ├── manage.ps1                         デプロイスクリプト（-Profile で aws login 対応）
+│   ├── gen_certs.ps1                      証明書生成スクリプト（Secrets Manager → certs.h）
 │   └── lambda_src/
 │       ├── ingest/index.py                IoT Core → S3 書き込み
 │       ├── query/index.py                 Athena 非同期クエリ発行・結果取得

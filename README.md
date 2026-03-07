@@ -41,6 +41,7 @@ car-iot-services/
 ├── m5atom_iot_gateway/   デバイス側ファームウェア（PlatformIO）
 ├── infra/                クラウドインフラ（Terraform）
 │   ├── manage.ps1        デプロイスクリプト
+│   ├── gen_certs.ps1     証明書生成スクリプト（Secrets Manager → certs.h）
 │   └── lambda_src/       Lambda ソースコード
 ├── web/
 │   └── index.html        Web 管理画面（単一ファイル SPA）
@@ -94,9 +95,10 @@ terraform output web_url
 
 PlatformIO でビルド・書き込み。`m5atom_iot_gateway/` を参照。
 
-```
-# 証明書ファイルを配置（gitignore 済み）
-m5atom_iot_gateway/src/certs.h  ← certs.example.h を参考に作成
+```powershell
+# terraform apply 後に実行すると certs.h が自動生成される
+cd infra
+.\gen_certs.ps1 -Profile myprofile
 ```
 
 詳細は [CONTEXT.md](CONTEXT.md) を参照。
