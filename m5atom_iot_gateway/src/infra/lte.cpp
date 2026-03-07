@@ -1,5 +1,5 @@
-#include "infra__lte.h"
-#include "infra__logger.h"
+#include "lte.h"
+#include "logger.h"
 #include "certs.h"
 
 Lte lte;

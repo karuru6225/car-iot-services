@@ -1,13 +1,15 @@
 #pragma once
 #include <M5Unified.h> // BLE より先にインクルード
-#include "infra__ble_scan.h"
+#include "domain/thermometer.h"
+#include "domain/co2meter.h"
 #include "register_mode.h"
 
 class View
 {
 public:
   void clear();
-  void sensorData(const SwitchBotData &d);
+  void thermometerData(const ThermometerData &d);
+  void co2Data(const Co2MeterData &d);
   void message(const char *msg);
   void registerModeStart();
   void registerNoDevices();

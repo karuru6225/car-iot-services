@@ -5,7 +5,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include "config.h"
-#include "domain__switchbot_data.h"
+#include "domain/sensor_factory.h"
 
 class BleScanner
 {

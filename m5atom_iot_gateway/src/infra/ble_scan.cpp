@@ -1,6 +1,6 @@
-#include "infra__ble_scan.h"
-#include "domain__targets.h"
-#include "register_mode.h"
+#include "ble_scan.h"
+#include "domain/targets.h"
+#include "app/register_mode.h"
 
 BleScanner scanner;
 
@@ -9,7 +9,7 @@ class SwitchBotCallback : public BLEAdvertisedDeviceCallbacks
   void onResult(BLEAdvertisedDevice dev)
   {
     if (!dev.haveManufacturerData()) return;
-    String mf = dev.getManufacturerData();
+    std::string mf = dev.getManufacturerData();
     if (mf.length() < 2) return;
 
     uint16_t companyId = ((uint8_t)mf[1] << 8) | (uint8_t)mf[0];
@@ -25,15 +25,15 @@ class SwitchBotCallback : public BLEAdvertisedDeviceCallbacks
 
     if (!targets.isTarget(addr)) return;
 
-    String sd = dev.haveServiceData() ? dev.getServiceData() : String();
-    SwitchBotData d = SwitchBotData::parse(addr, dev.getRSSI(), mf, sd);
-    xQueueSend(scanner.queue, &d, 0);
+    std::string sd = dev.haveServiceData() ? dev.getServiceData() : std::string();
+    SensorVariant v = SensorParserFactory::parse(addr, dev.getRSSI(), mf, sd);
+    xQueueSend(scanner.queue, &v, 0);
   }
 };
 
 void BleScanner::setup()
 {
-  queue = xQueueCreate(QUEUE_SIZE, sizeof(SwitchBotData));
+  queue = xQueueCreate(QUEUE_SIZE, sizeof(SensorVariant));
   BLEDevice::init("");
   _scan = BLEDevice::getScan();
   _scan->setAdvertisedDeviceCallbacks(new SwitchBotCallback());

@@ -1,5 +1,5 @@
 #include "view.h"
-#include "infra__logger.h"
+#include "infra/logger.h"
 
 class MultiOutput : public Print
 {
@@ -34,7 +34,7 @@ void View::clear()
   M5.Display.setCursor(0, 0);
 }
 
-void View::sensorData(const SwitchBotData &d)
+void View::thermometerData(const ThermometerData &d)
 {
   MOut.printf("= %s =\n", d.address);
   if (d.parsed)
@@ -45,6 +45,32 @@ void View::sensorData(const SwitchBotData &d)
     MOut.print("湿度      : ");
     MOut.print(d.humidity);
     MOut.println(" %");
+    MOut.print("バッテリー: ");
+    MOut.print(d.battery);
+    MOut.println(" %");
+    MOut.println("");
+  }
+  else
+  {
+    MOut.println("[解析スキップ]");
+    MOut.println("データ長不足");
+  }
+}
+
+void View::co2Data(const Co2MeterData &d)
+{
+  MOut.printf("= %s =\n", d.address);
+  if (d.parsed)
+  {
+    MOut.print("温度      : ");
+    MOut.print(d.temp, 1);
+    MOut.println(" C");
+    MOut.print("湿度      : ");
+    MOut.print(d.humidity);
+    MOut.println(" %");
+    MOut.print("CO2       : ");
+    MOut.print(d.co2);
+    MOut.println(" ppm");
     MOut.print("バッテリー: ");
     MOut.print(d.battery);
     MOut.println(" %");

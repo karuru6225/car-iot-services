@@ -1,6 +1,6 @@
 #include "bypass_mode.h"
 
-// Serial2 = SIM7080G の UART（infra__lte.h の SerialAT と同一）
+// Serial2 = SIM7080G の UART（infra/lte.h の SerialAT と同一）
 // TinyGSM を引き込まないよう直接参照する
 #define MODEM_SERIAL Serial2
 

@@ -1,4 +1,4 @@
-#include "infra__button.h"
+#include "button.h"
 #include "config.h"
 
 static volatile uint32_t sPressStart = 0;

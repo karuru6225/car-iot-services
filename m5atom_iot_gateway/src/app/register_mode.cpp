@@ -1,8 +1,8 @@
 #include "view.h" // M5Unified を BLE より先にインクルード
 #include "register_mode.h"
-#include "domain__targets.h"
-#include "infra__ble_scan.h"
-#include "infra__button.h"
+#include "domain/targets.h"
+#include "infra/ble_scan.h"
+#include "infra/button.h"
 #include "config.h"
 
 RegisterMode regMode;
