@@ -170,7 +170,7 @@
     <table>
       <thead>
         <tr>
-          <th>タイムスタンプ (UTC)</th>
+          <th>タイムスタンプ (JST)</th>
           <th>デバイス</th>
           <th>タイプ</th>
           <th>addr / id</th>
@@ -614,21 +614,19 @@ function renderTable(data) {
     if (isThermometer) valueStr = `${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}% / RSSI:${r.rssi}`;
     if (isCo2)         valueStr = `${r.co2} ppm / ${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}%`;
 
-    const safeAddr = (r.addr || '').replace(/'/g, '');
-    const safeId   = (r.id   || '').replace(/'/g, '');
     const hours    = document.getElementById('hours').value;
 
     const tr = document.createElement('tr');
     tr.dataset.index = idx;
     tr.innerHTML = `
-      <td>${r.ts || '-'}</td>
+      <td>${toJST(r.ts)}</td>
       <td>${r.device_id || '-'}</td>
       <td>${typeLabel}</td>
       <td>${addrCell}</td>
       <td>${valueStr}</td>
       <td>
         <button class="danger" style="padding:4px 10px; font-size:0.8em"
-          onclick="deleteOne('${safeAddr}', '${safeId}', ${hours})">削除</button>
+          onclick="deleteOne(${idx})">削除</button>
       </td>
     `;
     tr.addEventListener('click', e => handleRowClick(e, idx));
@@ -680,45 +678,32 @@ function updateSelectionUI() {
 }
 
 // ─── 削除 ────────────────────────────────────────────────────────────────────
-async function deleteOne(addr, id, hours) {
-  const target = addr || id;
-  if (!confirm(`"${target}" の直近 ${hours} 時間分のデータをすべて削除しますか？`)) return;
-  await doDelete(addr, id, hours);
+async function deleteOne(idx) {
+  const r = rows[idx];
+  const label = getLabel(r.addr || r.id || '-');
+  if (!confirm(`"${label}" (${toJST(r.ts)}) を削除しますか？`)) return;
+  await doDeleteByKeys([r.s3_key]);
 }
 
 
 async function deleteSelected() {
   if (!selectedIndices.size) return;
-  const hours = document.getElementById('hours').value;
-
-  // 選択行の addr/id をユニークに集める
-  const targets = new Map(); // key(addr or id) → {addr, id}
-  for (const i of selectedIndices) {
-    const r    = rows[i];
-    const addr = r.addr || '';
-    const id   = r.id   || '';
-    const key  = addr || id;
-    if (key) targets.set(key, { addr, id });
-  }
-
-  const labelList = [...targets.keys()].map(k => getLabel(k)).join('、');
-  if (!confirm(`選択した ${selectedIndices.size} 行（対象: ${labelList}）の直近 ${hours} 時間分のデータをすべて削除しますか？`)) return;
-
-  for (const { addr, id } of targets.values()) {
-    await doDelete(addr, id, hours);
-  }
+  const s3Keys = [...selectedIndices].map(i => rows[i].s3_key).filter(Boolean);
+  if (!s3Keys.length) return;
+  if (!confirm(`選択した ${s3Keys.length} 件を削除しますか？`)) return;
+  await doDeleteByKeys(s3Keys);
   selectedIndices.clear();
   updateSelectionUI();
 }
 
-async function doDelete(addr, id, hours) {
-  const params = new URLSearchParams({ hours });
-  if (addr) params.set('addr', addr);
-  else      params.set('id',   id);
-
+async function doDeleteByKeys(s3Keys) {
   setStatus('search', '削除中...');
   try {
-    const res  = await apiFetch('/data?' + params, { method: 'DELETE' });
+    const res  = await apiFetch('/data', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ s3_keys: s3Keys }),
+    });
     const json = await res.json();
     setStatus('search', `${json.deleted} 件削除しました`);
     await search(); // 再検索
@@ -730,6 +715,11 @@ async function doDelete(addr, id, hours) {
 }
 
 // ─── ユーティリティ ───────────────────────────────────────────────────────────
+function toJST(ts) {
+  if (!ts) return '-';
+  return new Date(ts).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+}
+
 function groupBy(arr, key) {
   return arr.reduce((acc, item) => {
     const k = item[key] || 'unknown';

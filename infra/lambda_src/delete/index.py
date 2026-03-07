@@ -119,7 +119,38 @@ def _delete_from_partition(addr, sensor_id, year, month, day, hour):
     return deleted
 
 
+def _delete_by_keys(s3_keys: list) -> dict:
+    """S3 キーのリストを直接削除する。Athena の $path 形式（s3://bucket/key）に対応。"""
+    prefix = f"s3://{S3_BUCKET}/"
+    deleted = 0
+    for key in s3_keys:
+        if key.startswith(prefix):
+            key = key[len(prefix):]
+        try:
+            s3.delete_object(Bucket=S3_BUCKET, Key=key)
+            deleted += 1
+        except Exception as e:
+            print(f"[WARN] delete failed for {key}: {e}")
+    return {
+        "statusCode": 200,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps({"deleted": deleted}),
+    }
+
+
 def handler(event, context):
+    # s3_keys による直接削除（クエリ結果の $path を渡す方式）
+    body = {}
+    if event.get("body"):
+        try:
+            body = json.loads(event["body"])
+        except Exception:
+            pass
+    s3_keys = body.get("s3_keys")
+    if s3_keys:
+        return _delete_by_keys(s3_keys)
+
+    # 従来の addr/id + hours による削除
     params = event.get("queryStringParameters") or {}
     addr = params.get("addr")
     sensor_id = params.get("id")

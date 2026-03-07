@@ -58,7 +58,7 @@ def _build_query(sensor_type, device_id, hours, addr):
     if sensor_type == "battery":
         where = " AND ".join(base_filters + ["type = 'battery'"])
         return f"""
-            SELECT ts, type, device_id, id, voltage
+            SELECT ts, type, device_id, id, voltage, "$path" AS s3_key
             FROM sensor_data
             WHERE {where}
             ORDER BY ts DESC
@@ -70,7 +70,7 @@ def _build_query(sensor_type, device_id, hours, addr):
             base_filters.append(f"addr = '{addr}'")
         where = " AND ".join(base_filters + ["type = 'thermometer'"])
         return f"""
-            SELECT ts, type, device_id, addr, temp, humidity, battery, rssi, NULL AS co2
+            SELECT ts, type, device_id, addr, temp, humidity, battery, rssi, NULL AS co2, "$path" AS s3_key
             FROM sensor_data
             WHERE {where}
             ORDER BY ts DESC
@@ -82,7 +82,7 @@ def _build_query(sensor_type, device_id, hours, addr):
             base_filters.append(f"addr = '{addr}'")
         where = " AND ".join(base_filters + ["type = 'co2meter'"])
         return f"""
-            SELECT ts, type, device_id, addr, temp, humidity, battery, rssi, co2
+            SELECT ts, type, device_id, addr, temp, humidity, battery, rssi, co2, "$path" AS s3_key
             FROM sensor_data
             WHERE {where}
             ORDER BY ts DESC
@@ -93,17 +93,17 @@ def _build_query(sensor_type, device_id, hours, addr):
     where = " AND ".join(base_filters)
     return f"""
         SELECT ts, type, device_id,
-               id, voltage, NULL AS addr, NULL AS temp, NULL AS humidity, NULL AS battery, NULL AS rssi, NULL AS co2
+               id, voltage, NULL AS addr, NULL AS temp, NULL AS humidity, NULL AS battery, NULL AS rssi, NULL AS co2, "$path" AS s3_key
         FROM sensor_data
         WHERE {where} AND type = 'battery'
         UNION ALL
         SELECT ts, type, device_id,
-               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi, NULL AS co2
+               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi, NULL AS co2, "$path" AS s3_key
         FROM sensor_data
         WHERE {where} AND type = 'thermometer'
         UNION ALL
         SELECT ts, type, device_id,
-               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi, co2
+               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi, co2, "$path" AS s3_key
         FROM sensor_data
         WHERE {where} AND type = 'co2meter'
         ORDER BY ts DESC

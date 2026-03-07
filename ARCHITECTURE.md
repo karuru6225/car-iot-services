@@ -136,7 +136,7 @@ Terraform で管理。主要リソース：
 | Glue Database + Table | S3 データのスキーマ定義・パーティションプロジェクション |
 | Athena Workgroup | SQL クエリ実行 |
 | Lambda `query` | Athena 非同期クエリ発行・結果取得 |
-| Lambda `delete` | Athena で対象特定 → S3 オブジェクト削除 |
+| Lambda `delete` | `s3_keys` 直接削除 or Athena で対象特定 → S3 オブジェクト削除 |
 | Cognito User Pool + App Client | ユーザー認証・JWT 発行（Hosted UI） |
 | API Gateway JWT Authorizer | Cognito JWT トークン検証 |
 | API Gateway HTTP API | `GET /data`, `DELETE /data` |

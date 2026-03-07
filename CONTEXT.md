@@ -91,7 +91,7 @@ car-iot-services/
 │   └── lambda_src/
 │       ├── ingest/index.py                IoT Core → S3 書き込み
 │       ├── query/index.py                 Athena 非同期クエリ発行・結果取得
-│       └── delete/index.py                Athena で対象特定 → S3 削除
+│       └── delete/index.py                S3 直接削除（s3_keys）または Athena で対象特定 → S3 削除
 ├── web/
 │   └── index.html                         Web 管理画面（単一ファイル SPA）
 ├── ARCHITECTURE.md
@@ -110,8 +110,10 @@ M5Atom S3
 
 Web 管理画面
   → GET /data?hours=24  → Lambda query → Athena（非同期ポーリング）→ S3
-  → DELETE /data?addr=XX:XX:XX → Lambda delete → Athena → S3
+      ※ 各行に s3_key（Athena $path 疑似カラム）を含む
+  → DELETE /data  body: {"s3_keys": [...]}  → Lambda delete → S3 直接削除
   ※ 認証: Cognito JWT（API Gateway JWT Authorizer）、Hosted UI でログイン
+  ※ タイムスタンプは JST 表示（Web 側で変換）
 ```
 
 ## MQTT ペイロード形式
@@ -256,7 +258,13 @@ Arduino の制約でメンバ関数にできないため、ファイルスコー
 
 1. `GET /data?hours=24[&type=battery|thermometer|co2meter]` で execution_id を返す
 2. Web 側が 2 秒ポーリングで `GET /data?execution_id=xxx` を叩く
-3. `SUCCEEDED` になったら結果を返す
+3. `SUCCEEDED` になったら結果を返す。各行に `s3_key`（Athena の `$path` 疑似カラム）を含む
+
+### 行単位削除（delete Lambda）
+
+`DELETE /data` に JSON body `{"s3_keys": ["s3://bucket/raw/..."]}` を渡すと、
+Athena を使わず指定キーを直接 S3 削除する。
+クエリ結果の `s3_key` を使うため、選択した行だけを正確に削除できる。
 
 ### include 順序（M5Unified / BLE）
 
