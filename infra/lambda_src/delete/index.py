@@ -119,6 +119,15 @@ def _delete_from_partition(addr, sensor_id, year, month, day, hour):
     return deleted
 
 
+def _is_admin(event: dict) -> bool:
+    """cognito:groups クレームに admin が含まれているか確認する。"""
+    try:
+        groups = event["requestContext"]["authorizer"]["jwt"]["claims"].get("cognito:groups", "")
+        return "admin" in groups
+    except (KeyError, TypeError):
+        return False
+
+
 def _delete_by_keys(s3_keys: list) -> dict:
     """S3 キーのリストを直接削除する。Athena の $path 形式（s3://bucket/key）に対応。"""
     prefix = f"s3://{S3_BUCKET}/"
@@ -139,6 +148,14 @@ def _delete_by_keys(s3_keys: list) -> dict:
 
 
 def handler(event, context):
+    # 権限チェック: admin グループのみ削除可
+    if not _is_admin(event):
+        return {
+            "statusCode": 403,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "削除権限がありません（admin グループが必要です）"}),
+        }
+
     # s3_keys による直接削除（クエリ結果の $path を渡す方式）
     body = {}
     if event.get("body"):

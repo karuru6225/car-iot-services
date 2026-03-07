@@ -38,6 +38,20 @@ resource "aws_cognito_user_pool_client" "web" {
   supported_identity_providers = ["COGNITO"]
 }
 
+# ─── グループ ─────────────────────────────────────────────────────────────────
+
+resource "aws_cognito_user_group" "admin" {
+  name         = "admin"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "管理者: 閲覧・削除が可能"
+}
+
+resource "aws_cognito_user_group" "viewer" {
+  name         = "viewer"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "閲覧者: 削除不可"
+}
+
 # ─── Hosted UI ドメイン ────────────────────────────────────────────────────────
 
 resource "aws_cognito_user_pool_domain" "main" {

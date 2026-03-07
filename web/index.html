@@ -175,7 +175,7 @@
           <th>タイプ</th>
           <th>addr / id</th>
           <th>値</th>
-          <th></th>
+          <th id="th-delete"></th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -192,7 +192,17 @@ const COGNITO_CLIENT_ID = '__TMPL_COGNITO_CLIENT_ID__';
 const WEB_URL           = '__TMPL_WEB_URL__';
 
 // ─── 状態 ────────────────────────────────────────────────────────────────────
-let idToken = sessionStorage.getItem('id_token') || '';
+let idToken    = sessionStorage.getItem('id_token') || '';
+let userGroups = JSON.parse(sessionStorage.getItem('user_groups') || '[]');
+
+function parseJwtPayload(token) {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(base64));
+  } catch { return {}; }
+}
+
+function isAdmin() { return userGroups.includes('admin'); }
 let labels  = JSON.parse(localStorage.getItem('labels') || '{}');
 let chartVoltage          = null;
 let chartTemp             = null;
@@ -214,6 +224,9 @@ window.onload = () => {
   if (tokenFromHash) {
     idToken = tokenFromHash;
     sessionStorage.setItem('id_token', idToken);
+    const payload = parseJwtPayload(idToken);
+    userGroups = payload['cognito:groups'] || [];
+    sessionStorage.setItem('user_groups', JSON.stringify(userGroups));
     // URL から fragment を除去
     history.replaceState(null, '', window.location.pathname);
   }
@@ -222,6 +235,11 @@ window.onload = () => {
   if (!idToken) {
     redirectToLogin();
     return;
+  }
+
+  // admin 以外は削除列ヘッダーを非表示
+  if (!isAdmin()) {
+    document.getElementById('th-delete').style.display = 'none';
   }
 
   renderLabelList();
@@ -309,11 +327,15 @@ async function apiFetch(path, options = {}) {
     ...options,
     headers: { 'Authorization': `Bearer ${idToken}`, ...(options.headers || {}) },
   });
-  if (res.status === 401 || res.status === 403) {
-    // トークン期限切れの可能性 → 再ログイン
+  if (res.status === 401) {
+    // トークン期限切れ → 再ログイン
     sessionStorage.removeItem('id_token');
+    sessionStorage.removeItem('user_groups');
     redirectToLogin();
     throw new Error('Unauthorized');
+  }
+  if (res.status === 403) {
+    throw new Error('Forbidden');
   }
   return res;
 }
@@ -624,10 +646,7 @@ function renderTable(data) {
       <td>${typeLabel}</td>
       <td>${addrCell}</td>
       <td>${valueStr}</td>
-      <td>
-        <button class="danger" style="padding:4px 10px; font-size:0.8em"
-          onclick="deleteOne(${idx})">削除</button>
-      </td>
+      <td>${isAdmin() ? `<button class="danger" style="padding:4px 10px; font-size:0.8em" onclick="deleteOne(${idx})">削除</button>` : ''}</td>
     `;
     tr.addEventListener('click', e => handleRowClick(e, idx));
     tbody.appendChild(tr);
@@ -669,8 +688,10 @@ function updateSelectionUI() {
   if (n > 0) {
     selCount.textContent = `${n} 行選択中`;
     selCount.style.display = '';
-    btnSel.textContent = `選択した ${n} 件を削除`;
-    btnSel.style.display = '';
+    if (isAdmin()) {
+      btnSel.textContent = `選択した ${n} 件を削除`;
+      btnSel.style.display = '';
+    }
   } else {
     selCount.style.display = 'none';
     btnSel.style.display   = 'none';
@@ -708,7 +729,9 @@ async function doDeleteByKeys(s3Keys) {
     setStatus('search', `${json.deleted} 件削除しました`);
     await search(); // 再検索
   } catch (e) {
-    if (e.message !== 'Unauthorized') {
+    if (e.message === 'Forbidden') {
+      setStatus('search', '削除権限がありません（admin グループが必要です）');
+    } else if (e.message !== 'Unauthorized') {
       setStatus('search', `削除エラー: ${e.message}`);
     }
   }
