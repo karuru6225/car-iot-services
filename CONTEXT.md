@@ -63,6 +63,10 @@ car-iot-services/
 │   ├── infra__button.h/.cpp               Infrastructure: GPIO ボタン
 │   ├── infra__lte.h/.cpp                  Infrastructure: SIM7080G MQTT over TLS
 │   └── infra__logger.h/.cpp               Infrastructure: Serial デバッグ出力
+├── m5atom_power_adc/                      KiCad PCB プロジェクト（電源・ADC 外付け基板）
+│   ├── m5atom_power_adc.kicad_pro
+│   ├── m5atom_power_adc.kicad_sch
+│   └── m5atom_power_adc.kicad_pcb
 ├── infra/                                 クラウドインフラ（Terraform）
 │   ├── main.tf                            プロバイダ・IoT エンドポイント
 │   ├── iot.tf                             IoT Core: Thing・証明書・Policy・Topic Rule
@@ -249,6 +253,43 @@ infra__lte.h の定数:
 | Arduino 制約 | サブディレクトリの .cpp は自動コンパイルされない → 全 .cpp をルートに配置 |
 | Terraform | >= 1.5、AWS プロバイダ ~> 5.0 |
 | Lambda ランタイム | Python 3.12 |
+
+## 作業中・引き継ぎ事項
+
+### SwitchBot CO2センサー対応（作業中・BLEフォーマット確認待ち）
+
+WoIOSensor（防水温湿度計）に加えて **SwitchBot CO2センサー** を追加で対応したい。
+
+**ステータス**: BLE Manufacturer Data / Service Data のバイトフォーマットが不明なため実装保留中。
+以下のどちらかで確認が必要：
+
+- 実機の `getServiceData()` / `getManufacturerData()` を `Serial.printf("%02X ", ...)` でダンプして確認する
+- [OpenWonderLabs/SwitchBotAPI-BLE](https://github.com/OpenWonderLabs/SwitchBotAPI-BLE) の CO2センサー該当ページを確認する
+
+**判明していること**:
+- Company ID は WoIOSensor と同じ `0x0969` → 既存の BLE フィルタはそのまま流用できる
+- Service Data `[0]` がデバイス種別バイトのため、そこで WoIOSensor と CO2センサーを識別できるはず
+- CO2 値（ppm）は Service Data の上位バイトに big-endian uint16 で入っていると推測
+
+**確定したら行う変更**:
+
+| ファイル | 変更内容 |
+|---|---|
+| `domain__switchbot_data.h` | `uint16_t co2` フィールド追加、デバイス種別識別フラグ |
+| `domain__switchbot_data.cpp` | `parse()` でデバイス種別を判定し CO2 をパース |
+| `m5atom_iot_gateway.ino` | ペイロード JSON に `"co2"` フィールドを追加 |
+| `view.cpp` | CO2 値のディスプレイ表示 |
+| `infra/s3.tf` | Glue テーブルスキーマに `co2` カラム（int）を追加 |
+| `infra/lambda_src/ingest/index.py` | `sensor_type` に `"switchbot_co2"` を追加（または `switchbot` のまま CO2 フィールドを含める） |
+| `web/index.html` | CO2 グラフ追加 |
+
+**MQTT ペイロード追加予定形式**:
+
+```json
+{"type":"co2meter","addr":"AA:BB:CC:DD:EE:FF","temp":25.0,"humidity":60,"co2":800,"battery":80,"rssi":-70,"ts":"2026-03-05T12:00:00Z"}
+```
+
+---
 
 ## 将来の拡張候補
 
