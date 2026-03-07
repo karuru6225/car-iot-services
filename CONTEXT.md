@@ -90,8 +90,7 @@ car-iot-services/
 │   └── lambda_src/
 │       ├── ingest/index.py                IoT Core → S3 書き込み
 │       ├── query/index.py                 Athena 非同期クエリ発行・結果取得
-│       ├── delete/index.py                Athena で対象特定 → S3 削除
-│       └── authorizer/index.py            x-api-key 検証
+│       └── delete/index.py                Athena で対象特定 → S3 削除
 ├── web/
 │   └── index.html                         Web 管理画面（単一ファイル SPA）
 ├── ARCHITECTURE.md
@@ -111,7 +110,7 @@ M5Atom S3
 Web 管理画面
   → GET /data?hours=24  → Lambda query → Athena（非同期ポーリング）→ S3
   → DELETE /data?addr=XX:XX:XX → Lambda delete → Athena → S3
-  ※ 認証: x-api-key ヘッダを Lambda authorizer で検証
+  ※ 認証: Cognito JWT（API Gateway JWT Authorizer）、Hosted UI でログイン
 ```
 
 ## MQTT ペイロード形式
@@ -319,3 +318,8 @@ infra/lte.h の定数:
   - Core 0: BLE scan タスク（常時スキャン）
   - Core 1: 表示・ボタン・LTE タスク
 - **Web 管理画面**: デバイス設定（登録アドレス）のリモート管理
+- **DDoS・コスト対策強化**（不特定多数公開時）:
+  - API も CloudFront 経由に統一し、API Gateway に Resource Policy で直接アクセスを禁止
+  - CloudFront に AWS WAF を付けてレートリミットを適用（$5/月〜）
+  - これにより WAF を1箇所に集約しつつ API Gateway へのコスト攻撃を防止できる
+  - 現状は API GW スロットリングのみ適用（個人用途では十分）
