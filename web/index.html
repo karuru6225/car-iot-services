@@ -53,22 +53,9 @@
 </head>
 <body>
 
-<h1>センサーデータ管理</h1>
-
-<!-- 設定 -->
-<div class="card" id="settings-card">
-  <div class="form-row">
-    <div class="form-group">
-      <label>API エンドポイント（terraform output api_endpoint）</label>
-      <input type="text" id="api-base" placeholder="https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com" style="width:420px">
-    </div>
-    <div class="form-group">
-      <label>API Key</label>
-      <input type="password" id="api-key" placeholder="your-api-key" style="width:200px">
-    </div>
-    <button onclick="saveSettings()">保存</button>
-    <span class="status" id="settings-status"></span>
-  </div>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+  <h1 style="margin-bottom:0">センサーデータ管理</h1>
+  <button class="secondary" onclick="logout()" style="font-size:0.8em">ログアウト</button>
 </div>
 
 <!-- ラベル設定 -->
@@ -199,9 +186,14 @@
 </div>
 
 <script>
+// ─── 設定（Terraform デプロイ時に埋め込まれる） ──────────────────────────────
+const API_BASE          = '__TMPL_API_ENDPOINT__';
+const COGNITO_DOMAIN    = '__TMPL_COGNITO_DOMAIN__';
+const COGNITO_CLIENT_ID = '__TMPL_COGNITO_CLIENT_ID__';
+const WEB_URL           = '__TMPL_WEB_URL__';
+
 // ─── 状態 ────────────────────────────────────────────────────────────────────
-let apiBase = localStorage.getItem('apiBase') || '';
-let apiKey  = localStorage.getItem('apiKey')  || '';
+let idToken = sessionStorage.getItem('id_token') || '';
 let labels  = JSON.parse(localStorage.getItem('labels') || '{}');
 let chartVoltage          = null;
 let chartTemp             = null;
@@ -215,13 +207,24 @@ let lastClickedIdx  = -1;
 
 const COLORS = ['#4f8ef7', '#f79f4f', '#4fc87f', '#e74c3c', '#af4ff7', '#4fd4f7'];
 
-// ─── 初期化 ──────────────────────────────────────────────────────────────────
+// ─── 初期化・認証 ─────────────────────────────────────────────────────────────
 window.onload = () => {
-  document.getElementById('api-base').value = apiBase;
-  document.getElementById('api-key').value  = apiKey;
-  if (!apiBase || !apiKey) {
-    document.getElementById('settings-status').textContent = '← 先に設定を入力してください';
+  // URL fragment に id_token があればセッションに保存（Cognito からのリダイレクト）
+  const hash = new URLSearchParams(window.location.hash.slice(1));
+  const tokenFromHash = hash.get('id_token');
+  if (tokenFromHash) {
+    idToken = tokenFromHash;
+    sessionStorage.setItem('id_token', idToken);
+    // URL から fragment を除去
+    history.replaceState(null, '', window.location.pathname);
   }
+
+  // 未ログインなら Cognito Hosted UI へリダイレクト
+  if (!idToken) {
+    redirectToLogin();
+    return;
+  }
+
   renderLabelList();
 
   // Shift 押下中はテーブルのテキスト選択を無効化
@@ -230,7 +233,27 @@ window.onload = () => {
   document.addEventListener('keyup',   e => { if (e.key === 'Shift') setNoSelect(false); });
 };
 
-// ─── ラベル管理 ───────────────────────────────────────────────────────────────
+function redirectToLogin() {
+  const params = new URLSearchParams({
+    client_id:     COGNITO_CLIENT_ID,
+    response_type: 'token',
+    scope:         'openid email profile',
+    redirect_uri:  WEB_URL,
+  });
+  window.location.href = `${COGNITO_DOMAIN}/login?${params}`;
+}
+
+function logout() {
+  sessionStorage.removeItem('id_token');
+  idToken = '';
+  const params = new URLSearchParams({
+    client_id:  COGNITO_CLIENT_ID,
+    logout_uri: WEB_URL,
+  });
+  window.location.href = `${COGNITO_DOMAIN}/logout?${params}`;
+}
+
+// ─── ラベル管理 ──────────────────────────────────────────────────────────────
 function getLabel(key) {
   return labels[key] || key;
 }
@@ -281,29 +304,16 @@ function renderLabelList() {
   `).join('');
 }
 
-// ─── 設定 ────────────────────────────────────────────────────────────────────
-function saveSettings() {
-  apiBase = document.getElementById('api-base').value.trim().replace(/\/$/, '');
-  apiKey  = document.getElementById('api-key').value.trim();
-  localStorage.setItem('apiBase', apiBase);
-  localStorage.setItem('apiKey',  apiKey);
-  const s = document.getElementById('settings-status');
-  s.textContent = '保存しました';
-  setTimeout(() => s.textContent = '', 2000);
-}
-
 // ─── API 呼び出し ─────────────────────────────────────────────────────────────
 async function apiFetch(path, options = {}) {
-  if (!apiBase || !apiKey) {
-    alert('API エンドポイントと API Key を設定してください');
-    throw new Error('設定未完了');
-  }
-  const res = await fetch(apiBase + path, {
+  const res = await fetch(API_BASE + path, {
     ...options,
-    headers: { 'x-api-key': apiKey, ...(options.headers || {}) },
+    headers: { 'Authorization': `Bearer ${idToken}`, ...(options.headers || {}) },
   });
   if (res.status === 401 || res.status === 403) {
-    alert('API Key が無効です');
+    // トークン期限切れの可能性 → 再ログイン
+    sessionStorage.removeItem('id_token');
+    redirectToLogin();
     throw new Error('Unauthorized');
   }
   return res;
@@ -360,7 +370,7 @@ async function search() {
     }
     setStatus('search', 'タイムアウト（60s）');
   } catch (e) {
-    if (e.message !== '設定未完了' && e.message !== 'Unauthorized') {
+    if (e.message !== 'Unauthorized') {
       setStatus('search', `エラー: ${e.message}`);
     }
   }
@@ -724,7 +734,7 @@ async function doDelete(addr, id, hours) {
     setStatus('search', `${json.deleted} 件削除しました`);
     await search(); // 再検索
   } catch (e) {
-    if (e.message !== '設定未完了' && e.message !== 'Unauthorized') {
+    if (e.message !== 'Unauthorized') {
       setStatus('search', `削除エラー: ${e.message}`);
     }
   }

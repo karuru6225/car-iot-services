@@ -13,8 +13,12 @@ variable "device_id" {
   default     = "iot-monitor-gw-001"
 }
 
-variable "api_key" {
-  description = "管理WebページのAPIキー（x-api-keyヘッダーで使用）"
+variable "hosted_zone_id" {
+  description = "Route53 ホストゾーン ID"
   type        = string
-  sensitive   = true
+}
+
+variable "web_subdomain" {
+  description = "Web管理画面のサブドメイン（例: iot → iot.example.com）"
+  type        = string
 }

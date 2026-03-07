@@ -1,1 +1,2 @@
-api_key = "your-api-key-here"
+hosted_zone_id = "Z0123456789ABCDEFGHIJ"
+web_subdomain  = "iot"

@@ -73,29 +73,6 @@ resource "aws_iam_role_policy" "lambda_ingest" {
   })
 }
 
-# ─── Lambda authorizer 実行ロール（API キー検証） ─────────────────────────────
-
-resource "aws_iam_role" "lambda_authorizer" {
-  name               = "${var.project}-lambda-authorizer"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
-}
-
-resource "aws_iam_role_policy" "lambda_authorizer" {
-  role = aws_iam_role.lambda_authorizer.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents",
-      ]
-      Resource = "arn:aws:logs:*:*:*"
-    }]
-  })
-}
-
 # ─── Lambda query 実行ロール（Athena クエリ） ─────────────────────────────────
 
 resource "aws_iam_role" "lambda_query" {

@@ -22,6 +22,18 @@ provider "aws" {
   }
 }
 
+# CloudFront 用 ACM 証明書は us-east-1 でのみ作成可能
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Project = var.project
+    }
+  }
+}
+
 data "aws_iot_endpoint" "main" {
   endpoint_type = "iot:Data-ATS"
 }

@@ -1,9 +1,8 @@
 locals {
-  ingest_src_dir     = "${path.module}/lambda_src/ingest"
-  query_src_dir      = "${path.module}/lambda_src/query"
-  delete_src_dir     = "${path.module}/lambda_src/delete"
-  authorizer_src_dir = "${path.module}/lambda_src/authorizer"
-  build_dir          = "${path.module}/.build"
+  ingest_src_dir = "${path.module}/lambda_src/ingest"
+  query_src_dir  = "${path.module}/lambda_src/query"
+  delete_src_dir = "${path.module}/lambda_src/delete"
+  build_dir      = "${path.module}/.build"
 }
 
 data "archive_file" "ingest" {
@@ -22,12 +21,6 @@ data "archive_file" "delete" {
   type        = "zip"
   source_dir  = local.delete_src_dir
   output_path = "${local.build_dir}/delete.zip"
-}
-
-data "archive_file" "authorizer" {
-  type        = "zip"
-  source_dir  = local.authorizer_src_dir
-  output_path = "${local.build_dir}/authorizer.zip"
 }
 
 # ─── ingest Lambda（IoT Core → S3 書き込み） ─────────────────────────────────
@@ -88,24 +81,6 @@ resource "aws_lambda_function" "delete" {
   }
 }
 
-# ─── authorizer Lambda（API キー検証） ────────────────────────────────────────
-
-resource "aws_lambda_function" "authorizer" {
-  function_name    = "${var.project}-authorizer"
-  filename         = data.archive_file.authorizer.output_path
-  source_code_hash = data.archive_file.authorizer.output_base64sha256
-  runtime          = "python3.12"
-  handler          = "index.handler"
-  role             = aws_iam_role.lambda_authorizer.arn
-  timeout          = 5
-
-  environment {
-    variables = {
-      API_KEY = var.api_key
-    }
-  }
-}
-
 # ─── API Gateway HTTP API ─────────────────────────────────────────────────────
 
 resource "aws_apigatewayv2_api" "main" {
@@ -113,9 +88,9 @@ resource "aws_apigatewayv2_api" "main" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = ["*"]
+    allow_origins = ["https://${local.web_domain}"]
     allow_methods = ["GET", "DELETE", "OPTIONS"]
-    allow_headers = ["Content-Type", "x-api-key"]
+    allow_headers = ["Content-Type", "Authorization"]
   }
 }
 
@@ -125,16 +100,18 @@ resource "aws_apigatewayv2_stage" "main" {
   auto_deploy = true
 }
 
-# ─── Lambda Authorizer ────────────────────────────────────────────────────────
+# ─── JWT Authorizer（Cognito） ────────────────────────────────────────────────
 
-resource "aws_apigatewayv2_authorizer" "api_key" {
-  api_id                            = aws_apigatewayv2_api.main.id
-  authorizer_type                   = "REQUEST"
-  name                              = "${var.project}-api-key"
-  authorizer_uri                    = aws_lambda_function.authorizer.invoke_arn
-  identity_sources                  = ["$request.header.x-api-key"]
-  authorizer_payload_format_version = "2.0"
-  enable_simple_responses           = true
+resource "aws_apigatewayv2_authorizer" "cognito" {
+  api_id           = aws_apigatewayv2_api.main.id
+  authorizer_type  = "JWT"
+  name             = "${var.project}-cognito"
+  identity_sources = ["$request.header.Authorization"]
+
+  jwt_configuration {
+    audience = [aws_cognito_user_pool_client.web.id]
+    issuer   = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
+  }
 }
 
 # ─── Integrations ─────────────────────────────────────────────────────────────
@@ -159,16 +136,16 @@ resource "aws_apigatewayv2_route" "query" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "GET /data"
   target             = "integrations/${aws_apigatewayv2_integration.query.id}"
-  authorizer_id      = aws_apigatewayv2_authorizer.api_key.id
-  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
 }
 
 resource "aws_apigatewayv2_route" "delete" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "DELETE /data"
   target             = "integrations/${aws_apigatewayv2_integration.delete.id}"
-  authorizer_id      = aws_apigatewayv2_authorizer.api_key.id
-  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
 }
 
 # ─── Lambda Permissions ───────────────────────────────────────────────────────
@@ -185,14 +162,6 @@ resource "aws_lambda_permission" "apigw_delete" {
   statement_id  = "AllowAPIGWInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.delete.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "apigw_authorizer" {
-  statement_id  = "AllowAPIGWInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.authorizer.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
