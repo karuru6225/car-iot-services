@@ -22,6 +22,14 @@ $ErrorActionPreference = 'Stop'
 if ($Profile) {
   $env:AWS_PROFILE = $Profile
   Write-Host "AWS profile: $Profile"
+
+  Write-Host '==> aws configure export-credentials'
+  $credEnv = aws configure export-credentials --profile $Profile --format powershell
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to get credentials. Run 'aws login' first and try again."
+    exit 1
+  }
+  Invoke-Expression ($credEnv -join "`n")
 }
 
 $BackendFile = 'backend.tfbackend'

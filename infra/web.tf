@@ -73,6 +73,16 @@ resource "aws_cloudfront_distribution" "web" {
   }
 }
 
+# ─── index.html アップロード ──────────────────────────────────────────────────
+
+resource "aws_s3_object" "index_html" {
+  bucket       = aws_s3_bucket.web.id
+  key          = "index.html"
+  source       = "${path.module}/../web/index.html"
+  source_hash  = filemd5("${path.module}/../web/index.html")
+  content_type = "text/html"
+}
+
 # ─── Bucket Policy: CloudFront OAC のみ許可 ──────────────────────────────────
 
 resource "aws_s3_bucket_policy" "web" {

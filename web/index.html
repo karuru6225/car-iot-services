@@ -38,8 +38,9 @@
     tbody tr.row-selected td { background: #1a3a60; }
     tbody tr.row-selected:hover td { background: #1e4070; }
     .status { color: #888; font-size: 0.85em; }
-    .tag-voltage { color: #4f8ef7; }
-    .tag-switchbot { color: #4fc87f; }
+    .tag-battery { color: #4f8ef7; }
+    .tag-thermometer { color: #4fc87f; }
+    .tag-co2meter { color: #f7d24f; }
     a.settings-toggle { color: #888; font-size: 0.8em; cursor: pointer; text-decoration: underline; }
     #empty-msg { text-align: center; color: #555; padding: 24px; font-size: 0.9em; }
     .label-item { display:flex; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid #1e2d4a; font-size:0.85em; }
@@ -98,8 +99,9 @@
       <label>タイプ</label>
       <select id="type">
         <option value="">全て</option>
-        <option value="voltage">電圧</option>
-        <option value="switchbot">温湿度</option>
+        <option value="battery">電圧</option>
+        <option value="thermometer">温湿度</option>
+        <option value="co2meter">CO2</option>
       </select>
     </div>
     <div class="form-group">
@@ -156,6 +158,18 @@
   </div>
 </div>
 
+<!-- グラフ（CO2） -->
+<div class="card" id="chart-co2-card" style="display:none">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+    <span class="section-title" onclick="toggleChart('co2')">▼ CO2グラフ</span>
+  </div>
+  <div id="chart-co2-section">
+    <div class="chart-container">
+      <canvas id="chart-co2"></canvas>
+    </div>
+  </div>
+</div>
+
 <!-- テーブル -->
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
@@ -192,6 +206,7 @@ let labels  = JSON.parse(localStorage.getItem('labels') || '{}');
 let chartVoltage          = null;
 let chartTemp             = null;
 let chartHumidity         = null;
+let chartCo2              = null;
 let crosshairTimestamp    = null;
 let crosshairAbortCtrl    = null;
 let rows           = [];
@@ -374,7 +389,7 @@ Chart.register({
 });
 
 function getActiveCharts() {
-  return [chartVoltage, chartTemp, chartHumidity].filter(Boolean);
+  return [chartVoltage, chartTemp, chartHumidity, chartCo2].filter(Boolean);
 }
 
 function setupCrosshairSync() {
@@ -417,7 +432,7 @@ function setupCrosshairSync() {
   });
 }
 
-const CHART_LABELS = { voltage: '電圧グラフ', temp: '温度グラフ', humidity: '湿度グラフ' };
+const CHART_LABELS = { voltage: '電圧グラフ', temp: '温度グラフ', humidity: '湿度グラフ', co2: 'CO2グラフ' };
 
 function toggleChart(type) {
   const section = document.getElementById(`chart-${type}-section`);
@@ -453,9 +468,11 @@ function renderChart(data) {
   if (chartVoltage)  { chartVoltage.destroy();  chartVoltage  = null; }
   if (chartTemp)     { chartTemp.destroy();      chartTemp     = null; }
   if (chartHumidity) { chartHumidity.destroy();  chartHumidity = null; }
+  if (chartCo2)      { chartCo2.destroy();       chartCo2      = null; }
 
-  const voltageRows   = data.filter(r => r.sensor_type === 'voltage'  || r.voltage != null);
-  const switchbotRows = data.filter(r => r.sensor_type === 'switchbot' || r.temp    != null);
+  const voltageRows   = data.filter(r => r.type === 'battery');
+  const switchbotRows = data.filter(r => r.type === 'thermometer' || r.type === 'co2meter');
+  const co2Rows       = data.filter(r => r.type === 'co2meter');
 
   const linearScale = (pos) => ({
     type: 'linear', position: pos,
@@ -530,6 +547,28 @@ function renderChart(data) {
     hCard.style.display = 'none';
   }
 
+  // CO2グラフ
+  const co2Card = document.getElementById('chart-co2-card');
+  if (co2Rows.length) {
+    co2Card.style.display = '';
+    let colorIdx = 0;
+    const co2Datasets = [];
+    Object.entries(groupBy(co2Rows, 'addr')).forEach(([addr, pts]) => {
+      const color = COLORS[colorIdx++ % COLORS.length];
+      co2Datasets.push({
+        label: `${getLabel(addr)} CO2(ppm)`,
+        data: pts.map(r => ({ x: new Date(r.ts), y: r.co2 })),
+        borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+      });
+    });
+    chartCo2 = new Chart(
+      document.getElementById('chart-co2').getContext('2d'),
+      { type: 'line', data: { datasets: co2Datasets }, options: makeChartOptions({ x: timeScale, y: linearScale('left') }) }
+    );
+  } else {
+    co2Card.style.display = 'none';
+  }
+
   setupCrosshairSync();
 }
 
@@ -549,19 +588,23 @@ function renderTable(data) {
   emptyMsg.style.display = 'none';
 
   data.forEach((r, idx) => {
-    const isVoltage   = r.sensor_type === 'voltage'   || r.voltage != null;
-    const isSwitchbot = r.sensor_type === 'switchbot' || r.temp != null;
-    const typeLabel   = isVoltage
-      ? '<span class="tag-voltage">電圧</span>'
-      : '<span class="tag-switchbot">温湿度</span>';
+    const isBattery     = r.type === 'battery';
+    const isThermometer = r.type === 'thermometer';
+    const isCo2         = r.type === 'co2meter';
+    const typeLabel = isBattery
+      ? '<span class="tag-battery">電圧</span>'
+      : isCo2
+        ? '<span class="tag-co2meter">CO2</span>'
+        : '<span class="tag-thermometer">温湿度</span>';
     const rawKey  = r.addr || r.id || '-';
     const dispKey = rawKey !== '-' ? getLabel(rawKey) : '-';
     const addrCell = (dispKey !== rawKey)
       ? `${dispKey} <span style="color:#555; font-size:0.8em">(${rawKey})</span>`
       : rawKey;
     let valueStr = '-';
-    if (isVoltage)   valueStr = `${r.voltage?.toFixed(2)} V`;
-    if (isSwitchbot) valueStr = `${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}% / RSSI:${r.rssi}`;
+    if (isBattery)     valueStr = `${r.voltage?.toFixed(2)} V`;
+    if (isThermometer) valueStr = `${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}% / RSSI:${r.rssi}`;
+    if (isCo2)         valueStr = `${r.co2} ppm / ${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}%`;
 
     const safeAddr = (r.addr || '').replace(/'/g, '');
     const safeId   = (r.id   || '').replace(/'/g, '');
