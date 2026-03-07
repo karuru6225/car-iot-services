@@ -164,7 +164,6 @@
     <div style="display:flex; gap:8px; align-items:center">
       <span id="selection-count" style="font-size:0.85em; color:#4f8ef7; display:none"></span>
       <button class="danger" id="btn-delete-selected" style="display:none" onclick="deleteSelected()">選択削除</button>
-      <button class="danger" id="btn-delete-all" style="display:none" onclick="deleteAll()">検索条件で全削除</button>
     </div>
   </div>
   <div style="overflow-x:auto">
@@ -358,7 +357,6 @@ async function search() {
         renderChart(rows);
         renderTable(rows);
         document.getElementById('count').textContent = `${rows.length} 件`;
-        document.getElementById('btn-delete-all').style.display = filter ? '' : 'none';
         setStatus('search', `${rows.length} 件取得`);
         return;
       }
@@ -688,15 +686,6 @@ async function deleteOne(addr, id, hours) {
   await doDelete(addr, id, hours);
 }
 
-async function deleteAll() {
-  const filter = document.getElementById('filter').value.trim();
-  const hours  = document.getElementById('hours').value;
-  if (!filter) return;
-  if (!confirm(`検索条件 "${filter}" の直近 ${hours} 時間分のデータをすべて削除しますか？`)) return;
-  const addr = filter.includes(':') ? filter : '';
-  const id   = filter.includes(':') ? '' : filter;
-  await doDelete(addr, id, hours);
-}
 
 async function deleteSelected() {
   if (!selectedIndices.size) return;
