@@ -6,6 +6,10 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # S3 バックエンド（tfstate をリモート管理）
+  # backend.tfbackend に設定値を記載し、terraform init -backend-config=backend.tfbackend で初期化
+  backend "s3" {}
 }
 
 provider "aws" {
