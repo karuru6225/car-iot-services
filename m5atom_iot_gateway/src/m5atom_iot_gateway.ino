@@ -124,7 +124,9 @@ void setup()
   view.message("=== セットアップ完了 ===");
 }
 
+#ifdef DEBUG_MODE
 time_t prevLoopTime = 0;
+#endif
 
 void loop()
 {
@@ -145,10 +147,15 @@ void loop()
     return;
   }
 
+#ifdef DEBUG_MODE
   if (time(nullptr) < prevLoopTime + SEND_INTERVAL_SEC)
+  {
+    delay(100);
     return;
+  }
 
   prevLoopTime = time(nullptr);
+#endif
 
   // BLE スキャン（スキャン中も ISR がボタンイベントを記録する）
   logger.printf("\n--- BLE スキャン (%d秒) ---\n", SCAN_TIME);
@@ -186,7 +193,8 @@ void loop()
   }
   while (xQueueReceive(scanner.queue, &v, 0) == pdTRUE)
   {
-    std::visit([&](auto &d) {
+    std::visit([&](auto &d)
+               {
       if (!d.parsed) return;
       char payload[PAYLOAD_SENSOR_SIZE];
       using T = std::decay_t<decltype(d)>;
@@ -204,8 +212,7 @@ void loop()
                  "{\"type\":\"co2meter\",\"addr\":\"%s\",\"temp\":%.1f,\"humidity\":%d,\"co2\":%d,\"battery\":%d,\"rssi\":%d,\"mf\":\"%s\",\"fw\":\"" FIRMWARE_VERSION "\"%s}",
                  d.address, d.temp, d.humidity, d.co2, d.battery, d.rssi, d.mfHex, tsField);
       }
-      lte.publish(MQTT_TOPIC_DATA, payload);
-    }, v);
+      lte.publish(MQTT_TOPIC_DATA, payload); }, v);
   }
   // 待機中も長押しを監視
   logger.printf("[WAIT] %d秒待機... [長押し: 登録モード]\n", SEND_INTERVAL_SEC);
@@ -223,7 +230,8 @@ void loop()
   }
   while (xQueueReceive(scanner.queue, &v, 0) == pdTRUE)
   {
-    std::visit([&](auto &d) {
+    std::visit([&](auto &d)
+               {
       if (!d.parsed) return;
       using T = std::decay_t<decltype(d)>;
       if constexpr (std::is_same_v<T, ThermometerData>)
@@ -237,8 +245,7 @@ void loop()
         snprintf(payloads[count++], PAYLOAD_SENSOR_SIZE,
                  "{\"type\":\"co2meter\",\"addr\":\"%s\",\"temp\":%.1f,\"humidity\":%d,\"co2\":%d,\"battery\":%d,\"rssi\":%d,\"mf\":\"%s\",\"fw\":\"" FIRMWARE_VERSION "\"%s}",
                  d.address, d.temp, d.humidity, d.co2, d.battery, d.rssi, d.mfHex, tsField);
-      }
-    }, v);
+      } }, v);
   }
 
   // 3分間リトライ（成功または期限切れで抜ける）

@@ -7,7 +7,7 @@ API Gateway → Lambda → Athena → S3
 
 クエリパラメータ（クエリ投入時）:
   hours     : 過去何時間分（デフォルト 24）
-  type      : "voltage" or "switchbot"（省略時は両方）
+  type      : "battery" or "thermometer" or "co2meter"（省略時はすべて）
   device_id : デバイスIDでフィルタ（省略可）
   addr      : SwitchBot MAC アドレスでフィルタ（省略可）
 """
@@ -55,40 +55,57 @@ def _build_query(sensor_type, device_id, hours, addr):
     if device_id:
         base_filters.append(f"device_id = '{device_id}'")
 
-    if sensor_type == "voltage":
-        where = " AND ".join(base_filters + ["sensor_type = 'voltage'"])
+    if sensor_type == "battery":
+        where = " AND ".join(base_filters + ["type = 'battery'"])
         return f"""
-            SELECT ts, device_id, sensor_type, id, voltage
+            SELECT ts, type, device_id, id, voltage
             FROM sensor_data
             WHERE {where}
             ORDER BY ts DESC
             LIMIT 2000
         """
 
-    if sensor_type == "switchbot":
+    if sensor_type == "thermometer":
         if addr:
             base_filters.append(f"addr = '{addr}'")
-        where = " AND ".join(base_filters + ["sensor_type = 'switchbot'"])
+        where = " AND ".join(base_filters + ["type = 'thermometer'"])
         return f"""
-            SELECT ts, device_id, sensor_type, addr, temp, humidity, battery, rssi
+            SELECT ts, type, device_id, addr, temp, humidity, battery, rssi, NULL AS co2
             FROM sensor_data
             WHERE {where}
             ORDER BY ts DESC
             LIMIT 2000
         """
 
-    # type 未指定: 電圧と温湿度を UNION
+    if sensor_type == "co2meter":
+        if addr:
+            base_filters.append(f"addr = '{addr}'")
+        where = " AND ".join(base_filters + ["type = 'co2meter'"])
+        return f"""
+            SELECT ts, type, device_id, addr, temp, humidity, battery, rssi, co2
+            FROM sensor_data
+            WHERE {where}
+            ORDER BY ts DESC
+            LIMIT 2000
+        """
+
+    # type 未指定: 電圧・温湿度・CO2 を UNION
     where = " AND ".join(base_filters)
     return f"""
-        SELECT ts, device_id, sensor_type,
-               id, voltage, NULL AS addr, NULL AS temp, NULL AS humidity, NULL AS battery, NULL AS rssi
+        SELECT ts, type, device_id,
+               id, voltage, NULL AS addr, NULL AS temp, NULL AS humidity, NULL AS battery, NULL AS rssi, NULL AS co2
         FROM sensor_data
-        WHERE {where} AND sensor_type = 'voltage'
+        WHERE {where} AND type = 'battery'
         UNION ALL
-        SELECT ts, device_id, sensor_type,
-               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi
+        SELECT ts, type, device_id,
+               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi, NULL AS co2
         FROM sensor_data
-        WHERE {where} AND sensor_type = 'switchbot'
+        WHERE {where} AND type = 'thermometer'
+        UNION ALL
+        SELECT ts, type, device_id,
+               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi, co2
+        FROM sensor_data
+        WHERE {where} AND type = 'co2meter'
         ORDER BY ts DESC
         LIMIT 2000
     """

@@ -76,11 +76,11 @@ resource "aws_glue_catalog_table" "sensor_data" {
       type = "string"
     }
     columns {
-      name = "device_id"
+      name = "type"
       type = "string"
     }
     columns {
-      name = "sensor_type"
+      name = "device_id"
       type = "string"
     }
     columns {
@@ -110,6 +110,18 @@ resource "aws_glue_catalog_table" "sensor_data" {
     columns {
       name = "rssi"
       type = "int"
+    }
+    columns {
+      name = "co2"
+      type = "int"
+    }
+    columns {
+      name = "mf"
+      type = "string"
+    }
+    columns {
+      name = "fw"
+      type = "string"
     }
   }
 

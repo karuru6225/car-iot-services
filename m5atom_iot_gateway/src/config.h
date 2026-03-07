@@ -15,5 +15,5 @@ static const uint8_t BTN_PIN = 41; // M5Atom S3 ボタン (Active-LOW)
 static const uint32_t LONG_PRESS_MS = 1000;
 static const uint32_t DEBOUNCE_MS = 50;
 static const uint32_t SLEEP_INTERVAL_SEC  = 300; // Deep Sleep 間隔（秒）
-static const int      PAYLOAD_BATTERY_SIZE = 96;  // battery ペイロードバッファ
+static const int      PAYLOAD_BATTERY_SIZE = 128; // battery ペイロードバッファ
 static const int      PAYLOAD_SENSOR_SIZE  = 256; // sensor ペイロードバッファ（mf hex 込み）

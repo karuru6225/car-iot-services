@@ -33,11 +33,7 @@ def handler(event, context):
     else:
         dt = datetime.now(timezone.utc)
 
-    if "voltage" in event:
-        sensor_type = "voltage"
-    elif "temp" in event:
-        sensor_type = "switchbot"
-    else:
+    if "type" not in event:
         print(f"[SKIP] 認識できないペイロード: {json.dumps(event)}")
         return
 
@@ -53,7 +49,6 @@ def handler(event, context):
     payload = {
         **event,
         "device_id": device_id,
-        "sensor_type": sensor_type,
         "ts": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
