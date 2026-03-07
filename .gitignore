@@ -4,7 +4,10 @@ infra/terraform.tfvars
 infra/*.tfplan
 
 # 証明書・秘密鍵（実機用、公開禁止）
-m5stamp_iot_gateway/certs.h
+m5atom_iot_gateway/src/certs.h
+
+# Terraform バックエンド設定（バケット名等を含む）
+infra/backend.tfbackend
 
 # Arduino ビルド成果物
 build/
