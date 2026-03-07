@@ -81,9 +81,10 @@ car-iot-services/
 │   ├── main.tf                            プロバイダ・IoT エンドポイント
 │   ├── iot.tf                             IoT Core: Thing・証明書・Policy・Topic Rule
 │   ├── s3.tf                              S3・Glue・Athena
-│   ├── lambda.tf                          Lambda 4 本 + API Gateway HTTP API
+│   ├── lambda.tf                          Lambda 3 本 + API Gateway HTTP API（JWT Authorizer）
+│   ├── cognito.tf                         Cognito User Pool・App Client・Hosted UI
 │   ├── iam.tf                             IAM ロール・ポリシー
-│   ├── web.tf                             S3(Web) + CloudFront
+│   ├── web.tf                             S3(Web) + CloudFront + ACM + Route53
 │   ├── variables.tf / outputs.tf
 │   ├── manage.ps1                         デプロイスクリプト（-Profile で aws login 対応）
 │   ├── gen_certs.ps1                      証明書生成スクリプト（Secrets Manager → certs.h）

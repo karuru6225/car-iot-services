@@ -57,7 +57,7 @@ car-iot-services/
 - AWS CLI（認証済み）
 - 以下のファイルを `infra/` に配置（gitignore 済み）:
   - `backend.tfbackend` — S3 バックエンド設定
-  - `terraform.tfvars` — 変数定義（`api_key = "..."` 等）
+  - `terraform.tfvars` — 変数定義（`hosted_zone_id`, `web_subdomain` 等、`terraform.tfvars.example` を参照）
 
 ### インフラ + Lambda
 
@@ -82,7 +82,7 @@ Lambda コード（`lambda_src/`）の変更も `apply` で自動デプロイさ
 ### Web 管理画面
 
 `index.html` は `aws_s3_object` で Terraform 管理されているため、`manage.ps1 apply` で自動アップロードされる。
-`web/index.html` の変更は `source_hash` で検知され、変更がなければ再アップロードしない。
+API エンドポイント・Cognito 設定はデプロイ時に Terraform が HTML 内のプレースホルダーを置換して埋め込む。
 
 CloudFront のキャッシュ TTL はデフォルト 300 秒。URL は apply 後に確認できる:
 

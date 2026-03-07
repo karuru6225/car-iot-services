@@ -137,16 +137,20 @@ Terraform で管理。主要リソース：
 | Athena Workgroup | SQL クエリ実行 |
 | Lambda `query` | Athena 非同期クエリ発行・結果取得 |
 | Lambda `delete` | Athena で対象特定 → S3 オブジェクト削除 |
-| Lambda `authorizer` | API Key ヘッダ（`x-api-key`）検証 |
+| Cognito User Pool + App Client | ユーザー認証・JWT 発行（Hosted UI） |
+| API Gateway JWT Authorizer | Cognito JWT トークン検証 |
 | API Gateway HTTP API | `GET /data`, `DELETE /data` |
-| S3 バケット（Web 用） + CloudFront | 管理画面ホスティング |
+| S3 バケット（Web 用） + CloudFront + Route53 | カスタムドメインで管理画面ホスティング |
+| ACM 証明書（us-east-1） | CloudFront 用 TLS 証明書 |
 
 ## Web 管理画面（web/index.html）
 
 - **単一ファイル** の静的 SPA（CloudFront + S3 で配信、`aws_s3_object` で Terraform 管理）
 - Chart.js 4 で電圧・温度・湿度・CO2 を独立したグラフで表示（アコーディオン切り替え）
 - グラフ間でホバー縦線を同期（カスタム Chart.js プラグイン + AbortController）
-- API エンドポイント・API Key・ラベル設定は `localStorage` に保存
+- API エンドポイント・Cognito 設定は Terraform デプロイ時に HTML へ直接埋め込み（プレースホルダー置換）
+- ラベル設定（addr/id の表示名）は `localStorage` に保存
+- 認証トークン（id_token）は `sessionStorage` に保存、未ログイン時は Cognito Hosted UI にリダイレクト
 
 ## PlatformIO ビルドシステム
 
