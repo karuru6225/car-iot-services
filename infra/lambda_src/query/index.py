@@ -14,6 +14,7 @@ API Gateway → Lambda → Athena → S3
 
 import json
 import os
+import re
 
 import boto3
 
@@ -48,6 +49,22 @@ def _partition_filters(hours):
     if hours <= 72:
         filters.append(_in('hour', hrs))
     return filters
+
+
+_VALID_ADDR      = re.compile(r'^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$')
+_VALID_DEVICE_ID = re.compile(r'^[\w\-]{1,64}$')
+_VALID_TYPES     = {"battery", "thermometer", "co2meter"}
+
+
+def _validate_inputs(sensor_type, device_id, hours, addr):
+    if sensor_type and sensor_type not in _VALID_TYPES:
+        raise ValueError(f"Invalid type: {sensor_type!r}")
+    if device_id and not _VALID_DEVICE_ID.match(device_id):
+        raise ValueError("Invalid device_id format")
+    if addr and not _VALID_ADDR.match(addr):
+        raise ValueError("Invalid addr format")
+    if not (1 <= hours <= 720):
+        raise ValueError("hours must be between 1 and 720")
 
 
 def _build_query(sensor_type, device_id, hours, addr):
@@ -187,6 +204,15 @@ def handler(event, context):
     sensor_type = params.get("type")
     device_id = params.get("device_id")
     addr = params.get("addr")
+
+    try:
+        _validate_inputs(sensor_type, device_id, hours, addr)
+    except ValueError as e:
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": str(e)}),
+        }
 
     query = _build_query(sensor_type, device_id, hours, addr)
 

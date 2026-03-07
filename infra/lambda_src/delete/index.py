@@ -11,6 +11,7 @@ DELETE /data?id=voltage_1&hours=72
 
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -128,6 +129,11 @@ def _is_admin(event: dict) -> bool:
         return False
 
 
+_VALID_S3_KEY = re.compile(
+    r'^raw/year=\d{4}/month=\d{2}/day=\d{2}/hour=\d{2}/[\w\-\.]+\.json$'
+)
+
+
 def _delete_by_keys(s3_keys: list) -> dict:
     """S3 キーのリストを直接削除する。Athena の $path 形式（s3://bucket/key）に対応。"""
     prefix = f"s3://{S3_BUCKET}/"
@@ -135,6 +141,9 @@ def _delete_by_keys(s3_keys: list) -> dict:
     for key in s3_keys:
         if key.startswith(prefix):
             key = key[len(prefix):]
+        if not _VALID_S3_KEY.match(key):
+            print(f"[WARN] rejected invalid s3 key: {key}")
+            continue
         try:
             s3.delete_object(Bucket=S3_BUCKET, Key=key)
             deleted += 1
