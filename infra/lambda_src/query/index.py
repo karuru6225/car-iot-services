@@ -200,7 +200,14 @@ def handler(event, context):
         return _get_results(execution_id)
 
     # 新規クエリ投入モード
-    hours = int(params.get("hours", 24))
+    try:
+        hours = int(params.get("hours", 24))
+    except ValueError:
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "hours must be an integer"}),
+        }
     sensor_type = params.get("type")
     device_id = params.get("device_id")
     addr = params.get("addr")

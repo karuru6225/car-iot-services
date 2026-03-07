@@ -129,6 +129,8 @@ def _is_admin(event: dict) -> bool:
         return False
 
 
+_VALID_ADDR      = re.compile(r'^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$')
+_VALID_SENSOR_ID = re.compile(r'^[\w\-]{1,64}$')
 _VALID_S3_KEY = re.compile(
     r'^raw/year=\d{4}/month=\d{2}/day=\d{2}/hour=\d{2}/[\w\-\.]+\.json$'
 )
@@ -180,13 +182,32 @@ def handler(event, context):
     params = event.get("queryStringParameters") or {}
     addr = params.get("addr")
     sensor_id = params.get("id")
-    hours = int(params.get("hours", 72))
+    try:
+        hours = int(params.get("hours", 72))
+    except ValueError:
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "hours must be an integer"}),
+        }
 
     if not addr and not sensor_id:
         return {
             "statusCode": 400,
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"error": "addr または id が必要です"}),
+        }
+    if addr and not _VALID_ADDR.match(addr):
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Invalid addr format"}),
+        }
+    if sensor_id and not _VALID_SENSOR_ID.match(sensor_id):
+        return {
+            "statusCode": 400,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Invalid id format"}),
         }
 
     try:
