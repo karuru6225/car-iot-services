@@ -203,7 +203,7 @@ function parseJwtPayload(token) {
 }
 
 function isAdmin() { return userGroups.includes('admin'); }
-let labels  = JSON.parse(localStorage.getItem('labels') || '{}');
+let labels = {};
 let chartVoltage          = null;
 let chartTemp             = null;
 let chartHumidity         = null;
@@ -242,7 +242,7 @@ window.onload = () => {
     document.getElementById('th-delete').style.display = 'none';
   }
 
-  renderLabelList();
+  loadLabels().then(() => renderLabelList());
 
   // Shift 押下中はテーブルのテキスト選択を無効化
   const setNoSelect = on => document.getElementById('tbody').classList.toggle('no-select', on);
@@ -271,6 +271,27 @@ function logout() {
 }
 
 // ─── ラベル管理 ──────────────────────────────────────────────────────────────
+async function loadLabels() {
+  try {
+    const res = await apiFetch('/labels');
+    labels = await res.json();
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.warn('labels load failed:', e);
+  }
+}
+
+async function saveLabels() {
+  try {
+    await apiFetch('/labels', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(labels),
+    });
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.warn('labels save failed:', e);
+  }
+}
+
 function getLabel(key) {
   return labels[key] || key;
 }
@@ -283,23 +304,23 @@ function toggleLabels() {
   title.textContent = (open ? '▼' : '▶') + ' ラベル設定（addr / id に表示名を付ける）';
 }
 
-function addLabel() {
+async function addLabel() {
   const key  = document.getElementById('label-key').value.trim();
   const name = document.getElementById('label-name').value.trim();
   if (!key || !name) return;
   labels[key] = name;
-  localStorage.setItem('labels', JSON.stringify(labels));
   document.getElementById('label-key').value  = '';
   document.getElementById('label-name').value = '';
   renderLabelList();
+  await saveLabels();
   // 既に表示中のデータがあれば再描画
   if (rows.length) { renderTable(rows); renderChart(rows); }
 }
 
-function removeLabel(key) {
+async function removeLabel(key) {
   delete labels[key];
-  localStorage.setItem('labels', JSON.stringify(labels));
   renderLabelList();
+  await saveLabels();
   if (rows.length) { renderTable(rows); renderChart(rows); }
 }
 
@@ -375,6 +396,7 @@ async function search() {
       const pollJson = await pollRes.json();
 
       if (pollJson.status === 'SUCCEEDED') {
+        if (pollJson.labels) { labels = pollJson.labels; renderLabelList(); }
         rows = pollJson.data || [];
         renderChart(rows);
         renderTable(rows);

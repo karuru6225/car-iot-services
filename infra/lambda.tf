@@ -2,6 +2,7 @@ locals {
   ingest_src_dir = "${path.module}/lambda_src/ingest"
   query_src_dir  = "${path.module}/lambda_src/query"
   delete_src_dir = "${path.module}/lambda_src/delete"
+  labels_src_dir = "${path.module}/lambda_src/labels"
   build_dir      = "${path.module}/.build"
 }
 
@@ -21,6 +22,12 @@ data "archive_file" "delete" {
   type        = "zip"
   source_dir  = local.delete_src_dir
   output_path = "${local.build_dir}/delete.zip"
+}
+
+data "archive_file" "labels" {
+  type        = "zip"
+  source_dir  = local.labels_src_dir
+  output_path = "${local.build_dir}/labels.zip"
 }
 
 # ─── ingest Lambda（IoT Core → S3 書き込み） ─────────────────────────────────
@@ -81,6 +88,24 @@ resource "aws_lambda_function" "delete" {
   }
 }
 
+# ─── labels Lambda（GET/PUT /labels） ────────────────────────────────────────
+
+resource "aws_lambda_function" "labels" {
+  function_name    = "${var.project}-labels"
+  filename         = data.archive_file.labels.output_path
+  source_code_hash = data.archive_file.labels.output_base64sha256
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  role             = aws_iam_role.lambda_labels.arn
+  timeout          = 10
+
+  environment {
+    variables = {
+      S3_BUCKET = aws_s3_bucket.main.bucket
+    }
+  }
+}
+
 # ─── API Gateway HTTP API ─────────────────────────────────────────────────────
 
 resource "aws_apigatewayv2_api" "main" {
@@ -89,7 +114,7 @@ resource "aws_apigatewayv2_api" "main" {
 
   cors_configuration {
     allow_origins = ["https://${local.web_domain}"]
-    allow_methods = ["GET", "DELETE", "OPTIONS"]
+    allow_methods = ["GET", "PUT", "DELETE", "OPTIONS"]
     allow_headers = ["Content-Type", "Authorization"]
   }
 }
@@ -135,6 +160,13 @@ resource "aws_apigatewayv2_integration" "delete" {
   payload_format_version = "2.0"
 }
 
+resource "aws_apigatewayv2_integration" "labels" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.labels.invoke_arn
+  payload_format_version = "2.0"
+}
+
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
 resource "aws_apigatewayv2_route" "query" {
@@ -153,6 +185,22 @@ resource "aws_apigatewayv2_route" "delete" {
   authorization_type = "JWT"
 }
 
+resource "aws_apigatewayv2_route" "labels_get" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "GET /labels"
+  target             = "integrations/${aws_apigatewayv2_integration.labels.id}"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
+}
+
+resource "aws_apigatewayv2_route" "labels_put" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "PUT /labels"
+  target             = "integrations/${aws_apigatewayv2_integration.labels.id}"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
+}
+
 # ─── Lambda Permissions ───────────────────────────────────────────────────────
 
 resource "aws_lambda_permission" "apigw_query" {
@@ -167,6 +215,14 @@ resource "aws_lambda_permission" "apigw_delete" {
   statement_id  = "AllowAPIGWInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.delete.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "apigw_labels" {
+  statement_id  = "AllowAPIGWInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.labels.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }

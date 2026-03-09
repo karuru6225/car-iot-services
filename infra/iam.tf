@@ -139,6 +139,36 @@ resource "aws_iam_role_policy" "lambda_query" {
   })
 }
 
+# ─── Lambda labels 実行ロール（S3 labels/* 読み書き） ────────────────────────
+
+resource "aws_iam_role" "lambda_labels" {
+  name               = "${var.project}-lambda-labels"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "lambda_labels" {
+  role = aws_iam_role.lambda_labels.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject"]
+        Resource = "${aws_s3_bucket.main.arn}/labels/*"
+      },
+    ]
+  })
+}
+
 # ─── Lambda delete 実行ロール（S3 削除 + Athena クエリ） ─────────────────────
 
 resource "aws_iam_role" "lambda_delete" {

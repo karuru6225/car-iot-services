@@ -17,10 +17,13 @@ import os
 import re
 
 import boto3
+from botocore.exceptions import ClientError
 
-athena = boto3.client("athena")
-DATABASE = os.environ["ATHENA_DATABASE"]
+athena    = boto3.client("athena")
+s3        = boto3.client("s3")
+DATABASE  = os.environ["ATHENA_DATABASE"]
 WORKGROUP = os.environ["ATHENA_WORKGROUP"]
+S3_BUCKET = os.environ["S3_BUCKET"]
 
 
 def _partition_filters(hours):
@@ -67,6 +70,21 @@ _TYPE_OWN_COLS: dict[str, set[str]] = {
 
 # addr フィルタを受け付けるタイプ
 _ADDR_FILTER_TYPES = {"thermometer", "co2meter"}
+
+
+def _get_labels(sub: str) -> dict:
+    """ユーザーのラベル設定を S3 から取得する。未設定時は空 dict を返す。"""
+    try:
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f"labels/{sub}.json")
+        return json.loads(obj["Body"].read())
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            return {}
+        print(f"[WARN] labels fetch failed: {e}")
+        return {}
+    except Exception as e:
+        print(f"[WARN] labels fetch failed: {e}")
+        return {}
 
 
 def _validate_inputs(sensor_type, device_id, hours, addr):
@@ -149,7 +167,7 @@ def _parse_results(execution_id):
     return rows
 
 
-def _get_results(execution_id):
+def _get_results(execution_id: str, sub: str) -> dict:
     """既存クエリの状態確認 / 結果取得。"""
     try:
         status = athena.get_query_execution(QueryExecutionId=execution_id)
@@ -172,10 +190,11 @@ def _get_results(execution_id):
 
         # SUCCEEDED
         rows = _parse_results(execution_id)
+        labels = _get_labels(sub)
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"execution_id": execution_id, "status": "SUCCEEDED", "data": rows}),
+            "body": json.dumps({"execution_id": execution_id, "status": "SUCCEEDED", "data": rows, "labels": labels}),
         }
     except Exception as e:
         print(f"[ERROR] {e}")
@@ -188,11 +207,12 @@ def _get_results(execution_id):
 
 def handler(event, context):
     params = event.get("queryStringParameters") or {}
+    sub = event.get("requestContext", {}).get("authorizer", {}).get("jwt", {}).get("claims", {}).get("sub", "")
 
     # 既存クエリの状態確認モード
     execution_id = params.get("execution_id")
     if execution_id:
-        return _get_results(execution_id)
+        return _get_results(execution_id, sub)
 
     # 新規クエリ投入モード
     try:
