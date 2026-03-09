@@ -55,6 +55,19 @@ _VALID_ADDR      = re.compile(r'^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$')
 _VALID_DEVICE_ID = re.compile(r'^[\w\-]{1,64}$')
 _VALID_TYPES     = {"battery", "thermometer", "co2meter"}
 
+# 全カラムの順序（UNION ALL の列順を統一するために使う）
+_ALL_EXTRA_COLS = ["id", "voltage", "addr", "temp", "humidity", "battery", "rssi", "co2"]
+
+# センサタイプごとの実カラム集合
+_TYPE_OWN_COLS: dict[str, set[str]] = {
+    "battery":     {"id", "voltage"},
+    "thermometer": {"addr", "temp", "humidity", "battery", "rssi"},
+    "co2meter":    {"addr", "temp", "humidity", "battery", "rssi", "co2"},
+}
+
+# addr フィルタを受け付けるタイプ
+_ADDR_FILTER_TYPES = {"thermometer", "co2meter"}
+
 
 def _validate_inputs(sensor_type, device_id, hours, addr):
     if sensor_type and sensor_type not in _VALID_TYPES:
@@ -67,65 +80,31 @@ def _validate_inputs(sensor_type, device_id, hours, addr):
         raise ValueError("hours must be between 1 and 720")
 
 
-def _build_query(sensor_type, device_id, hours, addr):
+def _select_list(sensor_type: str) -> str:
+    """センサタイプの SELECT 列リストを返す（欠けるカラムは NULL 埋め）。"""
+    own = _TYPE_OWN_COLS[sensor_type]
+    cols = ["ts", "type", "device_id"]
+    for col in _ALL_EXTRA_COLS:
+        cols.append(col if col in own else f"NULL AS {col}")
+    cols.append('"$path" AS s3_key')
+    return ", ".join(cols)
+
+
+def _build_query(sensor_type: str | None, device_id: str | None, hours: int, addr: str | None) -> str:
     base_filters = _partition_filters(hours) + [f"ts >= '{_hours_ago_iso(hours)}'"]
     if device_id:
         base_filters.append(f"device_id = '{device_id}'")
 
-    if sensor_type == "battery":
-        where = " AND ".join(base_filters + ["type = 'battery'"])
-        return f"""
-            SELECT ts, type, device_id, id, voltage, "$path" AS s3_key
-            FROM sensor_data
-            WHERE {where}
-            ORDER BY ts DESC
-            LIMIT 2000
-        """
+    types = [sensor_type] if sensor_type else list(_TYPE_OWN_COLS)
+    subqueries = []
+    for t in types:
+        filters = list(base_filters)
+        if addr and t in _ADDR_FILTER_TYPES:
+            filters.append(f"addr = '{addr}'")
+        where = " AND ".join(filters + [f"type = '{t}'"])
+        subqueries.append(f"SELECT {_select_list(t)} FROM sensor_data WHERE {where}")
 
-    if sensor_type == "thermometer":
-        if addr:
-            base_filters.append(f"addr = '{addr}'")
-        where = " AND ".join(base_filters + ["type = 'thermometer'"])
-        return f"""
-            SELECT ts, type, device_id, addr, temp, humidity, battery, rssi, NULL AS co2, "$path" AS s3_key
-            FROM sensor_data
-            WHERE {where}
-            ORDER BY ts DESC
-            LIMIT 2000
-        """
-
-    if sensor_type == "co2meter":
-        if addr:
-            base_filters.append(f"addr = '{addr}'")
-        where = " AND ".join(base_filters + ["type = 'co2meter'"])
-        return f"""
-            SELECT ts, type, device_id, addr, temp, humidity, battery, rssi, co2, "$path" AS s3_key
-            FROM sensor_data
-            WHERE {where}
-            ORDER BY ts DESC
-            LIMIT 2000
-        """
-
-    # type 未指定: 電圧・温湿度・CO2 を UNION
-    where = " AND ".join(base_filters)
-    return f"""
-        SELECT ts, type, device_id,
-               id, voltage, NULL AS addr, NULL AS temp, NULL AS humidity, NULL AS battery, NULL AS rssi, NULL AS co2, "$path" AS s3_key
-        FROM sensor_data
-        WHERE {where} AND type = 'battery'
-        UNION ALL
-        SELECT ts, type, device_id,
-               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi, NULL AS co2, "$path" AS s3_key
-        FROM sensor_data
-        WHERE {where} AND type = 'thermometer'
-        UNION ALL
-        SELECT ts, type, device_id,
-               NULL AS id, NULL AS voltage, addr, temp, humidity, battery, rssi, co2, "$path" AS s3_key
-        FROM sensor_data
-        WHERE {where} AND type = 'co2meter'
-        ORDER BY ts DESC
-        LIMIT 2000
-    """
+    return "\nUNION ALL\n".join(subqueries) + "\nORDER BY ts DESC\nLIMIT 7000"
 
 
 def _hours_ago_iso(hours):
@@ -136,21 +115,37 @@ def _hours_ago_iso(hours):
 
 def _parse_results(execution_id):
     """クエリ結果を dict のリストに変換する。数値は float に変換する。"""
-    result = athena.get_query_results(QueryExecutionId=execution_id)
-    col_names = [col["Label"] for col in result["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
     rows = []
-    for row in result["ResultSet"]["Rows"][1:]:  # 先頭行はヘッダー
-        values = [d.get("VarCharValue") for d in row["Data"]]
-        obj = {}
-        for col, val in zip(col_names, values):
-            if val is None:
-                obj[col] = None
-                continue
-            try:
-                obj[col] = float(val)
-            except (ValueError, TypeError):
-                obj[col] = val
-        rows.append(obj)
+    col_names = None
+    kwargs = {"QueryExecutionId": execution_id}
+
+    while True:
+        result = athena.get_query_results(**kwargs)
+        result_rows = result["ResultSet"]["Rows"]
+
+        # 初回ページのみ列名取得＆ヘッダー行スキップ
+        if col_names is None:
+            col_names = [col["Label"] for col in result["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]]
+            result_rows = result_rows[1:]
+
+        for row in result_rows:
+            values = [d.get("VarCharValue") for d in row["Data"]]
+            obj = {}
+            for col, val in zip(col_names, values):
+                if val is None:
+                    obj[col] = None
+                    continue
+                try:
+                    obj[col] = float(val)
+                except (ValueError, TypeError):
+                    obj[col] = val
+            rows.append(obj)
+
+        next_token = result.get("NextToken")
+        if not next_token:
+            break
+        kwargs["NextToken"] = next_token
+
     return rows
 
 
