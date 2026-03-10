@@ -541,15 +541,30 @@ function renderChart(data) {
     Object.entries(groupBy(voltageRows, 'device_id')).forEach(([did, pts]) => {
       const color = COLORS[colorIdx++ % COLORS.length];
       const idKey = pts[0]?.id || did;
+      // 電圧（左Y軸）
       vDatasets.push({
         label: `${getLabel(idKey)} 電圧(V)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: r.voltage })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+        yAxisID: 'y',
+      });
+      // 残量%（右Y軸、破線）
+      vDatasets.push({
+        label: `${getLabel(idKey)} 残量(%)`,
+        data: pts.map(r => ({ x: new Date(r.ts), y: voltageToBatteryPercent(r.voltage) })),
+        borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+        borderDash: [4, 4], borderWidth: 1.5, yAxisID: 'yPct',
       });
     });
+    const yPctScale = {
+      type: 'linear', position: 'right',
+      min: 0, max: 100,
+      ticks: { color: '#888', callback: v => `${v}%` },
+      grid: { drawOnChartArea: false },
+    };
     chartVoltage = new Chart(
       document.getElementById('chart-voltage').getContext('2d'),
-      { type: 'line', data: { datasets: vDatasets }, options: makeChartOptions({ x: timeScale, y: linearScale('left') }) }
+      { type: 'line', data: { datasets: vDatasets }, options: makeChartOptions({ x: timeScale, y: linearScale('left'), yPct: yPctScale }) }
     );
   } else {
     vCard.style.display = 'none';
@@ -654,7 +669,11 @@ function renderTable(data) {
       ? `${dispKey} <span style="color:#555; font-size:0.8em">(${rawKey})</span>`
       : rawKey;
     let valueStr = '-';
-    if (isBattery)     valueStr = `${r.voltage?.toFixed(2)} V`;
+    if (isBattery) {
+      const pct = voltageToBatteryPercent(r.voltage);
+      const pctStr = pct != null ? ` <span style="color:${pct <= 15 ? '#e74c3c' : pct <= 30 ? '#f7d24f' : '#4fc87f'}">(≈${pct}%)</span>` : '';
+      valueStr = `${r.voltage?.toFixed(2)} V${pctStr}`;
+    }
     if (isThermometer) valueStr = `${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}% / RSSI:${r.rssi}`;
     if (isCo2)         valueStr = `${r.co2} ppm / ${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}%`;
 
@@ -757,6 +776,26 @@ async function doDeleteByKeys(s3Keys) {
       setStatus('search', `削除エラー: ${e.message}`);
     }
   }
+}
+
+// ─── LiFePO4 4S 電圧→残量推定 ─────────────────────────────────────────────────
+// OCV-SOC 近似テーブル（静止時のみ信頼できる。負荷中・充電中は誤差が大きい）
+const LIFEPO4_4S_TABLE = [
+  [10.0,  0], [11.8,  5], [12.2, 10], [12.6, 15],
+  [12.8, 25], [13.0, 40], [13.2, 60], [13.5, 80],
+  [13.8, 95], [14.6, 100],
+];
+
+function voltageToBatteryPercent(v) {
+  if (v == null) return null;
+  if (v <= LIFEPO4_4S_TABLE[0][0]) return 0;
+  if (v >= LIFEPO4_4S_TABLE[LIFEPO4_4S_TABLE.length - 1][0]) return 100;
+  for (let i = 1; i < LIFEPO4_4S_TABLE.length; i++) {
+    const [v0, p0] = LIFEPO4_4S_TABLE[i - 1];
+    const [v1, p1] = LIFEPO4_4S_TABLE[i];
+    if (v <= v1) return Math.round(p0 + (v - v0) / (v1 - v0) * (p1 - p0));
+  }
+  return 100;
 }
 
 // ─── ユーティリティ ───────────────────────────────────────────────────────────

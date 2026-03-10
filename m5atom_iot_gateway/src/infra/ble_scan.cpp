@@ -15,7 +15,7 @@ class SwitchBotCallback : public BLEAdvertisedDeviceCallbacks
     uint16_t companyId = ((uint8_t)mf[1] << 8) | (uint8_t)mf[0];
     if (companyId != SWITCHBOT_COMPANY_ID) return;
 
-    const char *addr = dev.getAddress().toString().c_str();
+    std::string addr = dev.getAddress().toString();
 
     if (regMode.isScanning())
     {
