@@ -4763,6 +4763,131 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "power:VBUS"
+			(power)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#PWR"
+				(at 0 -3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Value" "VBUS"
+				(at 0 3.556 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"VBUS\""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "VBUS_0_1"
+				(polyline
+					(pts
+						(xy -0.762 1.27) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 2.54) (xy 0.762 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 0) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "VBUS_1_1"
+				(pin power_in line
+					(at 0 0 90)
+					(length 0)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 	)
 	(rectangle
 		(start 120.65 52.07)
@@ -4855,12 +4980,6 @@
 		(uuid "09c12d71-507c-4b13-a9a3-9981f9129252")
 	)
 	(junction
-		(at 54.61 46.99)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "0ddcc6a7-d6ed-401a-a3ca-fe96edb11d43")
-	)
-	(junction
 		(at 36.83 34.29)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -4945,6 +5064,12 @@
 		(uuid "51bc5d16-cf5c-4cdd-835a-455879069d94")
 	)
 	(junction
+		(at 53.34 46.99)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "5c336f99-c673-43f9-9f07-0c4779fcb6fc")
+	)
+	(junction
 		(at 67.31 78.74)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -4991,6 +5116,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "8a01027d-25d2-4dc2-8d09-4a0807775908")
+	)
+	(junction
+		(at 53.34 39.37)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "9bb8f716-445a-4f34-b82d-36e5fae5033a")
 	)
 	(junction
 		(at 255.27 119.38)
@@ -5133,6 +5264,16 @@
 			(type default)
 		)
 		(uuid "01f5dc4a-28c3-4053-91d5-aaada9230045")
+	)
+	(wire
+		(pts
+			(xy 67.31 74.93) (xy 67.31 78.74)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "02f819f9-8c64-48f8-8fdd-91c4dfc6a8fa")
 	)
 	(wire
 		(pts
@@ -5566,7 +5707,7 @@
 	)
 	(wire
 		(pts
-			(xy 54.61 39.37) (xy 54.61 46.99)
+			(xy 53.34 39.37) (xy 53.34 40.64)
 		)
 		(stroke
 			(width 0)
@@ -5626,7 +5767,17 @@
 	)
 	(wire
 		(pts
-			(xy 48.26 46.99) (xy 54.61 46.99)
+			(xy 53.34 46.99) (xy 67.31 46.99)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6eda891f-a1aa-4893-aa93-c7a585f63fe0")
+	)
+	(wire
+		(pts
+			(xy 48.26 46.99) (xy 53.34 46.99)
 		)
 		(stroke
 			(width 0)
@@ -5753,6 +5904,16 @@
 			(type default)
 		)
 		(uuid "822f7d26-1bad-4bf5-9121-0e6621870e8d")
+	)
+	(wire
+		(pts
+			(xy 53.34 39.37) (xy 54.61 39.37)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "84b498b8-5f8b-4afd-a4c4-c95eb8025788")
 	)
 	(wire
 		(pts
@@ -6106,16 +6267,6 @@
 	)
 	(wire
 		(pts
-			(xy 54.61 46.99) (xy 67.31 46.99)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c8c0bde6-f340-41bc-8f48-74583c675d72")
-	)
-	(wire
-		(pts
 			(xy 251.46 85.09) (xy 251.46 91.44)
 		)
 		(stroke
@@ -6336,6 +6487,16 @@
 	)
 	(wire
 		(pts
+			(xy 53.34 29.21) (xy 53.34 39.37)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e8e23118-b503-43bc-baac-4527429e9c98")
+	)
+	(wire
+		(pts
 			(xy 168.91 63.5) (xy 168.91 60.96)
 		)
 		(stroke
@@ -6443,6 +6604,16 @@
 			(type default)
 		)
 		(uuid "f9e573cc-3a40-4b09-af38-73b8740b3d0a")
+	)
+	(wire
+		(pts
+			(xy 53.34 45.72) (xy 53.34 46.99)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "fc50fe7f-76af-4206-bc8e-6a5ef4c74926")
 	)
 	(wire
 		(pts
@@ -8396,6 +8567,72 @@
 		)
 	)
 	(symbol
+		(lib_id "power:VBUS")
+		(at 67.31 74.93 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "4a244b81-6ce9-40e8-81b5-8e2f8776b7c8")
+		(property "Reference" "#PWR022"
+			(at 67.31 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "VBUS"
+			(at 67.31 69.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 67.31 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 67.31 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VBUS\""
+			(at 67.31 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "57b366d6-d335-43bc-b434-6469cc7cb7c9")
+		)
+		(instances
+			(project ""
+				(path "/d0098cfc-b338-460c-a156-403456706079"
+					(reference "#PWR022")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R_Small")
 		(at 231.14 107.95 90)
 		(unit 1)
@@ -10317,6 +10554,76 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
+		(at 53.34 43.18 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "b0859158-4c6a-4cf7-a8a2-c48d0bb0a0e6")
+		(property "Reference" "R15"
+			(at 55.88 41.9099 0)
+			(effects
+				(font
+					(size 1.016 1.016)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10k"
+			(at 55.88 44.4499 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 53.34 43.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 53.34 43.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 53.34 43.18 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "906bd2ed-3494-45e7-a971-46883e4c4f52")
+		)
+		(pin "1"
+			(uuid "f06364c3-510d-4d71-a5d8-353b69478672")
+		)
+		(instances
+			(project "m5atom_power_adc"
+				(path "/d0098cfc-b338-460c-a156-403456706079"
+					(reference "R15")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R_Small")
 		(at 259.08 76.2 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -11560,6 +11867,72 @@
 			(project "m5atom_power_adc"
 				(path "/d0098cfc-b338-460c-a156-403456706079"
 					(reference "R10")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VBUS")
+		(at 53.34 29.21 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "f893bd28-22ba-4137-94ba-ea6ac8357ca2")
+		(property "Reference" "#PWR023"
+			(at 53.34 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "VBUS"
+			(at 53.34 24.13 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 53.34 29.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 53.34 29.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VBUS\""
+			(at 53.34 29.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "a5921db8-dd6d-4ece-92fa-1cd272a45394")
+		)
+		(instances
+			(project "m5atom_power_adc"
+				(path "/d0098cfc-b338-460c-a156-403456706079"
+					(reference "#PWR023")
 					(unit 1)
 				)
 			)
