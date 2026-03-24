@@ -6,6 +6,8 @@
   <title>センサーデータ管理</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 16px; }
@@ -96,13 +98,21 @@
       <input type="text" id="filter" placeholder="省略可" style="width:220px">
     </div>
     <div class="form-group">
-      <label>期間</label>
-      <select id="hours">
-        <option value="24">24時間</option>
-        <option value="48">48時間</option>
-        <option value="72">72時間</option>
-        <option value="168">1週間</option>
-      </select>
+      <label>開始日時</label>
+      <input type="datetime-local" id="start-time" style="width:190px">
+    </div>
+    <div class="form-group">
+      <label>終了日時</label>
+      <input type="datetime-local" id="end-time" style="width:190px">
+    </div>
+    <div class="form-group">
+      <label>クイック選択</label>
+      <div style="display:flex; gap:4px">
+        <button class="secondary" style="padding:5px 8px; font-size:0.8em" onclick="setQuickRange(24)">24h</button>
+        <button class="secondary" style="padding:5px 8px; font-size:0.8em" onclick="setQuickRange(48)">48h</button>
+        <button class="secondary" style="padding:5px 8px; font-size:0.8em" onclick="setQuickRange(72)">72h</button>
+        <button class="secondary" style="padding:5px 8px; font-size:0.8em" onclick="setQuickRange(168)">1週間</button>
+      </div>
     </div>
     <button onclick="search()">検索</button>
     <span class="status" id="search-status"></span>
@@ -113,6 +123,7 @@
 <div class="card" id="chart-voltage-card" style="display:none">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
     <span class="section-title" onclick="toggleChart('voltage')">▼ 電圧グラフ</span>
+    <button class="secondary" style="font-size:0.75em; padding:3px 10px" onclick="resetZoom()">ズームリセット</button>
   </div>
   <div id="chart-voltage-section">
     <div class="chart-container">
@@ -125,6 +136,7 @@
 <div class="card" id="chart-temp-card" style="display:none">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
     <span class="section-title" onclick="toggleChart('temp')">▼ 温度グラフ</span>
+    <button class="secondary" style="font-size:0.75em; padding:3px 10px" onclick="resetZoom()">ズームリセット</button>
   </div>
   <div id="chart-temp-section">
     <div class="chart-container">
@@ -137,6 +149,7 @@
 <div class="card" id="chart-humidity-card" style="display:none">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
     <span class="section-title" onclick="toggleChart('humidity')">▼ 湿度グラフ</span>
+    <button class="secondary" style="font-size:0.75em; padding:3px 10px" onclick="resetZoom()">ズームリセット</button>
   </div>
   <div id="chart-humidity-section">
     <div class="chart-container">
@@ -149,6 +162,7 @@
 <div class="card" id="chart-co2-card" style="display:none">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
     <span class="section-title" onclick="toggleChart('co2')">▼ CO2グラフ</span>
+    <button class="secondary" style="font-size:0.75em; padding:3px 10px" onclick="resetZoom()">ズームリセット</button>
   </div>
   <div id="chart-co2-section">
     <div class="chart-container">
@@ -243,6 +257,7 @@ window.onload = () => {
   }
 
   loadLabels().then(() => renderLabelList());
+  loadDataRange();
 
   // Shift 押下中はテーブルのテキスト選択を無効化
   const setNoSelect = on => document.getElementById('tbody').classList.toggle('no-select', on);
@@ -361,13 +376,68 @@ async function apiFetch(path, options = {}) {
   return res;
 }
 
+// ─── データ存在範囲の取得 ─────────────────────────────────────────────────────
+async function loadDataRange() {
+  try {
+    const res  = await apiFetch('/data?mode=range');
+    const json = await res.json();
+    const startEl = document.getElementById('start-time');
+    const endEl   = document.getElementById('end-time');
+    if (json.min_ts) {
+      startEl.min = _isoToLocalInput(json.min_ts);
+      endEl.min   = _isoToLocalInput(json.min_ts);
+    }
+    const nowLocal = _isoToLocalInput(new Date().toISOString());
+    startEl.max = nowLocal;
+    endEl.max   = nowLocal;
+    // デフォルト値：最新24時間
+    if (!startEl.value) {
+      const d = new Date();
+      d.setHours(d.getHours() - 24);
+      startEl.value = _isoToLocalInput(d.toISOString());
+    }
+    if (!endEl.value) endEl.value = nowLocal;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.warn('loadDataRange failed:', e);
+  }
+}
+
+function setQuickRange(hours) {
+  const end   = new Date();
+  const start = new Date(end.getTime() - hours * 3600 * 1000);
+  document.getElementById('start-time').value = _isoToLocalInput(start.toISOString());
+  document.getElementById('end-time').value   = _isoToLocalInput(end.toISOString());
+}
+
+// ISO8601 UTC → datetime-local 入力値（YYYY-MM-DDTHH:MM）に変換
+function _isoToLocalInput(iso) {
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// datetime-local 入力値 → ISO8601 UTC 文字列
+function _localInputToIso(val) {
+  // datetime-local はローカル時刻として解釈される
+  return new Date(val).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 // ─── 検索（非同期ポーリング方式） ────────────────────────────────────────────
 async function search() {
+  const startVal = document.getElementById('start-time').value;
+  const endVal   = document.getElementById('end-time').value;
+  if (!startVal || !endVal) {
+    setStatus('search', '開始・終了日時を入力してください');
+    return;
+  }
+  await _searchWithRange(_localInputToIso(startVal), _localInputToIso(endVal));
+}
+
+async function _searchWithRange(startIso, endIso) {
   const type   = document.getElementById('type').value;
   const filter = document.getElementById('filter').value.trim();
-  const hours  = document.getElementById('hours').value;
 
-  const params = new URLSearchParams({ hours });
+  const params = new URLSearchParams({ start_time: startIso, end_time: endIso });
   if (type)   params.set('type', type);
   if (filter) {
     if (filter.includes(':')) params.set('addr', filter);
@@ -502,8 +572,32 @@ function makeChartOptions(scales) {
     scales,
     plugins: {
       legend: { labels: { color: '#e0e0e0', boxWidth: 20, padding: 12 } },
+      zoom: {
+        zoom: {
+          drag: { enabled: true, backgroundColor: 'rgba(79,142,247,0.15)', borderColor: '#4f8ef7', borderWidth: 1 },
+          mode: 'x',
+          onZoomComplete({ chart }) { syncZoom(chart); },
+        },
+      },
     },
   };
+}
+
+function syncZoom(sourceChart) {
+  const { min, max } = sourceChart.scales.x;
+  getActiveCharts().forEach(c => {
+    if (c === sourceChart) return;
+    c.zoomScale('x', { min, max }, 'none');
+  });
+  // ズーム範囲で再取得（高解像度データを得る）
+  const startIso = new Date(min).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const endIso   = new Date(max).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  _searchWithRange(startIso, endIso);
+}
+
+function resetZoom() {
+  // フォームの入力値（元の範囲）で再取得
+  search();
 }
 
 const timeScale = {
@@ -541,19 +635,20 @@ function renderChart(data) {
     Object.entries(groupBy(voltageRows, 'device_id')).forEach(([did, pts]) => {
       const color = COLORS[colorIdx++ % COLORS.length];
       const idKey = pts[0]?.id || did;
+      const unlabeled = !labels[idKey];
       // 電圧（左Y軸）
       vDatasets.push({
         label: `${getLabel(idKey)} 電圧(V)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: r.voltage })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
-        yAxisID: 'y',
+        yAxisID: 'y', hidden: unlabeled,
       });
       // 残量%（右Y軸、破線）
       vDatasets.push({
         label: `${getLabel(idKey)} 残量(%)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: voltageToBatteryPercent(r.voltage) })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
-        borderDash: [4, 4], borderWidth: 1.5, yAxisID: 'yPct',
+        borderDash: [4, 4], borderWidth: 1.5, yAxisID: 'yPct', hidden: unlabeled,
       });
     });
     const yPctScale = {
@@ -582,6 +677,7 @@ function renderChart(data) {
         label: `${getLabel(addr)} 温度(°C)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: r.temp })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+        hidden: !labels[addr],
       });
     });
     chartTemp = new Chart(
@@ -604,6 +700,7 @@ function renderChart(data) {
         label: `${getLabel(addr)} 湿度(%)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: r.humidity })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+        hidden: !labels[addr],
       });
     });
     chartHumidity = new Chart(
@@ -626,6 +723,7 @@ function renderChart(data) {
         label: `${getLabel(addr)} CO2(ppm)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: r.co2 })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+        hidden: !labels[addr],
       });
     });
     chartCo2 = new Chart(
@@ -676,8 +774,6 @@ function renderTable(data) {
     }
     if (isThermometer) valueStr = `${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}% / RSSI:${r.rssi}`;
     if (isCo2)         valueStr = `${r.co2} ppm / ${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}%`;
-
-    const hours    = document.getElementById('hours').value;
 
     const tr = document.createElement('tr');
     tr.dataset.index = idx;
