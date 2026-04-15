@@ -1,5 +1,23 @@
 # car-iot-services プロジェクト設定
 
+車載 IoT システム。M5Atom S3 + SIM7080G で車載バッテリー電圧・温湿度・CO2 を AWS IoT Core に送信し、Web 管理画面でグラフ表示する。
+
+## よく使うコマンド
+
+```bash
+# ビルド（m5atom_iot_gateway ディレクトリで実行）
+pio run
+
+# ビルド＋書き込み
+pio run -t upload
+
+# シリアルモニタ
+pio device monitor
+
+# ビルド＋書き込み＋シリアルモニタ
+pio run -t upload && pio device monitor
+```
+
 ## コーディング規約（Arduino C++）
 
 - インデント: スペース 2 つ

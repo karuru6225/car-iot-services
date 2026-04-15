@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "kicad-mcp-server": {
+      "command": "c:\\Users\\karuru\\git_repos\\car-iot-services\\tools\\kicad-mcp-server\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "kicad_mcp_server"],
+      "cwd": "c:\\Users\\karuru\\git_repos\\car-iot-services\\tools\\kicad-mcp-server",
+      "env": {
+        "PYTHONPATH": "c:\\Users\\karuru\\git_repos\\car-iot-services\\tools\\kicad-mcp-server\\src",
+        "KICAD_CLI_PATH": "C:\\Program Files\\KiCad\\9.0\\bin\\kicad-cli.exe"
+      }
+    },
+    "kicad-mcp": {
+      "command": "c:\\Users\\karuru\\git_repos\\car-iot-services\\tools\\kicad-mcp\\.venv\\Scripts\\python.exe",
+      "args": ["c:\\Users\\karuru\\git_repos\\car-iot-services\\tools\\kicad-mcp\\main.py"],
+      "cwd": "c:\\Users\\karuru\\git_repos\\car-iot-services\\tools\\kicad-mcp"
+    }
+  }
+}

@@ -22,3 +22,6 @@ Thumbs.db
 # エディタ
 .vscode/settings.json
 *.swp
+
+# KiCad レビューツール
+tools/

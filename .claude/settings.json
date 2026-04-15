@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:forum.kicad.info)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__kicad-mcp__find_component_connections",
+      "Bash(\"$HOME/.platformio/penv/Scripts/python.exe\" \"$HOME/.claude/kicad-happy/skills/kicad/scripts/analyze_schematic.py\" \"c:/Users/karuru/git_repos/car-iot-services/m5atom_power_adc/m5atom_power_adc.kicad_sch\" --output \"c:/Users/karuru/git_repos/car-iot-services/m5atom_power_adc/schematic_analysis.json\")",
+      "Bash(\"c:/Users/karuru/git_repos/car-iot-services/tools/kicad-netlist-tool/.venv/Scripts/python.exe\" -m kicad_netlist_tool parse -f compact \"c:/Users/karuru/git_repos/car-iot-services/m5atom_power_adc/m5atom_power_adc.kicad_sch\")"
+    ]
+  }
+}
