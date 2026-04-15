@@ -1,3 +1,0 @@
-bucket  = "your-tfstate-bucket-name"
-key     = "agent/terraform.tfstate"
-region  = "ap-northeast-1"

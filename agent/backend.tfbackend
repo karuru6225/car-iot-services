@@ -1,7 +1,0 @@
-bucket  = "iot-monitor-tfstate"
-key     = "agent/terraform.tfstate"
-region  = "ap-northeast-1"
-
-# DynamoDB によるステートロック（任意）
-# 有効にする場合: aws dynamodb create-table でテーブルを作成してコメントを外す
-# dynamodb_table = "iot-monitor-tfstate-lock"
