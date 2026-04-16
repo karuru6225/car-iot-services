@@ -7696,6 +7696,12 @@
 		(uuid f437b25b-1f7d-4336-8aea-31667a7b5b61)
 	)
 	(junction
+		(at 152.4 181.61)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "0076bc25-26fb-4d88-a653-3e95bc45f73d")
+	)
+	(junction
 		(at 69.85 49.53)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -7730,6 +7736,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "09c12d71-507c-4b13-a9a3-9981f9129252")
+	)
+	(junction
+		(at 152.4 184.15)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "09dfc1eb-7bf1-4f76-87fe-7f1f14034c6d")
 	)
 	(junction
 		(at 157.48 171.45)
@@ -7778,6 +7790,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "2440adcf-02a9-428b-b82d-86343c56e792")
+	)
+	(junction
+		(at 157.48 181.61)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "2715a53b-fa01-4701-be98-04a434d18360")
 	)
 	(junction
 		(at 107.95 115.57)
@@ -7874,12 +7892,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "4976a0ec-4e8e-4aa8-91d9-e9b0dc13985a")
-	)
-	(junction
-		(at 151.13 181.61)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "4aba23c4-bb79-4795-9c6a-f16d8a51d562")
 	)
 	(junction
 		(at 237.49 109.22)
@@ -8056,6 +8068,12 @@
 		(uuid "8e7da8fa-08ee-46a4-a911-283387ca9c9f")
 	)
 	(junction
+		(at 157.48 184.15)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "8fb8a32e-abbb-45d6-aff0-6889ee75b4ca")
+	)
+	(junction
 		(at 86.36 41.91)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -8132,12 +8150,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "c259ad49-5c57-46ea-b11a-6c0f87d30689")
-	)
-	(junction
-		(at 161.29 181.61)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "c30ac099-5c46-4b93-80b9-26e9f4b06bc1")
 	)
 	(junction
 		(at 113.03 151.13)
@@ -8571,16 +8583,6 @@
 	)
 	(wire
 		(pts
-			(xy 161.29 181.61) (xy 165.1 181.61)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0ceb6253-b583-449e-9e2c-5851517858c7")
-	)
-	(wire
-		(pts
 			(xy 245.11 63.5) (xy 245.11 64.77)
 		)
 		(stroke
@@ -8841,16 +8843,6 @@
 	)
 	(wire
 		(pts
-			(xy 146.05 181.61) (xy 151.13 181.61)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "21a2aba9-b154-4ca7-9151-13604da3c7bf")
-	)
-	(wire
-		(pts
 			(xy 69.85 36.83) (xy 72.39 36.83)
 		)
 		(stroke
@@ -8948,16 +8940,6 @@
 			(type default)
 		)
 		(uuid "27a7a953-4431-46dd-84a5-363ac66bd963")
-	)
-	(wire
-		(pts
-			(xy 161.29 181.61) (xy 161.29 184.15)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "27ea5c9b-c069-47a9-a431-da2fa0a9358e")
 	)
 	(wire
 		(pts
@@ -9821,6 +9803,16 @@
 	)
 	(wire
 		(pts
+			(xy 152.4 184.15) (xy 152.4 186.69)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "68495cab-07e6-4f17-88ea-72116c44d97b")
+	)
+	(wire
+		(pts
 			(xy 165.1 181.61) (xy 165.1 189.23)
 		)
 		(stroke
@@ -9991,6 +9983,16 @@
 	)
 	(wire
 		(pts
+			(xy 157.48 184.15) (xy 157.48 186.69)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "744fc3b8-e890-4a12-bdaa-1864a51b85aa")
+	)
+	(wire
+		(pts
 			(xy 143.51 38.1) (xy 143.51 44.45)
 		)
 		(stroke
@@ -10038,6 +10040,16 @@
 			(type default)
 		)
 		(uuid "774bae4a-2dd4-44d9-8a5b-7abf7529be75")
+	)
+	(wire
+		(pts
+			(xy 157.48 181.61) (xy 165.1 181.61)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "775f5cc9-a943-4f8f-b76f-a7e3b67f8b1f")
 	)
 	(wire
 		(pts
@@ -10331,16 +10343,6 @@
 	)
 	(wire
 		(pts
-			(xy 151.13 181.61) (xy 151.13 184.15)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8d9df47a-cfa4-470b-be1b-0179c7b375bc")
-	)
-	(wire
-		(pts
 			(xy 185.42 38.1) (xy 195.58 38.1)
 		)
 		(stroke
@@ -10378,6 +10380,16 @@
 			(type default)
 		)
 		(uuid "927cbcee-b3a8-4f99-b8d6-f8b2e7a445f2")
+	)
+	(wire
+		(pts
+			(xy 146.05 181.61) (xy 152.4 181.61)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "92dc30fd-48ac-44a3-a9a3-029fc9f9e8e2")
 	)
 	(wire
 		(pts
@@ -10888,6 +10900,16 @@
 			(type default)
 		)
 		(uuid "b6da03f4-ce8b-4d9b-8b28-52f08dfea26d")
+	)
+	(wire
+		(pts
+			(xy 157.48 181.61) (xy 157.48 184.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ba84635b-13fd-43b7-b14c-1298235b9b67")
 	)
 	(wire
 		(pts
@@ -11658,6 +11680,16 @@
 			(type default)
 		)
 		(uuid "f6fadc89-f83b-401e-a18b-1019f55680ec")
+	)
+	(wire
+		(pts
+			(xy 152.4 181.61) (xy 152.4 184.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f723f214-8929-4402-8423-c8cb97ac7eab")
 	)
 	(wire
 		(pts
@@ -13785,7 +13817,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 256.54 73.66 0)
 			(effects
 				(font
@@ -13804,6 +13836,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 256.54 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906862"
 			(at 256.54 73.66 0)
 			(effects
 				(font
@@ -14432,7 +14473,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 22.86 146.05 0)
 			(effects
 				(font
@@ -14451,6 +14492,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 22.86 146.05 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C22967"
 			(at 22.86 146.05 0)
 			(effects
 				(font
@@ -15505,7 +15555,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 36.83 143.51 0)
 			(effects
 				(font
@@ -15525,6 +15575,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 36.83 143.51 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C21190"
+			(at 36.83 143.51 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16405,7 +16464,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 38.1 163.83 0)
 			(effects
 				(font
@@ -16424,6 +16483,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 38.1 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2907045"
 			(at 38.1 163.83 0)
 			(effects
 				(font
@@ -16781,7 +16849,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 96.52 82.55 0)
 			(effects
 				(font
@@ -16801,6 +16869,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 96.52 82.55 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2907045"
+			(at 96.52 82.55 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17050,7 +17127,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 170.18 161.29 0)
 			(effects
 				(font
@@ -17069,6 +17146,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 170.18 161.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906862"
 			(at 170.18 161.29 0)
 			(effects
 				(font
@@ -17324,7 +17410,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Package_DFN_QFN:DFN-8-1EP_3x3mm_P0.5mm_EP1.65x2.38mm"
 			(at 157.48 36.83 0)
 			(effects
 				(font
@@ -17343,6 +17429,15 @@
 			)
 		)
 		(property "Description" ""
+			(at 157.48 36.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C683672"
 			(at 157.48 36.83 0)
 			(effects
 				(font
@@ -17486,7 +17581,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 234.95 109.22 0)
 			(effects
 				(font
@@ -17506,6 +17601,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 234.95 109.22 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2989042"
+			(at 234.95 109.22 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17923,7 +18027,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 248.92 114.3 0)
 			(effects
 				(font
@@ -17943,6 +18047,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 248.92 114.3 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C705627"
+			(at 248.92 114.3 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17992,7 +18105,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 22.86 100.33 0)
 			(effects
 				(font
@@ -18011,6 +18124,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 22.86 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906981"
 			(at 22.86 100.33 0)
 			(effects
 				(font
@@ -18223,7 +18345,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 81.28 140.97 0)
 			(effects
 				(font
@@ -18242,6 +18364,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 81.28 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906862"
 			(at 81.28 140.97 0)
 			(effects
 				(font
@@ -18357,7 +18488,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 36.83 105.41 0)
 			(effects
 				(font
@@ -18377,6 +18508,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 36.83 105.41 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C21190"
+			(at 36.83 105.41 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -18394,73 +18534,6 @@
 			(project "m5atom_power_adc"
 				(path "/d0098cfc-b338-460c-a156-403456706079"
 					(reference "R19")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
-		(at 158.75 184.15 90)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "618629f1-9fee-4f35-bb9c-92fffc4838c3")
-		(property "Reference" "R38"
-			(at 157.734 186.436 90)
-			(effects
-				(font
-					(size 1.016 1.016)
-				)
-			)
-		)
-		(property "Value" "1"
-			(at 160.02 186.436 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 158.75 184.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 158.75 184.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, small symbol"
-			(at 158.75 184.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "773a3327-f79f-49ff-9730-e24dbed2bc00")
-		)
-		(pin "1"
-			(uuid "38b1948f-8810-40f9-95d1-e236e6d48d5a")
-		)
-		(instances
-			(project "m5atom_power_adc"
-				(path "/d0098cfc-b338-460c-a156-403456706079"
-					(reference "R38")
 					(unit 1)
 				)
 			)
@@ -18493,7 +18566,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 22.86 138.43 0)
 			(effects
 				(font
@@ -18512,6 +18585,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 22.86 138.43 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906981"
 			(at 22.86 138.43 0)
 			(effects
 				(font
@@ -18640,7 +18722,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 110.49 144.78 0)
 			(effects
 				(font
@@ -18659,6 +18741,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 110.49 144.78 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906981"
 			(at 110.49 144.78 0)
 			(effects
 				(font
@@ -19066,73 +19157,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:R_Small")
-		(at 158.75 181.61 90)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "73a84f6e-a9b6-4ab1-8860-4893e7ad4f26")
-		(property "Reference" "R36"
-			(at 157.48 179.324 90)
-			(effects
-				(font
-					(size 1.016 1.016)
-				)
-			)
-		)
-		(property "Value" "1"
-			(at 160.02 179.324 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 158.75 181.61 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 158.75 181.61 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, small symbol"
-			(at 158.75 181.61 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "4ffb2f60-fa99-4973-972e-59c9d27ed0e1")
-		)
-		(pin "1"
-			(uuid "9e3f9344-b3c8-4bee-afbf-219290d789f5")
-		)
-		(instances
-			(project "m5atom_power_adc"
-				(path "/d0098cfc-b338-460c-a156-403456706079"
-					(reference "R36")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Transistor_BJT:MMBT2222A")
 		(at 29.21 143.51 0)
 		(mirror y)
@@ -19407,7 +19431,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 125.73 140.97 0)
 			(effects
 				(font
@@ -19426,6 +19450,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 125.73 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906862"
 			(at 125.73 140.97 0)
 			(effects
 				(font
@@ -19836,7 +19869,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 265.43 78.74 0)
 			(effects
 				(font
@@ -19855,6 +19888,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 265.43 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906862"
 			(at 265.43 78.74 0)
 			(effects
 				(font
@@ -19903,7 +19945,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 240.03 114.3 0)
 			(effects
 				(font
@@ -19923,6 +19965,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 240.03 114.3 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C326601"
+			(at 240.03 114.3 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -20649,7 +20700,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 96.52 85.09 0)
 			(effects
 				(font
@@ -20669,6 +20720,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 96.52 85.09 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2907045"
+			(at 96.52 85.09 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -20686,73 +20746,6 @@
 			(project "m5atom_power_adc"
 				(path "/d0098cfc-b338-460c-a156-403456706079"
 					(reference "R3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
-		(at 153.67 184.15 90)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "90dfaabb-1249-489f-8648-7b20a21088f8")
-		(property "Reference" "R37"
-			(at 152.4 186.436 90)
-			(effects
-				(font
-					(size 1.016 1.016)
-				)
-			)
-		)
-		(property "Value" "1"
-			(at 154.94 186.436 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 153.67 184.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 153.67 184.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, small symbol"
-			(at 153.67 184.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "ae7df6f5-b0fe-44d4-8bd5-90620859e918")
-		)
-		(pin "1"
-			(uuid "b463f238-ec1d-4f68-8f9e-8ce5d4c153a1")
-		)
-		(instances
-			(project "m5atom_power_adc"
-				(path "/d0098cfc-b338-460c-a156-403456706079"
-					(reference "R37")
 					(unit 1)
 				)
 			)
@@ -20851,7 +20844,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 154.94 165.1 0)
 			(effects
 				(font
@@ -20870,6 +20863,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 154.94 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906981"
 			(at 154.94 165.1 0)
 			(effects
 				(font
@@ -20918,7 +20920,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 36.83 181.61 0)
 			(effects
 				(font
@@ -20938,6 +20940,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 36.83 181.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C21190"
+			(at 36.83 181.61 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21154,7 +21165,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 234.95 135.89 0)
 			(effects
 				(font
@@ -21174,6 +21185,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 234.95 135.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2989042"
+			(at 234.95 135.89 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21487,7 +21507,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 38.1 125.73 0)
 			(effects
 				(font
@@ -21506,6 +21526,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 38.1 125.73 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2907045"
 			(at 38.1 125.73 0)
 			(effects
 				(font
@@ -21590,6 +21619,82 @@
 			(project "m5atom_power_adc"
 				(path "/d0098cfc-b338-460c-a156-403456706079"
 					(reference "#PWR025")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R_Small")
+		(at 154.94 184.15 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "a14c6fab-683b-4b2f-b363-16408b53912d")
+		(property "Reference" "R36"
+			(at 153.924 181.864 90)
+			(effects
+				(font
+					(size 1.016 1.016)
+				)
+			)
+		)
+		(property "Value" "2W4.7"
+			(at 159.004 181.864 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_2512_6332Metric"
+			(at 154.94 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 154.94 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 154.94 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C876270"
+			(at 154.94 184.15 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "05fbc0ea-97fb-41cc-915b-84c69acbaa46")
+		)
+		(pin "1"
+			(uuid "01e17300-8ca5-4fb3-bde9-eb7276b4ae6f")
+		)
+		(instances
+			(project "m5atom_power_adc"
+				(path "/d0098cfc-b338-460c-a156-403456706079"
+					(reference "R36")
 					(unit 1)
 				)
 			)
@@ -22364,7 +22469,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 38.1 87.63 0)
 			(effects
 				(font
@@ -22383,6 +22488,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 38.1 87.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2907045"
 			(at 38.1 87.63 0)
 			(effects
 				(font
@@ -22599,7 +22713,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 86.36 45.72 0)
 			(effects
 				(font
@@ -22618,6 +22732,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 86.36 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906862"
 			(at 86.36 45.72 0)
 			(effects
 				(font
@@ -22831,7 +22954,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 262.89 78.74 0)
 			(effects
 				(font
@@ -22850,6 +22973,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 262.89 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906862"
 			(at 262.89 78.74 0)
 			(effects
 				(font
@@ -22898,7 +23030,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 240.03 140.97 0)
 			(effects
 				(font
@@ -22918,6 +23050,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 240.03 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C326601"
+			(at 240.03 140.97 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23100,7 +23241,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 132.08 41.91 0)
 			(effects
 				(font
@@ -23120,6 +23261,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 132.08 41.91 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C21190"
+			(at 132.08 41.91 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23235,7 +23385,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 22.86 107.95 0)
 			(effects
 				(font
@@ -23254,6 +23404,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 22.86 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C22967"
 			(at 22.86 107.95 0)
 			(effects
 				(font
@@ -23302,7 +23461,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 248.92 135.89 0)
 			(effects
 				(font
@@ -23322,6 +23481,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 248.92 135.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C705627"
+			(at 248.92 135.89 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23438,7 +23606,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 66.04 144.78 0)
 			(effects
 				(font
@@ -23457,6 +23625,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 66.04 144.78 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906981"
 			(at 66.04 144.78 0)
 			(effects
 				(font
@@ -23933,7 +24110,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 22.86 184.15 0)
 			(effects
 				(font
@@ -23952,6 +24129,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 22.86 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C22967"
 			(at 22.86 184.15 0)
 			(effects
 				(font
@@ -24642,7 +24828,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 248.7917 109.22 0)
 			(effects
 				(font
@@ -24662,6 +24848,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 248.7917 109.22 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C705627"
+			(at 248.7917 109.22 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24830,6 +25025,82 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R_Small")
+		(at 154.94 186.69 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "d6e8744c-fe66-4737-a4c8-b1c816b16445")
+		(property "Reference" "R37"
+			(at 153.924 184.404 90)
+			(effects
+				(font
+					(size 1.016 1.016)
+				)
+			)
+		)
+		(property "Value" "2W4.7"
+			(at 159.004 184.404 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_2512_6332Metric"
+			(at 154.94 186.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 154.94 186.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 154.94 186.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C876270"
+			(at 154.94 186.69 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "abaf79cc-596e-42a2-b9a8-5f21aa9f43e8")
+		)
+		(pin "1"
+			(uuid "e2907467-792b-4dc5-a06e-b03c62cc0e2c")
+		)
+		(instances
+			(project "m5atom_power_adc"
+				(path "/d0098cfc-b338-460c-a156-403456706079"
+					(reference "R37")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GNDA")
 		(at 143.51 46.99 0)
 		(unit 1)
@@ -24988,7 +25259,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 151.13 78.74 0)
 			(effects
 				(font
@@ -25007,6 +25278,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 151.13 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906862"
 			(at 151.13 78.74 0)
 			(effects
 				(font
@@ -25192,7 +25472,7 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
-		(at 153.67 181.61 90)
+		(at 154.94 181.61 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -25200,23 +25480,23 @@
 		(dnp no)
 		(uuid "e0e329fc-92cf-419f-b0dc-10c96699c3cb")
 		(property "Reference" "R35"
-			(at 152.654 179.324 90)
+			(at 153.924 179.324 90)
 			(effects
 				(font
 					(size 1.016 1.016)
 				)
 			)
 		)
-		(property "Value" "1"
-			(at 154.94 179.324 90)
+		(property "Value" "2W4.7"
+			(at 159.004 179.324 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" ""
-			(at 153.67 181.61 0)
+		(property "Footprint" "Resistor_SMD:R_2512_6332Metric"
+			(at 154.94 181.61 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25225,7 +25505,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 153.67 181.61 0)
+			(at 154.94 181.61 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -25234,7 +25514,16 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
-			(at 153.67 181.61 0)
+			(at 154.94 181.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C876270"
+			(at 154.94 181.61 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -26255,7 +26544,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 22.86 176.53 0)
 			(effects
 				(font
@@ -26274,6 +26563,15 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
+			(at 22.86 176.53 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C2906981"
 			(at 22.86 176.53 0)
 			(effects
 				(font
@@ -26322,7 +26620,7 @@
 				)
 			)
 		)
-		(property "Footprint" ""
+		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
 			(at 248.92 140.97 0)
 			(effects
 				(font
@@ -26342,6 +26640,15 @@
 		)
 		(property "Description" "Resistor, small symbol"
 			(at 248.92 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLC_Num" "C705627"
+			(at 248.92 140.97 90)
 			(effects
 				(font
 					(size 1.27 1.27)
