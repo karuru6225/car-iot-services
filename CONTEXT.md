@@ -74,6 +74,7 @@ car-iot-services/
 │   │       ├── register_mode.h/.cpp       Application Service: 登録ユースケース
 │   │       └── bypass_mode.h/.cpp         AT コマンド透過モード（デバッグ用）
 ├── m5atom_power_adc/                      KiCad PCB プロジェクト（電源・ADC 外付け基板）
+│   ├── CIRCUIT.md                         回路設計仕様書
 │   ├── m5atom_power_adc.kicad_pro
 │   ├── m5atom_power_adc.kicad_sch
 │   └── m5atom_power_adc.kicad_pcb
@@ -94,8 +95,17 @@ car-iot-services/
 │       └── delete/index.py                S3 直接削除（s3_keys）または Athena で対象特定 → S3 削除
 ├── web/
 │   └── index.html                         Web 管理画面（単一ファイル SPA）
+├── docs/
+│   └── obd2_honda_nvan.md                 Honda N-VAN OBD2 PID 調査メモ
+├── tools/                                 開発補助ツール
+│   ├── kicad-mcp/                         KiCad 用 MCP サーバー（Claude Code 連携）
+│   ├── kicad-mcp-server/                  KiCad MCP サーバー（別実装）
+│   └── kicad-netlist-tool/                KiCad ネットリスト解析ツール
+├── rtx830_filter_updater/                 RTX830 フィルタ更新スクリプト（予定）
 ├── ARCHITECTURE.md
-└── CONTEXT.md
+├── CONTEXT.md
+├── HARDWARE.md                            新 PCB ハードウェア設計仕様（m5atom_power_adc）
+└── SIM7080G.md                            SIM7080G AT コマンドリファレンス
 ```
 
 ## データフロー
