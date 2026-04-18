@@ -37,9 +37,9 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 0.8,
-          "height": 1.27,
-          "width": 2.54
+          "drill": 0.0,
+          "height": 3.5,
+          "width": 2.1
         },
         "silk_line_width": 0.15,
         "silk_text_italic": false,
@@ -51,7 +51,13 @@
           "min_clearance": 0.5
         }
       },
-      "diff_pair_dimensions": [],
+      "diff_pair_dimensions": [
+        {
+          "gap": 0.0,
+          "via_gap": 0.0,
+          "width": 0.0
+        }
+      ],
       "drc_exclusions": [],
       "meta": {
         "version": 2
@@ -182,7 +188,14 @@
           "td_width_to_size_filter_ratio": 0.9
         }
       ],
-      "track_widths": [],
+      "track_widths": [
+        0.0,
+        0.25,
+        0.5,
+        0.8,
+        1.5,
+        2.0
+      ],
       "tuning_pattern_settings": {
         "diff_pair_defaults": {
           "corner_radius_percentage": 80,
@@ -209,7 +222,28 @@
           "spacing": 0.6
         }
       },
-      "via_dimensions": [],
+      "via_dimensions": [
+        {
+          "diameter": 0.0,
+          "drill": 0.0
+        },
+        {
+          "diameter": 0.6,
+          "drill": 0.3
+        },
+        {
+          "diameter": 0.7,
+          "drill": 0.3
+        },
+        {
+          "diameter": 0.8,
+          "drill": 0.4
+        },
+        {
+          "diameter": 1.2,
+          "drill": 0.6
+        }
+      ],
       "zones_allow_external_fillets": false
     },
     "ipc2581": {
@@ -432,7 +466,7 @@
       "no_connect_dangling": "warning",
       "pin_not_connected": "error",
       "pin_not_driven": "error",
-      "pin_to_pin": "warning",
+      "pin_to_pin": "error",
       "power_pin_not_driven": "error",
       "same_local_global_label": "warning",
       "similar_label_and_power": "warning",
@@ -475,6 +509,27 @@
         "via_diameter": 0.8,
         "via_drill": 0.4,
         "wire_width": 6
+      },
+      {
+        "name": "1.5A",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 1.5
+      },
+      {
+        "name": "350mA",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 1,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.5
+      },
+      {
+        "name": "600mA",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.8
       }
     ],
     "meta": {
@@ -657,6 +712,34 @@
     [
       "d0098cfc-b338-460c-a156-403456706079",
       "Root"
+    ],
+    [
+      "4fe41e33-26ac-47dc-9ee5-c1e37f1f6521",
+      "RelayControl"
+    ],
+    [
+      "79f1d5f5-7707-41c1-9592-f01b6a759d9e",
+      "RelayControl1"
+    ],
+    [
+      "8c6723eb-7142-4bb9-950b-567c7b549316",
+      "RelayControl2"
+    ],
+    [
+      "051dea6d-d386-40cf-8d3d-92f95e1fe925",
+      "GroveUnit"
+    ],
+    [
+      "80ef8e19-181b-4673-955c-b259ebecd62e",
+      "GroveUnit1"
+    ],
+    [
+      "e39cac59-22dd-4c5c-b99f-ffa5c3365e74",
+      "VoltageSense"
+    ],
+    [
+      "4c20b304-aca5-4013-abd5-7f2ebae4bd20",
+      "VoltageSense1"
     ]
   ],
   "text_variables": {}
