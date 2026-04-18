@@ -342,3 +342,29 @@ infra/lte.h の定数:
   - CloudFront に AWS WAF を付けてレートリミットを適用（$5/月〜）
   - これにより WAF を1箇所に集約しつつ API Gateway へのコスト攻撃を防止できる
   - 現状は API GW スロットリングのみ適用（個人用途では十分）
+- **OTA ファームウェアアップデート**:
+  - **方式**: HTTP OTA + S3（既存インフラ流用）。MQTT 経由で更新通知を受け取り、S3 の署名付き URL から FW をダウンロードして書き込む。AWS IoT Jobs を使えばデバイス管理（進捗・エラー記録）まで対応できる。
+  - **パーティション構成**: `partitions_two_ota.csv` を使用（`app0` / `app1` 各 ~1.8MB）。8MB フラッシュなら余裕がある。`platformio.ini` に `board_build.partitions = partitions_two_ota.csv` を追加する。
+  - **OTA コードの配置**: factory パーティションは不要。OTA コードを通常の APP に同梱し、`app0` と `app1` を交互に使う構成で十分。
+  - **実装フロー**:
+    1. `esp_ota_get_next_update_partition()` — 書き込み先パーティション（自分と逆側の app）を取得
+    2. `esp_ota_begin()` — 書き込み開始
+    3. `esp_ota_write()` — チャンクごとに書き込み（HTTP レスポンスをストリーミング）
+    4. `esp_ota_end()` — SHA-256 検証を自動実施（失敗すると `ESP_ERR_OTA_VALIDATE_FAILED` を返す）
+    5. `esp_ota_set_boot_partition()` — 次回起動先を新 FW に設定
+    6. `esp_restart()` — 再起動
+  - **ロールバック防止**: 起動後に正常動作を確認したら `esp_ota_mark_app_valid_cancel_rollback()` を呼ぶ。呼ばずに再起動すると bootloader が旧 FW に戻す（`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` 有効時）。
+  - **ダウンロード完了後・再起動前の検証**:
+    - `esp_ota_end()` 内で SHA-256 検証は自動実施される。
+    - さらに自前で確認したい場合は `esp_partition_mmap()` で書き込んだパーティションをメモリマップし、ptr から SHA-256 を自前計算して期待値と比較できる:
+
+      ```c
+      esp_ota_end(handle);  // ← ここで SHA-256 検証済み
+
+      // さらに自前で確認したい場合
+      const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
+      esp_partition_mmap_handle_t mmap;
+      const void *ptr;
+      esp_partition_mmap(next, 0, size, ESP_PARTITION_MMAP_DATA, &ptr, &mmap);
+      // ptr から SHA-256 を自前計算して期待値と比較
+      ```
