@@ -76,7 +76,11 @@ car-iot-services/
 ├── m5atom_power_adc/                      KiCad PCB プロジェクト（電源・ADC 外付け基板）
 │   ├── CIRCUIT.md                         回路設計仕様書
 │   ├── m5atom_power_adc.kicad_pro
-│   ├── m5atom_power_adc.kicad_sch
+│   ├── m5atom_power_adc.kicad_sch         メインシート（1xx 番台）
+│   ├── GroveUnit.kicad_sch                サブシート: Grove ユニット制御（5xx/6xx 番台）
+│   ├── RelayControl.kicad_sch             サブシート: リレー制御（2xx/3xx/4xx 番台）
+│   ├── VoltageSense.kicad_sch             サブシート: 電圧検出（7xx/8xx 番台）
+│   ├── Library.pretty/                    カスタムフットプリント（MLT-8530 等）
 │   └── m5atom_power_adc.kicad_pcb
 ├── infra/                                 クラウドインフラ（Terraform）
 │   ├── main.tf                            プロバイダ・IoT エンドポイント

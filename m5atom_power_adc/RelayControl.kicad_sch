@@ -1077,7 +1077,7 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "power:GND2"
+		(symbol "power:GND1"
 			(power)
 			(pin_numbers
 				(hide yes)
@@ -1098,7 +1098,7 @@
 					(hide yes)
 				)
 			)
-			(property "Value" "GND2"
+			(property "Value" "GND1"
 				(at 0 -3.81 0)
 				(effects
 					(font
@@ -1124,7 +1124,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "Power symbol creates a global label with name \"GND2\" , ground"
+			(property "Description" "Power symbol creates a global label with name \"GND1\" , ground"
 				(at 0 0 0)
 				(effects
 					(font
@@ -1142,7 +1142,7 @@
 					(hide yes)
 				)
 			)
-			(symbol "GND2_0_1"
+			(symbol "GND1_0_1"
 				(polyline
 					(pts
 						(xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27)
@@ -1156,7 +1156,7 @@
 					)
 				)
 			)
-			(symbol "GND2_1_1"
+			(symbol "GND1_1_1"
 				(pin power_in line
 					(at 0 0 270)
 					(length 0)
@@ -1531,7 +1531,7 @@
 				)
 			)
 		)
-		(property "Value" "Relay0"
+		(property "Value" "Relay${RIndex}"
 			(at 116.84 93.98 0)
 			(effects
 				(font
@@ -1851,6 +1851,80 @@
 		)
 	)
 	(symbol
+		(lib_id "power:GND1")
+		(at 121.92 118.11 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "4b8e4ae2-58a1-4286-b28b-7f71adf27a98")
+		(property "Reference" "#PWR0201"
+			(at 121.92 124.46 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND1"
+			(at 121.92 123.19 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 121.92 118.11 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 121.92 118.11 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND1\" , ground"
+			(at 121.92 118.11 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "1af3a8d3-e191-4114-a5b5-8e9f1fdec0bf")
+		)
+		(instances
+			(project "m5atom_power_adc"
+				(path "/d0098cfc-b338-460c-a156-403456706079/4fe41e33-26ac-47dc-9ee5-c1e37f1f6521"
+					(reference "#PWR0201")
+					(unit 1)
+				)
+				(path "/d0098cfc-b338-460c-a156-403456706079/79f1d5f5-7707-41c1-9592-f01b6a759d9e"
+					(reference "#PWR0301")
+					(unit 1)
+				)
+				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
+					(reference "#PWR0401")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R_Small")
 		(at 118.11 107.95 0)
 		(unit 1)
@@ -1931,80 +2005,6 @@
 				)
 				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
 					(reference "R401")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND2")
-		(at 121.92 118.11 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "54b7d4bb-72a4-4b66-b866-0c0452d39eac")
-		(property "Reference" "#PWR0201"
-			(at 121.92 124.46 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND2"
-			(at 121.92 123.19 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 121.92 118.11 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 121.92 118.11 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND2\" , ground"
-			(at 121.92 118.11 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "fc726151-0d7a-4ac8-bc4b-e724d85df6ab")
-		)
-		(instances
-			(project "m5atom_power_adc"
-				(path "/d0098cfc-b338-460c-a156-403456706079/4fe41e33-26ac-47dc-9ee5-c1e37f1f6521"
-					(reference "#PWR0201")
-					(unit 1)
-				)
-				(path "/d0098cfc-b338-460c-a156-403456706079/79f1d5f5-7707-41c1-9592-f01b6a759d9e"
-					(reference "#PWR0301")
-					(unit 1)
-				)
-				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
-					(reference "#PWR0401")
 					(unit 1)
 				)
 			)
@@ -2196,7 +2196,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "R0SW"
+		(property "Value" "R${RIndex}SW"
 			(at 142.24 107.9499 0)
 			(effects
 				(font

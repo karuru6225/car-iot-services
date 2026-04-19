@@ -39,8 +39,9 @@ M5Atom S3 (ESP32-S3)
 ```
 car-iot-services/
 ├── m5atom_iot_gateway/   デバイス側ファームウェア（PlatformIO）
-├── m5atom_power_adc/     新 PCB KiCad プロジェクト（電源・ADC 外付け基板）
-│   └── CIRCUIT.md        回路設計仕様書
+├── m5atom_power_adc/     新 PCB KiCad プロジェクト（電源・ADC・リレー・ESP32-S3 直付け）
+│   ├── CIRCUIT.md        回路設計仕様書
+│   └── *.kicad_sch       階層シート構成（メイン + GroveUnit / RelayControl / VoltageSense）
 ├── infra/                クラウドインフラ（Terraform）
 │   ├── manage.ps1        デプロイスクリプト
 │   ├── gen_certs.ps1     証明書生成スクリプト（Secrets Manager → certs.h）
