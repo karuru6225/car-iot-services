@@ -25,3 +25,7 @@ Thumbs.db
 
 # KiCad レビューツール
 tools/
+
+# KiCad 解析キャッシュ（再生成可能）
+m5atom_power_adc/schematic_analysis.json
+m5atom_power_adc/pcb_analysis.json
