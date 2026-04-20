@@ -1723,7 +1723,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "52463655-ea63-4df5-ac8d-9b70ceb90236")
-		(property "Reference" "#PWR0502"
+		(property "Reference" "#PWR0503"
 			(at 133.35 97.79 0)
 			(effects
 				(font
@@ -1773,11 +1773,11 @@
 		(instances
 			(project "m5atom_power_adc"
 				(path "/d0098cfc-b338-460c-a156-403456706079/051dea6d-d386-40cf-8d3d-92f95e1fe925"
-					(reference "#PWR0502")
+					(reference "#PWR0503")
 					(unit 1)
 				)
 				(path "/d0098cfc-b338-460c-a156-403456706079/80ef8e19-181b-4673-955c-b259ebecd62e"
-					(reference "#PWR0602")
+					(reference "#PWR0603")
 					(unit 1)
 				)
 			)
@@ -1812,7 +1812,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint" "000_Local:HY2.0-4PWB"
+		(property "Footprint" "000_Local:HY2.0-4PZZ"
 			(at 132.08 104.14 0)
 			(effects
 				(font
@@ -1848,7 +1848,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C3029460"
+		(property "LCSC" "C7429580"
 			(at 132.08 104.14 0)
 			(effects
 				(font
@@ -1937,7 +1937,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C2906862"
+		(property "LCSC" "C2906862"
 			(at 129.54 76.2 0)
 			(effects
 				(font
@@ -1975,7 +1975,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "674eb7b7-bbb3-4dcd-b948-b574f18c4729")
-		(property "Reference" "#PWR0504"
+		(property "Reference" "#PWR0502"
 			(at 132.08 128.27 0)
 			(effects
 				(font
@@ -2025,11 +2025,11 @@
 		(instances
 			(project "m5atom_power_adc"
 				(path "/d0098cfc-b338-460c-a156-403456706079/051dea6d-d386-40cf-8d3d-92f95e1fe925"
-					(reference "#PWR0504")
+					(reference "#PWR0502")
 					(unit 1)
 				)
 				(path "/d0098cfc-b338-460c-a156-403456706079/80ef8e19-181b-4673-955c-b259ebecd62e"
-					(reference "#PWR0604")
+					(reference "#PWR0602")
 					(unit 1)
 				)
 			)
@@ -2092,7 +2092,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C15127"
+		(property "LCSC" "C15127"
 			(at 107.95 86.36 0)
 			(effects
 				(font
@@ -2128,7 +2128,7 @@
 		(at 105.41 97.79 180)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "be26383f-21a2-4d1c-99a0-cf5ef4f1c849")
@@ -2249,7 +2249,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C2906981"
+		(property "LCSC" "C2906981"
 			(at 114.3 80.01 0)
 			(effects
 				(font
@@ -2352,7 +2352,7 @@
 		(at 116.84 86.36 180)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "e031b148-004f-4852-ad04-7672f51018c3")
@@ -2494,7 +2494,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C8512"
+		(property "LCSC" "C8512"
 			(at 125.73 83.82 90)
 			(effects
 				(font
@@ -2579,7 +2579,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C502526"
+		(property "LCSC" "C502526"
 			(at 120.65 110.49 90)
 			(effects
 				(font
@@ -2661,7 +2661,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C502526"
+		(property "LCSC" "C502526"
 			(at 123.19 116.84 90)
 			(effects
 				(font

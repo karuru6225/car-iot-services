@@ -11,7 +11,7 @@
 		(effects
 			(font
 				(size 1 1)
-				(thickness 0.1)
+				(thickness 0.15)
 			)
 		)
 	)
@@ -58,8 +58,8 @@
 		(start -3.55 -3.3)
 		(end -3.55 -1.95)
 		(stroke
-			(width 0.1)
-			(type default)
+			(width 0.15)
+			(type solid)
 		)
 		(layer "F.SilkS")
 		(uuid "56516f19-3925-4a83-9ef1-0af50c67ff95")
@@ -68,8 +68,8 @@
 		(start -3.55 -3.3)
 		(end 3.55 -3.3)
 		(stroke
-			(width 0.1)
-			(type default)
+			(width 0.15)
+			(type solid)
 		)
 		(layer "F.SilkS")
 		(uuid "62c4f591-af88-4577-abc2-cecdbe0b9817")
@@ -78,8 +78,8 @@
 		(start -3.55 3.3)
 		(end -3.55 1.95)
 		(stroke
-			(width 0.1)
-			(type default)
+			(width 0.15)
+			(type solid)
 		)
 		(layer "F.SilkS")
 		(uuid "ac1ef3af-fe7c-4add-a389-62532e776f11")
@@ -88,8 +88,8 @@
 		(start -3.55 3.3)
 		(end 3.55 3.3)
 		(stroke
-			(width 0.1)
-			(type default)
+			(width 0.15)
+			(type solid)
 		)
 		(layer "F.SilkS")
 		(uuid "0b9c9636-aa09-4595-bcff-54a16a4d336b")
@@ -98,8 +98,8 @@
 		(start 3.55 -3.3)
 		(end 3.55 -1.95)
 		(stroke
-			(width 0.1)
-			(type default)
+			(width 0.15)
+			(type solid)
 		)
 		(layer "F.SilkS")
 		(uuid "363ebfe4-80d3-45da-839c-811c265aeae3")
@@ -108,8 +108,8 @@
 		(start 3.55 3.3)
 		(end 3.55 1.95)
 		(stroke
-			(width 0.1)
-			(type default)
+			(width 0.15)
+			(type solid)
 		)
 		(layer "F.SilkS")
 		(uuid "d84d7e78-5903-47d5-babf-04a834fcc56c")

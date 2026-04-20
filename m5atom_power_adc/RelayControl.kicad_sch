@@ -1444,7 +1444,7 @@
 		(at 125.73 105.41 180)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(uuid "1aa45f5d-0989-401c-a9f6-16ec398f5d96")
@@ -1566,7 +1566,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C158012"
+		(property "LCSC" "C158012"
 			(at 116.84 100.33 0)
 			(effects
 				(font
@@ -1661,7 +1661,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C965799"
+		(property "LCSC" "C965799"
 			(at 133.35 101.6 90)
 			(effects
 				(font
@@ -1745,8 +1745,8 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C21190"
-			(at 129.54 95.25 90)
+		(property "LCSC" "C21190"
+			(at 129.54 95.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1978,7 +1978,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C2906981"
+		(property "LCSC" "C2906981"
 			(at 118.11 107.95 0)
 			(effects
 				(font
@@ -2062,7 +2062,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C21190"
+		(property "LCSC" "C21190"
 			(at 132.08 113.03 90)
 			(effects
 				(font
@@ -2146,8 +2146,8 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C21190"
-			(at 132.08 95.25 90)
+		(property "LCSC" "C21190"
+			(at 132.08 95.25 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2232,7 +2232,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C158012"
+		(property "LCSC" "C158012"
 			(at 139.7 105.41 0)
 			(effects
 				(font
@@ -2340,7 +2340,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C8512"
+		(property "LCSC" "C8512"
 			(at 124.46 113.03 0)
 			(effects
 				(font
@@ -2448,7 +2448,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C2128"
+		(property "LCSC" "C2128"
 			(at 125.73 101.6 90)
 			(effects
 				(font
@@ -2534,7 +2534,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C22967"
+		(property "LCSC" "C22967"
 			(at 118.11 115.57 0)
 			(effects
 				(font

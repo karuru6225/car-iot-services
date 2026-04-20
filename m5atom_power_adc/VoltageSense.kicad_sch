@@ -767,7 +767,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C326601"
+		(property "LCSC" "C326601"
 			(at 110.49 95.25 90)
 			(effects
 				(font
@@ -849,7 +849,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C77069"
+		(property "LCSC" "C77069"
 			(at 129.54 99.06 0)
 			(effects
 				(font
@@ -882,7 +882,7 @@
 		(at 133.35 90.17 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
 		(dnp no)
 		(fields_autoplaced yes)
@@ -1001,7 +1001,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C2989042"
+		(property "LCSC" "C2989042"
 			(at 105.41 90.17 90)
 			(effects
 				(font
@@ -1081,7 +1081,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C705627"
+		(property "LCSC" "C705627"
 			(at 119.38 95.25 90)
 			(effects
 				(font
@@ -1161,7 +1161,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C705627"
+		(property "LCSC" "C705627"
 			(at 119.38 90.17 90)
 			(effects
 				(font
@@ -1243,7 +1243,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C464977"
+		(property "LCSC" "C464977"
 			(at 133.35 92.71 0)
 			(effects
 				(font
@@ -1325,7 +1325,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLC_Num" "C77069"
+		(property "LCSC" "C77069"
 			(at 125.73 99.06 0)
 			(effects
 				(font
