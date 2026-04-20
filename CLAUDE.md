@@ -26,6 +26,12 @@ pio run -t upload && pio device monitor
 - `delay()` よりノンブロッキング処理（`millis()` 利用）を優先する
 - ピン番号は `const int` で定数化する
 
+## KiCad ファイル編集禁止
+
+`.kicad_sch` / `.kicad_pcb` / `.kicad_sym` / `.kicad_mod` などの KiCad ファイルを Claude が直接編集することは**絶対禁止**。
+
+回路図・PCB への変更依頼が来た場合は、KiCad 上での操作手順を説明する形で回答すること。
+
 ## 開発フロー上の制約
 
 このエディタ（Claude Code）でコードを編集し、PlatformIO でビルド・書き込みを行う。
