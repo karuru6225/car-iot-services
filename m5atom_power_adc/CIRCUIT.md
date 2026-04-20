@@ -358,3 +358,47 @@ ESP32-S3-MINI-1 がディープスリープ、パワースイッチで LTE / Gro
 | J2 | GROVE-CONNECTOR | 4 | LTE モジュール（SIM7080G）5V/GND/TX/RX |
 | J9 | GROVE-CONNECTOR | 4 | Grove 2（Res0_0/Res0_1、+5V スイッチ） |
 | J3 | Conn_01x04_Pin | 4 | UART デバッグ（TXD0/RXD0/3.3V/GND） |
+
+---
+
+## GPIO ピンアサイン（U103 ESP32-S3-MINI-1）
+
+### m5atom_power_adc（本基板）
+
+| GPIO | 信号名 | 方向 | 用途 |
+| ---- | ------ | ---- | ---- |
+| IO0 | GPIO0/BOOT | IN | ブートモード切替（LOW でダウンロードモード） |
+| IO1 | — | — | NC |
+| IO2 | — | — | NC |
+| IO3 | — | — | NC |
+| IO4 | LTE_RX | IN | SIM7080G UART TX → ESP32 RX |
+| IO5 | LTE_TX | OUT | ESP32 TX → SIM7080G UART RX |
+| IO6 | LTE_EN | OUT | SIM7080G パワースイッチ制御（HIGH = ON） |
+| IO7 | GU_0 | IN/OUT | Grove Unit 0 信号線 |
+| IO8 | GU_1 | IN/OUT | Grove Unit 1 信号線 |
+| IO9 | GU_EN | OUT | Grove Unit パワースイッチ制御（HIGH = ON） |
+| IO10 | RelaySense0 | IN | リレー ch0 外部スイッチ検出（負論理） |
+| IO11 | Relay0 | OUT | リレー ch0 駆動（HIGH = ON） |
+| IO12 | RelaySense1 | IN | リレー ch1 外部スイッチ検出（負論理） |
+| IO13 | Relay1 | OUT | リレー ch1 駆動（HIGH = ON） |
+| IO14 | RelaySense2 | IN | リレー ch2 外部スイッチ検出（負論理） |
+| IO15 | Relay2 | OUT | リレー ch2 駆動（HIGH = ON） |
+| IO16 | ADC_READY | IN | ADS1115 ALERT/RDY（変換完了割り込み） |
+| IO17 | SDA | IN/OUT | I2C データ（ADS1115） |
+| IO18 | SCL | OUT | I2C クロック（ADS1115） |
+| IO21 | CHG_ON | OUT | 充電制御 |
+| IO26 | Btn0 | IN | ボタン 0 |
+| IO33 | Btn1 | IN | ボタン 1 |
+| IO35 | SPEAKER | OUT | ブザー / スピーカー |
+| IO43 | TXD0 | OUT | UART0 デバッグ出力（J3） |
+| IO44 | RXD0 | IN | UART0 デバッグ入力（J3） |
+
+### m5atom_iot_gateway（旧基板 / M5Atom S3）
+
+`m5atom_iot_gateway/src/` 内の定義値。
+
+| GPIO | 信号名 | 定義箇所 | 備考 |
+| ---- | ------ | -------- | ---- |
+| IO5 | LTE_TX | `infra/lte.h` | G2 → U128 RXD |
+| IO6 | LTE_RX | `infra/lte.h` | G1 ← U128 TXD |
+| IO41 | BTN | `config.h` | M5Atom S3 ボタン（Active-LOW） |
