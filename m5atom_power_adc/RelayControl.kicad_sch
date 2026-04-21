@@ -1239,7 +1239,7 @@
 	)
 	(wire
 		(pts
-			(xy 129.54 92.71) (xy 132.08 92.71)
+			(xy 129.54 92.71) (xy 133.35 92.71)
 		)
 		(stroke
 			(width 0)
@@ -1266,16 +1266,6 @@
 			(type default)
 		)
 		(uuid "5663fe40-b0ef-4588-b4dd-725b2514a53b")
-	)
-	(wire
-		(pts
-			(xy 132.08 97.79) (xy 133.35 97.79)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5b81350b-0bb8-4cf9-b344-7c6cf1f59595")
 	)
 	(wire
 		(pts
@@ -1326,6 +1316,16 @@
 			(type default)
 		)
 		(uuid "a0aa8c12-f51b-4531-a89d-dccfaa7f31c8")
+	)
+	(wire
+		(pts
+			(xy 133.35 92.71) (xy 133.35 97.79)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a332115d-90c5-4fb6-842b-222d0905dbb6")
 	)
 	(wire
 		(pts
@@ -1710,15 +1710,15 @@
 				)
 			)
 		)
-		(property "Value" "1k"
-			(at 128.524 91.948 0)
+		(property "Value" "680 500mW"
+			(at 132.08 91.694 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
 			(at 129.54 95.25 0)
 			(effects
 				(font
@@ -1745,7 +1745,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C21190"
+		(property "LCSC" "C543547"
 			(at 129.54 95.25 0)
 			(effects
 				(font
@@ -2089,90 +2089,6 @@
 				)
 				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
 					(reference "R405")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
-		(at 132.08 95.25 180)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "6ad52ee7-1196-40e5-8f2e-215cc3b89ad0")
-		(property "Reference" "R204"
-			(at 133.096 90.17 0)
-			(effects
-				(font
-					(size 1.016 1.016)
-				)
-			)
-		)
-		(property "Value" "1k"
-			(at 133.096 91.948 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 132.08 95.25 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 132.08 95.25 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, small symbol"
-			(at 132.08 95.25 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "LCSC" "C21190"
-			(at 132.08 95.25 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "73ef6528-7fb1-4610-b726-6012f509c9a6")
-		)
-		(pin "1"
-			(uuid "5e3de6bc-47cd-4cf0-b4a0-38158798da9c")
-		)
-		(instances
-			(project "m5atom_power_adc"
-				(path "/d0098cfc-b338-460c-a156-403456706079/4fe41e33-26ac-47dc-9ee5-c1e37f1f6521"
-					(reference "R204")
-					(unit 1)
-				)
-				(path "/d0098cfc-b338-460c-a156-403456706079/79f1d5f5-7707-41c1-9592-f01b6a759d9e"
-					(reference "R304")
-					(unit 1)
-				)
-				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
-					(reference "R404")
 					(unit 1)
 				)
 			)
