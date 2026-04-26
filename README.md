@@ -6,7 +6,7 @@ SORACOM Cat-M 経由で AWS IoT Core に送信する。
 
 ## システム構成
 
-```
+```text
 M5Atom S3 (ESP32-S3)
   ├── ADS1115 で車載バッテリー電圧測定
   └── SwitchBot BLE センサースキャン（温湿度計 / CO2センサー）
@@ -27,34 +27,38 @@ M5Atom S3 (ESP32-S3)
 ## ハードウェア
 
 | 項目 | 内容 |
-|---|---|
+| ---- | ---- |
 | MCU | M5Atom S3（ESP32-S3） |
-| ADC | ADS1115（I2C: SDA=G38, SCL=G39, ADDR=0x49）|
+| ADC | ADS1115（I2C: SDA=G38, SCL=G39, ADDR=0x49） |
 | センサー | SwitchBot WoIOSensor（温湿度計）/ CO2センサー |
 | LTE | M5Stack U128（SIM7080G）、SORACOM SIM |
 | 電源 | 車載 12V → DC-DC → M5Atom S3 |
 
 ## リポジトリ構成
 
-```
+```text
 car-iot-services/
-├── m5atom_iot_gateway/   デバイス側ファームウェア（PlatformIO）
-├── m5atom_power_adc/     新 PCB KiCad プロジェクト（電源・ADC・リレー・ESP32-S3 直付け）
-│   ├── CIRCUIT.md        回路設計仕様書
-│   └── *.kicad_sch       階層シート構成（メイン + GroveUnit / RelayControl / VoltageSense）
-├── infra/                クラウドインフラ（Terraform）
-│   ├── manage.ps1        デプロイスクリプト
-│   ├── gen_certs.ps1     証明書生成スクリプト（Secrets Manager → certs.h）
-│   └── lambda_src/       Lambda ソースコード
+├── m5atom_iot_gateway/    M5Atom S3 ゲートウェイ（電圧測定・BLE スキャン・MQTT送信）
+├── esp32_iot_gateway/     ESP32-S3-MINI-1 ゲートウェイ（OTA・AWS IoT Jobs）
+│   └── OTA.md             OTA 仕様ドキュメント
+├── m5atom_power_adc/      新 PCB KiCad プロジェクト（電源・ADC・リレー・ESP32-S3 直付け）
+│   ├── CIRCUIT.md         回路設計仕様書
+│   └── *.kicad_sch        階層シート構成（メイン + GroveUnit / RelayControl / VoltageSense）
+├── infra/                 クラウドインフラ（Terraform）
+│   ├── manage.ps1         デプロイスクリプト
+│   ├── gen_certs.ps1      証明書生成スクリプト（m5atom 用）
+│   ├── provision_device.sh / .ps1  ESP32 初回プロビジョニング
+│   ├── deploy_ota.sh / .ps1        OTA ファームウェアデプロイ
+│   └── lambda_src/        Lambda ソースコード
 ├── web/
-│   └── index.html        Web 管理画面（単一ファイル SPA）
-├── docs/                 調査・設計メモ
-├── tools/                開発補助ツール（KiCad MCP サーバー等）
+│   └── index.html         Web 管理画面（単一ファイル SPA）
+├── docs/                  調査・設計メモ
+├── tools/                 開発補助ツール（KiCad MCP サーバー等）
 ├── rtx830_filter_updater/ RTX830 フィルタ更新スクリプト
 ├── ARCHITECTURE.md
-├── CONTEXT.md            開発引き継ぎ資料
-├── HARDWARE.md           新 PCB ハードウェア設計仕様
-└── SIM7080G.md           SIM7080G AT コマンドリファレンス
+├── CONTEXT.md             開発引き継ぎ資料
+├── HARDWARE.md            新 PCB ハードウェア設計仕様
+└── SIM7080G.md            SIM7080G AT コマンドリファレンス
 ```
 
 ## デプロイ

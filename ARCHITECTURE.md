@@ -7,9 +7,12 @@
 │  デバイス層                                                    │
 │  m5atom_iot_gateway/  (M5Atom S3 + ADS1115 + SIM7080G)       │
 │    電圧測定・BLE スキャン → MQTT over TLS → AWS IoT Core      │
+│  esp32_iot_gateway/   (ESP32-S3-MINI-1 + SIM7080G)           │
+│    OTA チェック（AWS IoT Jobs）→ MQTT over TLS → AWS IoT Core │
 ├──────────────────────────────────────────────────────────────┤
 │  クラウド層 (infra/)                                           │
-│  IoT Core → Topic Rule → Lambda(ingest) → S3                 │
+│  IoT Core → Topic Rule → Lambda(ingest) → S3(data)           │
+│  IoT Jobs → OTA 更新ジョブ管理 → デバイス → S3(firmware) DL  │
 │  API GW → Lambda(query/delete) → Athena → S3                 │
 │  CloudFront → S3(web) → Web 管理画面                          │
 └──────────────────────────────────────────────────────────────┘
@@ -129,10 +132,12 @@ Terraform で管理。主要リソース：
 
 | リソース | 役割 |
 | --- | --- |
-| AWS IoT Core Thing + 証明書 + Policy | デバイス認証・MQTT エンドポイント |
+| AWS IoT Core Thing + 証明書 + Policy | デバイス認証・MQTT エンドポイント（ポリシーはデバイス共通・ワイルドカード） |
 | IoT Topic Rule (`sensors/+/data`) | MQTT メッセージを Lambda ingest に転送 |
+| AWS IoT Jobs | OTA 更新ジョブのキュー管理・状態追跡（QUEUED→IN_PROGRESS→SUCCEEDED/FAILED） |
 | Lambda `ingest` | JSON を S3 に保存（パーティション付き） |
-| S3 バケット（データ用） | `raw/year=/month=/day=/hour=/` 階層構造 |
+| S3 バケット（データ用） | `raw/year=/month=/day=/hour=/` 階層構造（非公開） |
+| S3 バケット（ファームウェア配布用） | OTA firmware.bin を公開配置（証明書をファームに含まないため公開可） |
 | Glue Database + Table | S3 データのスキーマ定義・パーティションプロジェクション |
 | Athena Workgroup | SQL クエリ実行 |
 | Lambda `query` | Athena 非同期クエリ発行・結果取得 |
