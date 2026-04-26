@@ -10,7 +10,6 @@
 
 #include <Arduino.h>
 #include "config.h"
-#include "certs.h"
 #include "infra/lte.h"
 #include "infra/logger.h"
 #include "infra/ota.h"

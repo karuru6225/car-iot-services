@@ -1,10 +1,20 @@
 #include "lte.h"
 #include "logger.h"
-#include "certs.h"
-#include <nvs.h>
+#include "device.h"
+#include "../config.h"
 #include <esp_rom_crc.h>
+#include <SPIFFS.h>
 
 Lte lte;
+
+static String readSpiffsFile(const char *path)
+{
+  File f = SPIFFS.open(path, "r");
+  if (!f) return String();
+  String s = f.readString();
+  f.close();
+  return s;
+}
 
 // ─── AT コマンドユーティリティ ────────────────────────────────────────────
 
@@ -113,14 +123,22 @@ bool Lte::mqttConnect()
   if (state.indexOf("+SMSTATE: 1") >= 0)
     return true;
 
+  const char *mqttHost = getMqttHost();
+  if (!mqttHost) {
+    logger.println("[MQTT] mqtt_host が NVS に未設定");
+    return false;
+  }
+
   String urlCmd = "AT+SMCONF=\"URL\",\"";
-  urlCmd += MQTT_HOST;
-  urlCmd += "\",\"8883\"";
+  urlCmd += mqttHost;
+  urlCmd += "\",\"";
+  urlCmd += String(MQTT_PORT);
+  urlCmd += "\"";
   if (!sendCmd(urlCmd.c_str()))
     return false;
 
   String idCmd = "AT+SMCONF=\"CLIENTID\",\"";
-  idCmd += MQTT_CLIENT_ID;
+  idCmd += getDeviceId();
   idCmd += "\"";
   sendCmd(idCmd.c_str());
   sendCmd("AT+SMCONF=\"KEEPTIME\",60");
@@ -288,7 +306,7 @@ int Lte::httpGetOta(const char *url,
 
   // MQTT とは独立した TLS 接続（SIM7080G は同時接続可能）
   // モデム内蔵 CA ストアで検証。Amazon Root CA が含まれない場合は
-  // certs.h に S3_ROOT_CA を追加し uploadCert() で登録すること
+  // SPIFFS の /certs/ca.crt に S3 の Root CA を追加して uploadCert() で登録すること
   TinyGsmClientSecure client(_modem);
   if (!client.connect(host, port)) {
     logger.println("[OTA] HTTP 接続失敗");
@@ -444,35 +462,38 @@ void Lte::setup()
     }
   }
 
-  uint32_t crc = esp_rom_crc32_le(0,    (const uint8_t *)AWS_ROOT_CA,  strlen(AWS_ROOT_CA));
-  crc           = esp_rom_crc32_le(crc, (const uint8_t *)DEVICE_CERT, strlen(DEVICE_CERT));
-  crc           = esp_rom_crc32_le(crc, (const uint8_t *)DEVICE_KEY,  strlen(DEVICE_KEY));
-
-  bool needUpload = true;
-  nvs_handle_t nvsHandle;
-  if (nvs_open("lte", NVS_READONLY, &nvsHandle) == ESP_OK) {
-    uint32_t stored = 0;
-    if (nvs_get_u32(nvsHandle, "cert_crc", &stored) == ESP_OK && stored == crc)
-      needUpload = false;
-    nvs_close(nvsHandle);
+  if (!SPIFFS.begin()) {
+    logger.println("[LTE] SPIFFS マウント失敗");
+    return;
   }
+
+  String caCert  = readSpiffsFile(CERT_PATH_CA);
+  String devCert = readSpiffsFile(CERT_PATH_DEVICE);
+  String devKey  = readSpiffsFile(CERT_PATH_KEY);
+
+  if (caCert.isEmpty() || devCert.isEmpty() || devKey.isEmpty()) {
+    logger.printf("[LTE] 証明書ファイルなし（要プロビジョニング: %s, %s, %s）\n",
+                  CERT_PATH_CA, CERT_PATH_DEVICE, CERT_PATH_KEY);
+    return;
+  }
+
+  uint32_t crc = esp_rom_crc32_le(0,    (const uint8_t *)caCert.c_str(),  caCert.length());
+  crc           = esp_rom_crc32_le(crc, (const uint8_t *)devCert.c_str(), devCert.length());
+  crc           = esp_rom_crc32_le(crc, (const uint8_t *)devKey.c_str(),  devKey.length());
+
+  uint32_t stored = 0;
+  bool needUpload = !getCertCrc(stored) || stored != crc;
 
   if (needUpload) {
     logger.printf("[LTE] 証明書アップロード中... (CRC=0x%08X)\n", crc);
     sendCmd("AT+CFSINIT");
-    uploadCert("ca.crt", AWS_ROOT_CA);
-    uploadCert("client.crt", DEVICE_CERT);
-    uploadCert("client.key", DEVICE_KEY);
+    uploadCert("ca.crt",     caCert.c_str());
+    uploadCert("client.crt", devCert.c_str());
+    uploadCert("client.key", devKey.c_str());
     sendCmd("AT+CFSTERM");
     sendCmdResp("AT+CSSLCFG=\"CONVERT\",2,\"ca.crt\"", 5000);
     sendCmd("AT+CSSLCFG=\"CONVERT\",1,\"client.crt\",\"client.key\"");
-
-    nvs_handle_t nvsW;
-    if (nvs_open("lte", NVS_READWRITE, &nvsW) == ESP_OK) {
-      nvs_set_u32(nvsW, "cert_crc", crc);
-      nvs_commit(nvsW);
-      nvs_close(nvsW);
-    }
+    setCertCrc(crc);
     logger.println("[LTE] 証明書アップロード完了");
   } else {
     logger.printf("[LTE] 証明書アップロードスキップ (CRC=0x%08X 一致)\n", crc);

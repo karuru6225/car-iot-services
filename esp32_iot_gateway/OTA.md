@@ -157,22 +157,23 @@ MQTT 接続が確認できた = 証明書・ネットワークともに正常と
 
 ---
 
-## 証明書管理
+## 証明書・デバイス設定管理
 
 ### 保存場所
 
-証明書は `certs.h` にコンパイル時定数として埋め込まれ、SIM7080G の内部フラッシュに書き込まれる。
+ビルド時にファームバイナリへ埋め込む秘密情報はない。すべてプロビジョニング時に書き込む。
 
-```
-certs.h（ファームバイナリ）
-        ↓ 初回のみ
-SIM7080G 内部フラッシュ（ca.crt / client.crt / client.key）
-```
+| データ | 保存場所 | 内容 |
+| ------ | -------- | ---- |
+| CA cert | SPIFFS `/certs/ca.crt` | Amazon Root CA |
+| device cert | SPIFFS `/certs/device.crt` | デバイス証明書 |
+| device key | SPIFFS `/certs/device.key` | デバイス秘密鍵 |
+| MQTT ホスト | NVS `device/mqtt_host` | IoT Core エンドポイント |
+| device ID | 不要（MAC アドレスから起動時に生成） | `esp32-gw-aabbccddeeff` 形式 |
 
-### アップロードの判断
+### SIM7080G へのアップロード判断
 
-NVS（名前空間 `lte`、キー `cert_crc`）に保存した CRC32 と、
-現在の `certs.h` 内容の CRC32 を比較する。
+SPIFFS 上の証明書ファイル3本の CRC32 を NVS（`lte/cert_crc`）に保存済みの値と比較する。
 
 - **一致**: スキップ（SIM7080G フラッシュへの書き込みなし）
 - **不一致 / 未保存**: アップロードして CRC を更新
@@ -180,16 +181,15 @@ NVS（名前空間 `lte`、キー `cert_crc`）に保存した CRC32 と、
 ### 証明書の更新手順
 
 1. AWS IoT Core で新しい証明書を発行し、同じ Thing にアタッチ（旧証明書は有効のまま残す）
-2. `certs.h` を新しい証明書で更新
-3. OTA で新ファームを配信（旧証明書で通信できているうちに）
-4. デバイスが新 cert の CRC 不一致を検出 → SIM7080G に新 cert をアップロード
-5. 動作確認後、AWS IoT Core で旧証明書を無効化
+2. プロビジョニングスクリプトで新しい cert を SPIFFS に書き込む（`pio run -t uploadfs`）
+3. 再起動時に CRC 不一致を検出 → SIM7080G に新 cert をアップロード
+4. 動作確認後、AWS IoT Core で旧証明書を無効化
 
 ### 注意事項
 
 - 証明書が無効な状態では MQTT 接続できないため OTA トリガーを受け取れない
-- 完全に詰まった場合は USB/UART 直結での書き込みで復旧する
-- AWS IoT Core の device cert はデフォルトで有効期限なし。期限切れによる突然の無効化は発生しない
+- 完全に詰まった場合は USB 直結での書き込みで復旧する
+- AWS IoT Core の device cert はデフォルトで有効期限なし
 
 ---
 
@@ -222,4 +222,5 @@ NVS（名前空間 `lte`、キー `cert_crc`）に保存した CRC32 と、
 
 - OTA バイナリの最大サイズ: **3840KB**（各スロットのサイズ）
 - factory パーティションなし。完全故障時は物理アクセスで復旧
-- デバイスごとに `certs.h` が異なるため、現状は共通ファームの OTA 配信は不可
+- ファームバイナリに秘密情報なし。証明書・デバイス設定はプロビジョニング時に書き込む
+- 共通ファームの OTA 配信が可能（device ID は MAC から生成、cert/設定は SPIFFS/NVS から読む）

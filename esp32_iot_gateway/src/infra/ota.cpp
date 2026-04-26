@@ -1,10 +1,9 @@
 #include "ota.h"
 #include "lte.h"
 #include "logger.h"
-#include "certs.h"
+#include "device.h"
 #include "../config.h"
 #include <esp_ota_ops.h>
-#include <nvs.h>
 #include <ArduinoJson.h>
 
 Ota ota;
@@ -75,7 +74,7 @@ bool Ota::updateJobStatus(const char *jobId, const char *status, const char *rea
 {
   char topic[160];
   snprintf(topic, sizeof(topic),
-    "$aws/things/%s/jobs/%s/update", MQTT_CLIENT_ID, jobId);
+    "$aws/things/%s/jobs/%s/update", getDeviceId(), jobId);
 
   char payload[256];
   if (reason) {
@@ -90,15 +89,8 @@ bool Ota::updateJobStatus(const char *jobId, const char *status, const char *rea
 
 void Ota::reportPendingJobResult()
 {
-  nvs_handle_t nvs;
-  if (nvs_open("ota", NVS_READONLY, &nvs) != ESP_OK) return;
-
   char jobId[64] = {};
-  size_t len = sizeof(jobId);
-  esp_err_t err = nvs_get_str(nvs, "job_id", jobId, &len);
-  nvs_close(nvs);
-
-  if (err != ESP_OK || jobId[0] == '\0') return;
+  if (!getPendingJobId(jobId, sizeof(jobId))) return;
 
   const esp_partition_t *running = esp_ota_get_running_partition();
   esp_ota_img_states_t state;
@@ -114,11 +106,7 @@ void Ota::reportPendingJobResult()
     logger.printf("[OTA] ジョブ %s: FAILED（ロールバック検出）\n", jobId);
   }
 
-  if (nvs_open("ota", NVS_READWRITE, &nvs) == ESP_OK) {
-    nvs_erase_key(nvs, "job_id");
-    nvs_commit(nvs);
-    nvs_close(nvs);
-  }
+  clearPendingJobId();
 }
 
 bool Ota::check()
@@ -127,11 +115,11 @@ bool Ota::check()
 
   char acceptedTopic[128], rejectedTopic[128], getTopic[128];
   snprintf(acceptedTopic, sizeof(acceptedTopic),
-    "$aws/things/%s/jobs/$next/get/accepted", MQTT_CLIENT_ID);
+    "$aws/things/%s/jobs/$next/get/accepted", getDeviceId());
   snprintf(rejectedTopic, sizeof(rejectedTopic),
-    "$aws/things/%s/jobs/$next/get/rejected", MQTT_CLIENT_ID);
+    "$aws/things/%s/jobs/$next/get/rejected", getDeviceId());
   snprintf(getTopic, sizeof(getTopic),
-    "$aws/things/%s/jobs/$next/get", MQTT_CLIENT_ID);
+    "$aws/things/%s/jobs/$next/get", getDeviceId());
 
   if (!lte.subscribe(acceptedTopic)) return false;
   lte.subscribe(rejectedTopic);
@@ -184,12 +172,7 @@ bool Ota::check()
 
   updateJobStatus(jobId, "IN_PROGRESS");
 
-  nvs_handle_t nvs;
-  if (nvs_open("ota", NVS_READWRITE, &nvs) == ESP_OK) {
-    nvs_set_str(nvs, "job_id", jobId);
-    nvs_commit(nvs);
-    nvs_close(nvs);
-  }
+  setPendingJobId(jobId);
 
   // url は doc のライフタイムに依存するためコピーして渡す
   static char urlBuf[768];
