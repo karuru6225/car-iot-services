@@ -27,26 +27,33 @@ resource "aws_secretsmanager_secret_version" "device_cert" {
 # ─── IoT Policy ───────────────────────────────────────────────────────────────
 
 resource "aws_iot_policy" "device" {
-  name = "${var.project}-${var.device_id}"
+  # デバイス共通ポリシー（MAC ベースの device ID に対応するためワイルドカードを使用）
+  name = "${var.project}-device"
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect   = "Allow"
         Action   = "iot:Connect"
-        Resource = "arn:aws:iot:${var.aws_region}:*:client/${var.device_id}"
+        Resource = "arn:aws:iot:${var.aws_region}:*:client/*"
       },
       {
-        Effect   = "Allow"
-        Action   = "iot:Publish"
-        Resource = "arn:aws:iot:${var.aws_region}:*:topic/sensors/${var.device_id}/data"
+        Effect = "Allow"
+        Action = "iot:Publish"
+        Resource = [
+          "arn:aws:iot:${var.aws_region}:*:topic/sensors/*/data",
+          "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/jobs/$next/get",
+          "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/jobs/*/update",
+        ]
       },
       {
         Effect = "Allow"
         Action = ["iot:Subscribe", "iot:Receive"]
         Resource = [
-          "arn:aws:iot:${var.aws_region}:*:topicfilter/commands/${var.device_id}",
-          "arn:aws:iot:${var.aws_region}:*:topic/commands/${var.device_id}",
+          "arn:aws:iot:${var.aws_region}:*:topicfilter/commands/*",
+          "arn:aws:iot:${var.aws_region}:*:topic/commands/*",
+          "arn:aws:iot:${var.aws_region}:*:topicfilter/$aws/things/*/jobs/*",
+          "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/jobs/*",
         ]
       },
     ]
