@@ -8,25 +8,29 @@ class SwitchBotCallback : public BLEAdvertisedDeviceCallbacks
 {
   void onResult(BLEAdvertisedDevice dev)
   {
-    if (!dev.haveManufacturerData()) return;
+    if (!dev.haveManufacturerData())
+      return;
     std::string mf = dev.getManufacturerData();
-    if (mf.length() < 2) return;
+    if (mf.length() < 2)
+      return;
 
     uint16_t companyId = ((uint8_t)mf[1] << 8) | (uint8_t)mf[0];
-    if (companyId != SWITCHBOT_COMPANY_ID) return;
+    if (companyId != SWITCHBOT_COMPANY_ID)
+      return;
 
     std::string addr = dev.getAddress().toString();
 
     if (regMode.isScanning())
     {
-      regMode.foundDevice(addr);
+      regMode.foundDevice(addr.c_str());
       return;
     }
 
-    if (!targets.isTarget(addr)) return;
+    if (!targets.isTarget(addr.c_str()))
+      return;
 
     std::string sd = dev.haveServiceData() ? dev.getServiceData() : std::string();
-    SensorVariant v = SensorParserFactory::parse(addr, dev.getRSSI(), mf, sd);
+    SensorVariant v = SensorParserFactory::parse(addr.c_str(), dev.getRSSI(), mf, sd);
     xQueueSend(scanner.queue, &v, 0);
   }
 };

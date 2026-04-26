@@ -213,11 +213,11 @@ bool Lte::syncTime()
 
   struct tm t2 = {};
   t2.tm_year = ts.substring(0, 2).toInt() + 100; // 2000年基準 → 1900年基準
-  t2.tm_mon  = ts.substring(3, 5).toInt() - 1;
+  t2.tm_mon = ts.substring(3, 5).toInt() - 1;
   t2.tm_mday = ts.substring(6, 8).toInt();
   t2.tm_hour = ts.substring(9, 11).toInt();
-  t2.tm_min  = ts.substring(12, 14).toInt();
-  t2.tm_sec  = ts.substring(15, 17).toInt();
+  t2.tm_min = ts.substring(12, 14).toInt();
+  t2.tm_sec = ts.substring(15, 17).toInt();
 
   // タイムゾーンオフセット（1/4時間単位）を UTC に換算
   int tzQuarters = 0;
@@ -245,7 +245,7 @@ void Lte::setup()
   SerialAT.begin(115200, SERIAL_8N1, LTE_RX_PIN, LTE_TX_PIN);
   delay(3000);
   _modem.init();
-  sendCmd("ATE0");         // エコー無効化
+  sendCmd("ATE0");       // エコー無効化
   sendCmd("AT+CSCLK=0"); // スロークロック無効化（NVRAM 保存値を上書き）
   for (int i = 0; i < 5; i++)
   {
@@ -282,13 +282,13 @@ void Lte::setup()
   }
 
   // 証明書をモデムのファイルシステムに書き込む
-  logger.println("[LTE] 証明書アップロード中...");
-  sendCmd("AT+CFSINIT");
-  uploadCert("ca.crt", AWS_ROOT_CA);
-  uploadCert("client.crt", DEVICE_CERT);
-  uploadCert("client.key", DEVICE_KEY);
-  sendCmd("AT+CFSTERM");
-  logger.println("[LTE] 証明書アップロード完了");
+  // logger.println("[LTE] 証明書アップロード中...");
+  // sendCmd("AT+CFSINIT");
+  // uploadCert("ca.crt", AWS_ROOT_CA);
+  // uploadCert("client.crt", DEVICE_CERT);
+  // uploadCert("client.key", DEVICE_KEY);
+  // sendCmd("AT+CFSTERM");
+  // logger.println("[LTE] 証明書アップロード完了");
 
   // ファイル存在確認（デバッグ用）
   sendCmdResp("AT+CFSGFIS=3,\"ca.crt\"", 3000);
@@ -296,9 +296,9 @@ void Lte::setup()
   sendCmdResp("AT+CFSGFIS=3,\"client.key\"", 3000);
 
   // SSL コンテキスト 0 に証明書を設定
-  sendCmd("AT+CSSLCFG=\"sslversion\",0,3");                           // TLS 1.2
-  sendCmdResp("AT+CSSLCFG=\"CONVERT\",2,\"ca.crt\"", 5000);           // CA LIST（ERRORでも続行）
-  sendCmd("AT+CSSLCFG=\"CONVERT\",1,\"client.crt\",\"client.key\"");  // クライアント証明書+鍵
+  sendCmd("AT+CSSLCFG=\"sslversion\",0,3");                          // TLS 1.2
+  sendCmdResp("AT+CSSLCFG=\"CONVERT\",2,\"ca.crt\"", 5000);          // CA LIST（ERRORでも続行）
+  sendCmd("AT+CSSLCFG=\"CONVERT\",1,\"client.crt\",\"client.key\""); // クライアント証明書+鍵
 
   if (connect())
     syncTime();
