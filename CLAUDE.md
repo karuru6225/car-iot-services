@@ -5,6 +5,9 @@
 ## よく使うコマンド
 
 ```bash
+# Python（システム未インストール。PlatformIO 付属を使う）
+~/.platformio/penv/Scripts/python.exe script.py
+
 # ビルド（m5atom_iot_gateway ディレクトリで実行）
 pio run
 
