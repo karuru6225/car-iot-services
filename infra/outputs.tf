@@ -23,6 +23,21 @@ output "web_url" {
   value       = "https://${local.web_domain}"
 }
 
+output "firmware_bucket" {
+  description = "OTA ファームウェア配置先バケット名"
+  value       = aws_s3_bucket.firmware.bucket
+}
+
+output "firmware_base_url" {
+  description = "OTA ファームウェア配置先ベース URL"
+  value       = "https://${aws_s3_bucket.firmware.bucket}.s3.${var.aws_region}.amazonaws.com"
+}
+
+output "iot_policy_name" {
+  description = "デバイス共通 IoT ポリシー名（プロビジョニング時に使用）"
+  value       = aws_iot_policy.device.name
+}
+
 output "web_bucket" {
   description = "Web 静的ファイル用 S3 バケット名"
   value       = aws_s3_bucket.web.bucket
