@@ -1669,7 +1669,7 @@
 		(at 120.65 100.33)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "42b96246-669d-4986-9c15-ddcc0781fac2")
+		(uuid "2f6e3933-1ddf-4dd4-ac92-dd3313398b54")
 	)
 	(junction
 		(at 120.65 121.92)
@@ -1729,7 +1729,7 @@
 		(at 123.19 102.87)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "ab8c7733-f484-4d46-974d-90c56c5da054")
+		(uuid "af27a8cc-01ee-4782-80a9-f44408c6ad6f")
 	)
 	(junction
 		(at 105.41 97.79)
@@ -1742,6 +1742,26 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "ed225846-add7-4618-9afb-a4037cb24787")
+	)
+	(wire
+		(pts
+			(xy 123.19 102.87) (xy 128.27 102.87)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "072bd7dc-3d3e-4d30-8efd-1772af10f340")
+	)
+	(wire
+		(pts
+			(xy 120.65 100.33) (xy 128.27 100.33)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0c266c72-c293-4caa-a5c8-79195013a789")
 	)
 	(wire
 		(pts
@@ -1792,26 +1812,6 @@
 			(type default)
 		)
 		(uuid "1a8496f2-51e9-4623-910f-3d3edaafbb98")
-	)
-	(wire
-		(pts
-			(xy 120.65 100.33) (xy 128.27 100.33)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "22e0906b-d256-429e-b573-c80c3956e3ad")
-	)
-	(wire
-		(pts
-			(xy 128.27 105.41) (xy 125.73 105.41)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "22e31fd2-c238-462e-9297-11926b058468")
 	)
 	(wire
 		(pts
@@ -2035,16 +2035,6 @@
 	)
 	(wire
 		(pts
-			(xy 123.19 102.87) (xy 128.27 102.87)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c2ccf566-300f-4d67-a3b6-eefa9cefe680")
-	)
-	(wire
-		(pts
 			(xy 120.65 121.92) (xy 110.49 121.92)
 		)
 		(stroke
@@ -2105,13 +2095,23 @@
 	)
 	(wire
 		(pts
+			(xy 125.73 105.41) (xy 128.27 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f2e242a0-e30e-4e2e-8275-ea470483028f")
+	)
+	(wire
+		(pts
 			(xy 125.73 107.95) (xy 128.27 107.95)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "fd0d876a-129e-4783-b784-97416d2092a8")
+		(uuid "f3c57c8d-a633-4fdd-8fb8-7c5dc48aaf9a")
 	)
 	(hierarchical_label "Pin1"
 		(shape bidirectional)
@@ -2462,15 +2462,15 @@
 	(symbol
 		(lib_id "OPL_Connector:GROVE-CONNECTOR-DIP_4P-2.0_")
 		(at 132.08 104.14 0)
+		(mirror x)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "555310b5-5636-443a-bc35-ef484480889e")
 		(property "Reference" "J501"
-			(at 137.16 102.87 0)
+			(at 137.16 105.41 0)
 			(effects
 				(font
 					(size 1.143 1.143)
@@ -2479,7 +2479,7 @@
 			)
 		)
 		(property "Value" "GROVE-CONNECTOR"
-			(at 137.16 105.41 0)
+			(at 137.16 102.87 0)
 			(effects
 				(font
 					(size 1.143 1.143)
@@ -2516,7 +2516,7 @@
 			)
 		)
 		(property "SKU" "320110033"
-			(at 132.842 100.33 0)
+			(at 132.842 107.95 0)
 			(effects
 				(font
 					(size 0.508 0.508)
@@ -2586,7 +2586,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 129.54 76.2 0)
 			(effects
 				(font
@@ -2613,7 +2613,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906862"
+		(property "LCSC" "C25804"
 			(at 129.54 76.2 0)
 			(effects
 				(font
@@ -3007,7 +3007,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906981"
+		(property "LCSC" "C25803"
 			(at 114.3 80.01 0)
 			(effects
 				(font
@@ -3053,7 +3053,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "200"
+		(property "Value" "390"
 			(at 105.156 115.316 0)
 			(effects
 				(font
@@ -3089,7 +3089,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C8218"
+		(property "LCSC" "C23151"
 			(at 110.49 111.76 0)
 			(effects
 				(font

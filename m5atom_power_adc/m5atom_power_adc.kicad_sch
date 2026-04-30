@@ -8167,6 +8167,12 @@
 		(uuid "453ad391-5e74-40e8-abbe-2bba08683c17")
 	)
 	(junction
+		(at 114.3 36.83)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "477e85c5-92b9-4462-bfa7-1bcc2f91b0b9")
+	)
+	(junction
 		(at 81.28 49.53)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -8207,18 +8213,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "6007ebcf-8952-4c71-a8f2-6e9845d92c77")
-	)
-	(junction
-		(at 124.46 36.83)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "62251ec1-b431-44d4-93c4-47ae3a5b0a65")
-	)
-	(junction
-		(at 128.27 41.91)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "6403677e-73dc-45cb-a8a7-97121cb521c9")
 	)
 	(junction
 		(at 102.87 77.47)
@@ -8279,6 +8273,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "9bb8f716-445a-4f34-b82d-36e5fae5033a")
+	)
+	(junction
+		(at 132.08 33.02)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "a18f6b13-dd9f-411f-b9df-e5d52de9007c")
 	)
 	(junction
 		(at 227.33 78.74)
@@ -8502,6 +8502,16 @@
 	)
 	(wire
 		(pts
+			(xy 114.3 36.83) (xy 124.46 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "01221d4d-b67e-47eb-adc8-c88adce7bd28")
+	)
+	(wire
+		(pts
 			(xy 170.18 82.55) (xy 151.13 82.55)
 		)
 		(stroke
@@ -8662,6 +8672,16 @@
 	)
 	(wire
 		(pts
+			(xy 134.62 33.02) (xy 132.08 33.02)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1c9d4100-7f0f-4020-8c57-271126e0112a")
+	)
+	(wire
+		(pts
 			(xy 281.94 33.02) (xy 283.21 33.02)
 		)
 		(stroke
@@ -8732,7 +8752,7 @@
 	)
 	(wire
 		(pts
-			(xy 113.03 36.83) (xy 124.46 36.83)
+			(xy 113.03 36.83) (xy 114.3 36.83)
 		)
 		(stroke
 			(width 0)
@@ -9292,6 +9312,16 @@
 	)
 	(wire
 		(pts
+			(xy 129.54 33.02) (xy 129.54 34.29)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6002331f-dd32-4dd4-a6f6-70c831afb551")
+	)
+	(wire
+		(pts
 			(xy 304.8 81.28) (xy 298.45 81.28)
 		)
 		(stroke
@@ -9832,6 +9862,16 @@
 	)
 	(wire
 		(pts
+			(xy 132.08 31.75) (xy 132.08 33.02)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "973e6d55-d5ff-4e86-b98e-8d0dc1ac32b7")
+	)
+	(wire
+		(pts
 			(xy 80.01 36.83) (xy 81.28 36.83)
 		)
 		(stroke
@@ -9909,6 +9949,16 @@
 			(type default)
 		)
 		(uuid "a0fee1c7-89c5-4619-87e8-0d4ae0b42b2e")
+	)
+	(wire
+		(pts
+			(xy 134.62 33.02) (xy 134.62 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a1b4d27e-3c3b-496b-b966-92d7dc04943e")
 	)
 	(wire
 		(pts
@@ -10149,6 +10199,16 @@
 			(type default)
 		)
 		(uuid "babe8c2a-ae49-4f57-b85e-49d703e0a3c3")
+	)
+	(wire
+		(pts
+			(xy 129.54 33.02) (xy 132.08 33.02)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bb6b883c-bf39-43ff-95c1-ad7bf27ab69a")
 	)
 	(wire
 		(pts
@@ -10502,16 +10562,6 @@
 	)
 	(wire
 		(pts
-			(xy 128.27 41.91) (xy 129.54 41.91)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d721a008-c324-486e-a465-1d0a5ee5dca0")
-	)
-	(wire
-		(pts
 			(xy 278.13 91.44) (xy 278.13 92.71)
 		)
 		(stroke
@@ -10662,7 +10712,7 @@
 	)
 	(wire
 		(pts
-			(xy 128.27 41.91) (xy 124.46 41.91)
+			(xy 124.46 41.91) (xy 129.54 41.91)
 		)
 		(stroke
 			(width 0)
@@ -10839,16 +10889,6 @@
 			(type default)
 		)
 		(uuid "f54fc7fc-6028-41ac-b880-ee7af27cbd02")
-	)
-	(wire
-		(pts
-			(xy 128.27 34.29) (xy 128.27 41.91)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f5c4568e-a2a4-4d1c-87b2-b2b1b73ee66e")
 	)
 	(wire
 		(pts
@@ -13663,7 +13703,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 289.56 69.85 0)
 			(effects
 				(font
@@ -13690,7 +13730,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906862"
+		(property "LCSC" "C25804"
 			(at 289.56 69.85 0)
 			(effects
 				(font
@@ -15458,7 +15498,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2907045"
+		(property "LCSC" "C23186"
 			(at 96.52 82.55 90)
 			(effects
 				(font
@@ -15642,7 +15682,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 170.18 161.29 0)
 			(effects
 				(font
@@ -15669,7 +15709,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906862"
+		(property "LCSC" "C25804"
 			(at 170.18 161.29 0)
 			(effects
 				(font
@@ -16231,7 +16271,7 @@
 		(dnp no)
 		(uuid "50dbe346-1e9f-4060-b6b5-4c10b9e43a1b")
 		(property "Reference" "L101"
-			(at 117.094 39.37 90)
+			(at 115.57 38.862 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16817,7 +16857,7 @@
 	)
 	(symbol
 		(lib_id "power:+5V")
-		(at 128.27 34.29 0)
+		(at 132.08 31.75 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -16826,7 +16866,7 @@
 		(fields_autoplaced yes)
 		(uuid "6edaa2b2-7533-4769-9bdd-08db207ba8d0")
 		(property "Reference" "#PWR0113"
-			(at 128.27 38.1 0)
+			(at 132.08 35.56 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16835,7 +16875,7 @@
 			)
 		)
 		(property "Value" "+5V"
-			(at 128.27 29.21 0)
+			(at 132.08 26.67 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16843,7 +16883,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 128.27 34.29 0)
+			(at 132.08 31.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16852,7 +16892,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 128.27 34.29 0)
+			(at 132.08 31.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16861,7 +16901,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+5V\""
-			(at 128.27 34.29 0)
+			(at 132.08 31.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17174,7 +17214,7 @@
 				)
 			)
 		)
-		(property "Value" "SSL36"
+		(property "Value" "2A"
 			(at 109.5375 73.66 0)
 			(effects
 				(font
@@ -17182,7 +17222,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Diode_SMD:D_SMA"
+		(property "Footprint" "Diode_SMD:D_SOD-123F"
 			(at 109.22 77.47 0)
 			(effects
 				(font
@@ -17209,7 +17249,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C28646286"
+		(property "LCSC" "C496544"
 			(at 109.22 77.47 0)
 			(effects
 				(font
@@ -17494,7 +17534,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 298.45 77.47 0)
 			(effects
 				(font
@@ -17521,7 +17561,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906862"
+		(property "LCSC" "C25804"
 			(at 298.45 77.47 0)
 			(effects
 				(font
@@ -17863,7 +17903,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2907045"
+		(property "LCSC" "C23186"
 			(at 96.52 85.09 90)
 			(effects
 				(font
@@ -18007,7 +18047,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906981"
+		(property "LCSC" "C25803"
 			(at 154.94 165.1 0)
 			(effects
 				(font
@@ -18190,7 +18230,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 227.33 73.66 0)
 			(effects
 				(font
@@ -18217,7 +18257,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906862"
+		(property "LCSC" "C25804"
 			(at 227.33 73.66 0)
 			(effects
 				(font
@@ -18368,6 +18408,82 @@
 			(project "m5atom_power_adc"
 				(path "/d0098cfc-b338-460c-a156-403456706079"
 					(reference "#PWR0139")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:D_Schottky")
+		(at 129.54 38.1 270)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "9eaca17b-1134-4eca-bd4f-133428cbfd1b")
+		(property "Reference" "D110"
+			(at 123.19 37.7825 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "2A"
+			(at 125.73 37.7825 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Diode_SMD:D_SOD-123F"
+			(at 129.54 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 129.54 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Schottky diode"
+			(at 129.54 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C496544"
+			(at 129.54 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "5b83a4fb-fdb0-4547-a878-85f73db33a20")
+		)
+		(pin "1"
+			(uuid "7e7c1e6e-02c5-40a3-a2a9-7a5cb6543cfb")
+		)
+		(instances
+			(project "m5atom_power_adc"
+				(path "/d0098cfc-b338-460c-a156-403456706079"
+					(reference "D110")
 					(unit 1)
 				)
 			)
@@ -19179,7 +19295,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "100k"
 			(at 88.9 46.9899 0)
 			(effects
 				(font
@@ -19188,7 +19304,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 86.36 45.72 0)
 			(effects
 				(font
@@ -19215,7 +19331,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906862"
+		(property "LCSC" "C25803"
 			(at 86.36 45.72 0)
 			(effects
 				(font
@@ -19336,7 +19452,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 295.91 77.47 0)
 			(effects
 				(font
@@ -19363,7 +19479,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906862"
+		(property "LCSC" "C25804"
 			(at 295.91 77.47 0)
 			(effects
 				(font
@@ -19456,7 +19572,7 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
-		(at 132.08 41.91 90)
+		(at 134.62 39.37 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -19465,23 +19581,25 @@
 		(fields_autoplaced yes)
 		(uuid "be271d2f-1721-404a-b2a2-1c6b62092e73")
 		(property "Reference" "R104"
-			(at 132.08 36.83 90)
+			(at 137.16 38.0999 0)
 			(effects
 				(font
 					(size 1.016 1.016)
 				)
+				(justify right)
 			)
 		)
-		(property "Value" "200"
-			(at 132.08 39.37 90)
+		(property "Value" "390"
+			(at 137.16 40.6399 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify right)
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 132.08 41.91 0)
+			(at 134.62 39.37 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19490,7 +19608,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 132.08 41.91 0)
+			(at 134.62 39.37 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19499,7 +19617,7 @@
 			)
 		)
 		(property "Description" "Resistor, small symbol"
-			(at 132.08 41.91 0)
+			(at 134.62 39.37 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19507,8 +19625,8 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C8218"
-			(at 132.08 41.91 90)
+		(property "LCSC" "C23151"
+			(at 134.62 39.37 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -20671,7 +20789,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 151.13 78.74 0)
 			(effects
 				(font
@@ -20698,7 +20816,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906862"
+		(property "LCSC" "C25804"
 			(at 151.13 78.74 0)
 			(effects
 				(font
@@ -21275,7 +21393,7 @@
 	)
 	(symbol
 		(lib_id "Connector:TestPoint")
-		(at 124.46 36.83 0)
+		(at 114.3 36.83 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -21283,7 +21401,7 @@
 		(dnp no)
 		(uuid "e5eb7df6-d71e-49fa-be26-6b91218c1bd2")
 		(property "Reference" "TP103"
-			(at 119.888 33.274 0)
+			(at 109.982 31.496 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21292,7 +21410,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 125.7299 31.75 90)
+			(at 115.5699 31.75 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21302,7 +21420,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 129.54 36.83 0)
+			(at 119.38 36.83 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21311,7 +21429,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 129.54 36.83 0)
+			(at 119.38 36.83 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21320,7 +21438,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 124.46 36.83 0)
+			(at 114.3 36.83 0)
 			(effects
 				(font
 					(size 1.27 1.27)

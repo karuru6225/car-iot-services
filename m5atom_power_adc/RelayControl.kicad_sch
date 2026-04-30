@@ -1710,7 +1710,7 @@
 				)
 			)
 		)
-		(property "Value" "680 500mW"
+		(property "Value" "1.5k"
 			(at 132.08 91.694 0)
 			(effects
 				(font
@@ -1718,7 +1718,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
 			(at 129.54 95.25 0)
 			(effects
 				(font
@@ -1745,7 +1745,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C543547"
+		(property "LCSC" "C114929"
 			(at 129.54 95.25 0)
 			(effects
 				(font
@@ -1978,7 +1978,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2906981"
+		(property "LCSC" "C25803"
 			(at 118.11 107.95 0)
 			(effects
 				(font
