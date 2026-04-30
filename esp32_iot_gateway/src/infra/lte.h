@@ -8,13 +8,13 @@
 #define SerialAT Serial2
 #include <TinyGsmClient.h>
 
-static const uint8_t LTE_RX_PIN       = 4;
-static const uint8_t LTE_TX_PIN       = 5;
-static const uint8_t LTE_EN_PIN       = 6;
-static const char   *APN              = "soracom.io";
-static const char   *APN_USER         = "sora";
-static const char   *APN_PASS         = "sora";
-static const int     SEND_INTERVAL_SEC = 60;
+static const uint8_t LTE_RX_PIN = 7;
+static const uint8_t LTE_TX_PIN = 8;
+static const uint8_t LTE_EN_PIN = 9;
+static const char *APN = "soracom.io";
+static const char *APN_USER = "sora";
+static const char *APN_PASS = "sora";
+static const int SEND_INTERVAL_SEC = 60;
 
 class Lte
 {
@@ -30,6 +30,9 @@ public:
 
   // ラジオオフ（DeepSleep 前に呼ぶ）
   void radioOff();
+
+  // 電源オフ（完全に電源を切る。再度電源オンするには setup() を呼ぶ必要がある）
+  void powerOff();
 
   // GPRS 接続中か確認
   bool isConnected();
@@ -59,13 +62,13 @@ public:
   bool syncTime();
 
 private:
-  TinyGsm       _modem{SerialAT};
+  TinyGsm _modem{SerialAT};
   TinyGsmClient _client{_modem};
 
-  void   uploadCert(const char *filename, const char *pem);
-  bool   mqttConnect();
+  void uploadCert(const char *filename, const char *pem);
+  bool mqttConnect();
   String sendCmdResp(const char *cmd, uint32_t timeoutMs = 3000);
-  bool   sendCmd(const char *cmd, uint32_t timeoutMs = 3000);
+  bool sendCmd(const char *cmd, uint32_t timeoutMs = 3000);
 
   static bool parseUrl(const char *url,
                        char *host, int hostSize,

@@ -13,14 +13,31 @@
 #include "infra/lte.h"
 #include "infra/logger.h"
 #include "infra/ota.h"
+#include "infra/device.h"
+
+#include "music.h"
+#include "oled.h"
+#include "ads.h"
+#include "ina228.h"
 
 #include <esp_sleep.h>
+
+#define SPEEKER_PIN 34
+#define RELAY_2_PIN 15
+#define BTN0_PIN 26
+#define BTN1_PIN 33
+#define UNITX_EN_PIN 9
 
 void setup()
 {
   logger.init();
-  delay(500);
+  delay(1000);
   logger.printf("\n=== esp32_iot_gateway %s 起動 ===\n", FIRMWARE_VERSION);
+
+  oledInit();
+  adsInit();
+  ina228Init();
+  oledPrint("Hello, world!");
 
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
 
@@ -42,16 +59,45 @@ void setup()
 #else
   logger.println("[MAIN] OTA チェック完了（デバッグモード: 待機ループ）");
 #endif
+  // tone(SPEEKER_PIN, 1000, 100); // 起動確認用の音
+  // delay(100);
+  // tone(SPEEKER_PIN, 1500, 100);
+  // delay(100);
+  // tone(SPEEKER_PIN, 2000, 100);
+
+  playMelody(SPEEKER_PIN);
+  pinMode(SPEEKER_PIN, OUTPUT);
+  digitalWrite(SPEEKER_PIN, HIGH); // SPEAKER_PINは負論理。HIGHで回路遮断
+
+  pinMode(RELAY_2_PIN, OUTPUT);
+  pinMode(BTN0_PIN, INPUT_PULLUP);
+  pinMode(BTN1_PIN, INPUT_PULLUP);
+
+  // pinMode(UNITX_EN_PIN, OUTPUT);
+
+  char topic[80];
+  snprintf(topic, sizeof(topic), "$aws/things/%s/shadow/update", getDeviceId());
+  char payload[160];
+  snprintf(payload, sizeof(payload), "{\"state\":{\"reported\":{\"ts\":%lld}}}", (long long)time(nullptr));
+  lte.publish(topic, payload);
+  delay(1000);
+  lte.powerOff(); // 電源オフ（完全に電源を切る。再度電源オンするには setup() を呼ぶ必要がある）
 }
 
 void loop()
 {
-#ifdef DEBUG_MODE
-  delay(30000);
-  logger.println("[LOOP] 30秒経過（OTA 待ち受け中）");
+  bool btn0 = digitalRead(BTN0_PIN) == LOW;
+  bool btn1 = digitalRead(BTN1_PIN) == LOW;
+  float voltage = adsReadDiff01();
+  float voltage2 = adsReadDiff23();
 
-  // デバッグモードでも定期的に OTA チェック
-  if (lte.isConnected())
-    ota.check();
-#endif
+  digitalWrite(RELAY_2_PIN, HIGH);
+  // digitalWrite(UNITX_EN_PIN, HIGH);
+  oledShowStatus(voltage, voltage2, true, btn0, btn1);
+  delay(3000);
+  digitalWrite(RELAY_2_PIN, LOW);
+  // digitalWrite(UNITX_EN_PIN, LOW);
+  oledShowStatus(voltage, voltage2, false, btn0, btn1);
+  delay(3000);
+  ina228PrintStatus();
 }
