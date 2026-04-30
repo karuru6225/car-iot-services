@@ -1,10 +1,12 @@
 # Terraform
 infra/.terraform/
+ops/.venv/
 infra/terraform.tfvars
 infra/*.tfplan
 
 # 証明書・秘密鍵（実機用、公開禁止）
 m5atom_iot_gateway/src/certs.h
+esp32_iot_gateway/src/provision_config.h
 
 # Terraform バックエンド設定（バケット名等を含む）
 infra/backend.tfbackend
