@@ -169,6 +169,32 @@ resource "aws_iam_role_policy" "lambda_labels" {
   })
 }
 
+# ─── Lambda status 実行ロール（IoT Shadow 読み取り） ─────────────────────────
+
+resource "aws_iam_role" "lambda_status" {
+  name               = "${var.project}-lambda-status"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "lambda_status" {
+  role = aws_iam_role.lambda_status.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "iot:GetThingShadow"
+        Resource = "arn:aws:iot:${var.aws_region}:*:thing/*"
+      },
+    ]
+  })
+}
+
 # ─── Lambda delete 実行ロール（S3 削除 + Athena クエリ） ─────────────────────
 
 resource "aws_iam_role" "lambda_delete" {

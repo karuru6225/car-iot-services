@@ -3,6 +3,7 @@ locals {
   query_src_dir  = "${path.module}/lambda_src/query"
   delete_src_dir = "${path.module}/lambda_src/delete"
   labels_src_dir = "${path.module}/lambda_src/labels"
+  status_src_dir = "${path.module}/lambda_src/status"
   build_dir      = "${path.module}/.build"
 }
 
@@ -28,6 +29,12 @@ data "archive_file" "labels" {
   type        = "zip"
   source_dir  = local.labels_src_dir
   output_path = "${local.build_dir}/labels.zip"
+}
+
+data "archive_file" "status" {
+  type        = "zip"
+  source_dir  = local.status_src_dir
+  output_path = "${local.build_dir}/status.zip"
 }
 
 # ─── ingest Lambda（IoT Core → S3 書き込み） ─────────────────────────────────
@@ -106,6 +113,25 @@ resource "aws_lambda_function" "labels" {
   }
 }
 
+# ─── status Lambda（API GW → IoT Shadow 読み取り） ───────────────────────────
+
+resource "aws_lambda_function" "status" {
+  function_name    = "${var.project}-status"
+  filename         = data.archive_file.status.output_path
+  source_code_hash = data.archive_file.status.output_base64sha256
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  role             = aws_iam_role.lambda_status.arn
+  timeout          = 10
+
+  environment {
+    variables = {
+      THING_NAME   = aws_iot_thing.device.name
+      IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
+    }
+  }
+}
+
 # ─── API Gateway HTTP API ─────────────────────────────────────────────────────
 
 resource "aws_apigatewayv2_api" "main" {
@@ -167,6 +193,13 @@ resource "aws_apigatewayv2_integration" "labels" {
   payload_format_version = "2.0"
 }
 
+resource "aws_apigatewayv2_integration" "status" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.status.invoke_arn
+  payload_format_version = "2.0"
+}
+
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
 resource "aws_apigatewayv2_route" "query" {
@@ -201,6 +234,14 @@ resource "aws_apigatewayv2_route" "labels_put" {
   authorization_type = "JWT"
 }
 
+resource "aws_apigatewayv2_route" "status" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "GET /status"
+  target             = "integrations/${aws_apigatewayv2_integration.status.id}"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
+}
+
 # ─── Lambda Permissions ───────────────────────────────────────────────────────
 
 resource "aws_lambda_permission" "apigw_query" {
@@ -223,6 +264,14 @@ resource "aws_lambda_permission" "apigw_labels" {
   statement_id  = "AllowAPIGWInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.labels.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "apigw_status" {
+  statement_id  = "AllowAPIGWInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.status.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }

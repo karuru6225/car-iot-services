@@ -42,6 +42,7 @@ resource "aws_iot_policy" "device" {
         Action = "iot:Publish"
         Resource = [
           "arn:aws:iot:${var.aws_region}:*:topic/sensors/*/data",
+          "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/shadow/update",
           "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/jobs/$next/get",
           "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/jobs/*/update",
         ]
