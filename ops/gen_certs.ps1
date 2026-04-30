@@ -26,25 +26,28 @@ if ($Profile) {
   Invoke-Expression ($credEnv -join "`n")
 }
 
-$BackendFile = 'backend.tfbackend'
-$TfvarsFile  = 'terraform.tfvars'
+$InfraDir    = Resolve-Path "$PSScriptRoot\..\infra"
+$BackendFile = "$InfraDir\backend.tfbackend"
+$TfvarsFile  = "$InfraDir\terraform.tfvars"
 
 if (-not (Test-Path $BackendFile)) {
-  Write-Error "backend.tfbackend not found."
+  Write-Error "backend.tfbackend not found: $BackendFile"
   exit 1
 }
 if (-not (Test-Path $TfvarsFile)) {
-  Write-Error "terraform.tfvars not found."
+  Write-Error "terraform.tfvars not found: $TfvarsFile"
   exit 1
 }
 
+Push-Location $InfraDir
 Write-Host '==> terraform init'
 terraform init -backend-config $BackendFile -reconfigure | Out-Null
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
 
 Write-Host '==> Getting terraform outputs'
 $MqttHost  = terraform output -raw iot_endpoint
 $SecretArn = terraform output -raw secrets_manager_arn
+Pop-Location
 
 if (-not $MqttHost -or -not $SecretArn) {
   Write-Error "Failed to get terraform outputs. Make sure terraform apply has completed."
@@ -93,7 +96,7 @@ $RootCa = 'MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF' + [
 $Lines = @(
   '#pragma once'
   '// AWS IoT Core certificate'
-  '// Regenerate with: infra/gen_certs.ps1 (after terraform apply)'
+  '// Regenerate with: ops/gen_certs.ps1 (after terraform apply)'
   ''
   "#define MQTT_HOST `"$MqttHost`""
   '#define MQTT_PORT 8883'

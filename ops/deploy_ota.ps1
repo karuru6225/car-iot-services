@@ -5,23 +5,38 @@
 #   .\deploy_ota.ps1 -Version 1.2.0 -ThingName esp32-gw-aabbccddeeff
 #
 # ThingName を省略すると esp32-gw-* に一致する全 Thing を対象にする
-# infra\ ディレクトリで実行すること
+# ops\ ディレクトリで実行すること
 
 param(
   [Parameter(Mandatory)][string]$Version,
-  [string]$ThingName = ""
+  [string]$ThingName = "",
+  [string]$Profile = ''
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Profile) {
+  $env:AWS_PROFILE = $Profile
+  Write-Host "AWS profile: $Profile"
+
+  Write-Host '==> aws configure export-credentials'
+  $credEnv = aws configure export-credentials --profile $Profile --format powershell
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to get credentials. Run 'aws login' first and try again."
+    exit 1
+  }
+  Invoke-Expression ($credEnv -join "`n")
+}
 
 $ScriptDir   = $PSScriptRoot
 $ProjectDir  = Resolve-Path "$ScriptDir\..\esp32_iot_gateway"
 $BuildDir    = "$ProjectDir\.pio\build\esp32-s3-devkitc-1"
 $FirmwareBin = "$BuildDir\firmware.bin"
+$Pio         = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
 
 # ─── Terraform outputs から設定を取得 ────────────────────────────────────────
 
-Push-Location $ScriptDir
+Push-Location "$ScriptDir\..\infra"
 $Bucket  = terraform output -raw firmware_bucket
 $BaseUrl = terraform output -raw firmware_base_url
 $Region  = "ap-northeast-1"
@@ -42,7 +57,7 @@ Write-Host ""
 
 Write-Host ">>> ファームウェアをビルド中..."
 Push-Location $ProjectDir
-pio run
+& $Pio run
 Pop-Location
 Write-Host "ビルド完了: $FirmwareBin"
 

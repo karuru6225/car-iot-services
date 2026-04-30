@@ -8,7 +8,7 @@
 # 必要なもの:
 #   - AWS CLI（設定済み）
 #   - PlatformIO（pio コマンド）
-#   - esp32_iot_gateway ディレクトリで実行すること
+#   - ops/ ディレクトリで実行すること
 
 set -euo pipefail
 
@@ -19,7 +19,7 @@ PYTHON="$HOME/.platformio/penv/Scripts/python.exe"
 
 # ─── Terraform outputs から設定を取得 ────────────────────────────────────────
 
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR/../infra"
 MQTT_HOST=$(terraform output -raw iot_endpoint)
 POLICY_NAME=$(terraform output -raw iot_policy_name)
 cd "$PROJECT_DIR"

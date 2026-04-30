@@ -1,115 +1,168 @@
-# provision_device.ps1 - ESP32 デバイスの初回プロビジョニング
+# provision_device.ps1 - ESP32 device initial provisioning
 #
-# 使い方:
+# Usage:
 #   .\provision_device.ps1 -Port COM3
 #
-# 必要なもの:
-#   - AWS CLI（設定済み）
-#   - PlatformIO（pio コマンド）
-#   - infra/ ディレクトリで実行すること
+# Requirements:
+#   - AWS CLI (configured)
+#   - PlatformIO (pio command)
+#   - Run from ops/ directory
 
 param(
-  [Parameter(Mandatory)][string]$Port
+  [Parameter(Mandatory)][string]$Port,
+  [string]$Profile = ''
 )
 
 $ErrorActionPreference = "Stop"
 
+if ($Profile) {
+  $env:AWS_PROFILE = $Profile
+  Write-Host "AWS profile: $Profile"
+
+  Write-Host '==> aws configure export-credentials'
+  $credEnv = aws configure export-credentials --profile $Profile --format powershell
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to get credentials. Run 'aws login' first and try again."
+    exit 1
+  }
+  Invoke-Expression ($credEnv -join "`n")
+}
+
 $ScriptDir  = $PSScriptRoot
 $ProjectDir = Resolve-Path "$ScriptDir\..\esp32_iot_gateway"
 $Python     = "$env:USERPROFILE\.platformio\penv\Scripts\python.exe"
+$Esptool    = "$env:USERPROFILE\.platformio\packages\tool-esptoolpy\esptool.py"
+$Pio        = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
 
-# ─── Terraform outputs から設定を取得 ────────────────────────────────────────
+# --- Get config from Terraform outputs ---
 
-Push-Location $ScriptDir
+Push-Location "$ScriptDir\..\infra"
 $MqttHost   = terraform output -raw iot_endpoint
 $PolicyName = terraform output -raw iot_policy_name
 Pop-Location
 
-Write-Host "=== ESP32 プロビジョニング ==="
+Write-Host "=== ESP32 Provisioning ==="
 Write-Host "Port:        $Port"
 Write-Host "MQTT_HOST:   $MqttHost"
 Write-Host "POLICY_NAME: $PolicyName"
 Write-Host ""
 
-# ─── 1. MAC アドレスから device ID を生成 ─────────────────────────────────────
+# --- 1. Generate device ID from MAC address ---
 
-Write-Host ">>> MAC アドレスを読み取り中..."
-$MacOutput = & $Python -m esptool --port $Port read_mac 2>&1
-$MacRaw    = ($MacOutput | Select-String "MAC:").ToString() -replace ".*MAC:\s*", ""
-if (-not $MacRaw) { throw "MAC アドレスの読み取りに失敗しました" }
+Write-Host ">>> Reading MAC address..."
+$MacOutput = & $Python $Esptool --port $Port read_mac 2>&1
+$MacRaw    = [regex]::Match($MacOutput -join '', "MAC:\s*([0-9a-fA-F:]{17})").Groups[1].Value
+if (-not $MacRaw) { throw "Failed to read MAC address" }
 
 $DeviceId = "esp32-gw-$($MacRaw -replace ':', '')"
 Write-Host "DEVICE_ID:   $DeviceId"
 Write-Host ""
 
-# ─── 2. AWS IoT Thing を作成 ──────────────────────────────────────────────────
+# --- 2. Create AWS IoT Thing ---
 
-Write-Host ">>> AWS IoT Thing を作成中..."
-aws iot create-thing --thing-name $DeviceId | Out-Null
-Write-Host "Thing 作成: $DeviceId"
+Write-Host ">>> Creating AWS IoT Thing..."
+$thingResult = aws iot create-thing --thing-name $DeviceId 2>&1
+if ($LASTEXITCODE -ne 0 -and ($thingResult -notmatch 'ResourceAlreadyExistsException')) {
+  throw "create-thing failed: $thingResult"
+}
+Write-Host "Thing: $DeviceId"
 
-# ─── 3. 証明書を発行・有効化 ──────────────────────────────────────────────────
+# --- 3. Deactivate and detach existing certificates ---
 
-Write-Host ">>> 証明書を発行中..."
-$CertsDir = "$ProjectDir\data\certs"
-New-Item -ItemType Directory -Force -Path $CertsDir | Out-Null
+Write-Host ">>> Deactivating existing certificates..."
+$principals = aws iot list-thing-principals --thing-name $DeviceId |
+  ConvertFrom-Json | Select-Object -ExpandProperty principals
+foreach ($arn in $principals) {
+  $certId = ($arn -replace '.*/cert/', '').Trim()
+  aws iot detach-thing-principal --thing-name $DeviceId --principal $arn
+  aws iot update-certificate --certificate-id $certId --new-status INACTIVE
+  Write-Host "  Deactivated: $certId"
+}
+Write-Host "Done ($($principals.Count) certs)"
 
+# --- 4. Issue and activate new certificate ---
+
+Write-Host ">>> Issuing certificate..."
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $CertJson = aws iot create-keys-and-certificate --set-as-active | ConvertFrom-Json
+
+Write-Host "  certPem length: $($CertJson.certificatePem.Length)"
+if ($CertJson.certificatePem.Length -lt 100) { throw "certificatePem is empty or missing" }
 $CertArn  = $CertJson.certificateArn
-$CertJson.certificatePem          | Set-Content "$CertsDir\device.crt" -NoNewline
-$CertJson.keyPair.PrivateKey      | Set-Content "$CertsDir\device.key" -NoNewline
-Write-Host "証明書 ARN: $CertArn"
 
-# ─── 4. Amazon Root CA を取得 ────────────────────────────────────────────────
+# --- 5. Attach policy and certificate to Thing ---
 
-Write-Host ">>> Amazon Root CA を取得中..."
-Invoke-WebRequest "https://www.amazontrust.com/repository/AmazonRootCA1.pem" `
-  -OutFile "$CertsDir\ca.crt"
-Write-Host "ca.crt を取得しました"
-
-# ─── 5. ポリシーと証明書を Thing にアタッチ ───────────────────────────────────
-
-Write-Host ">>> ポリシーをアタッチ中..."
+Write-Host ">>> Attaching policy..."
 aws iot attach-policy --policy-name $PolicyName --target $CertArn
 aws iot attach-thing-principal --thing-name $DeviceId --principal $CertArn
-Write-Host "ポリシー・証明書をアタッチしました"
+Write-Host "Policy and certificate attached"
 
-# ─── 6. SPIFFS に証明書を書き込む ────────────────────────────────────────────
+# --- 6. Generate provision_config.h ---
 
-Write-Host ">>> SPIFFS に証明書を書き込み中..."
-Push-Location $ProjectDir
-pio run -t uploadfs --upload-port $Port
-Pop-Location
-Write-Host "SPIFFS 書き込み完了"
+Write-Host ">>> Generating provision_config.h..."
 
-# ─── 7. NVS に mqtt_host を書き込む ──────────────────────────────────────────
+$ConfigPath = "$ProjectDir\src\provision_config.h"
 
-Write-Host ">>> NVS に mqtt_host を書き込み中..."
-$NvsGen  = "$env:USERPROFILE\.platformio\packages\framework-espidf\tools\nvs_flash\nvs_partition_generator\nvs_partition_generator.py"
-$NvsSize = "0x5000"
-$TmpCsv  = [System.IO.Path]::GetTempFileName() + ".csv"
-$TmpBin  = [System.IO.Path]::GetTempFileName() + ".bin"
+$DevCertEsc = $CertJson.certificatePem.TrimEnd() -replace "`r?`n", '\n'
+$DevKeyEsc  = $CertJson.keyPair.PrivateKey.TrimEnd() -replace "`r?`n", '\n'
 
-@"
-key,type,encoding,value
-device,namespace,,
-mqtt_host,data,string,$MqttHost
-"@ | Set-Content $TmpCsv -Encoding UTF8
+# CRLF/LF を literal \n に変換（-replace の置換文字列で \\ → literal \）
+# $DevCertEsc = ($CertJson.certificatePem.TrimEnd()       -replace "`r?`n", '\\n') + '\\n'
+# $DevKeyEsc  = ($CertJson.keyPair.PrivateKey.TrimEnd()   -replace "`r?`n", '\\n') + '\\n'
 
-& $Python $NvsGen generate $TmpCsv $TmpBin $NvsSize
-& $Python -m esptool --port $Port write_flash 0x9000 $TmpBin
-Remove-Item $TmpCsv, $TmpBin -Force
-Write-Host "NVS 書き込み完了"
+# Write-Host "  cert length: $($DevCertEsc.Length), key length: $($DevKeyEsc.Length)"
+# if ($DevCertEsc.Length -lt 100 -or $DevKeyEsc.Length -lt 100) {
+#   throw "cert or key is unexpectedly short"
+# }
 
-# ─── 8. 一時ファイルを削除 ────────────────────────────────────────────────────
+# here-string の変数展開が不安定なため直接文字列連結で書き込む
+$content  = "#pragma once`n"
+$content += "// このファイルは provision_device.ps1 が生成します。リポジトリに含めないでください。`n`n"
+$content += "static const char PROV_MQTT_HOST[]   = `"$MqttHost`";`n"
+$content += "static const char PROV_DEVICE_CERT[] = `"$DevCertEsc`";`n"
+$content += "static const char PROV_DEVICE_KEY[]  = `"$DevKeyEsc`";`n"
+[System.IO.File]::WriteAllText($ConfigPath, $content, [System.Text.Encoding]::UTF8)
 
-Write-Host ">>> 証明書ファイルを削除中..."
-Remove-Item "$CertsDir\device.crt", "$CertsDir\device.key", "$CertsDir\ca.crt" -Force
-Write-Host "証明書ファイルを削除しました（SPIFFS に書き込み済み）"
+Write-Host "provision_config.h written"
 
-# ─── 完了 ─────────────────────────────────────────────────────────────────────
+# --- 7. Build and flash provisioning firmware ---
 
 Write-Host ""
-Write-Host "=== プロビジョニング完了 ==="
+Write-Host ""
 Write-Host "DEVICE_ID: $DeviceId"
-Write-Host "デバイスを再起動してください"
+Write-Host "PORT:      $Port"
+$confirm = Read-Host ">>> Flash provisioning firmware to device? [y/N]"
+if ($confirm -notmatch '^[yY]$') {
+  Remove-Item $ConfigPath -Force -ErrorAction SilentlyContinue
+  Write-Host "Aborted."
+  exit 0
+}
+
+Write-Host ">>> Building and flashing provisioning firmware..."
+Push-Location $ProjectDir
+& $Pio run -e provision -t upload --upload-port $Port
+$pioBuildResult = $LASTEXITCODE
+Pop-Location
+
+if ($pioBuildResult -ne 0) {
+  Remove-Item $ConfigPath -Force -ErrorAction SilentlyContinue
+  throw "Provisioning firmware build/flash failed"
+}
+
+# --- 8. Wait for provisioning firmware to run ---
+
+Write-Host ""
+Write-Host ">>> Waiting for provisioning firmware to complete..."
+Start-Sleep -Seconds 10
+
+# --- 9. Clean up provision_config.h (contains private key) ---
+
+Remove-Item $ConfigPath -Force -ErrorAction SilentlyContinue
+Write-Host "provision_config.h removed"
+
+# --- Done ---
+
+Write-Host ""
+Write-Host "=== Provisioning complete ==="
+Write-Host "DEVICE_ID: $DeviceId"
+Write-Host "Please reboot the device and flash the main firmware"

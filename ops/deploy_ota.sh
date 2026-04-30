@@ -7,7 +7,7 @@
 #       ./deploy_ota.sh 1.2.0 esp32-gw-aabbccddeeff
 #
 # THING_NAME を省略すると esp32-gw-* に一致する全 Thing を対象にする
-# infra/ ディレクトリで実行すること
+# ops/ ディレクトリで実行すること
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ FIRMWARE_BIN="$BUILD_DIR/firmware.bin"
 
 # ─── Terraform outputs から設定を取得 ────────────────────────────────────────
 
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR/../infra"
 BUCKET=$(terraform output -raw firmware_bucket)
 BASE_URL=$(terraform output -raw firmware_base_url)
 REGION=$(terraform output -raw iot_endpoint | grep -o 'ap-[a-z0-9-]*' | head -1 || echo "ap-northeast-1")
