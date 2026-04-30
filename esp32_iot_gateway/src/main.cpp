@@ -27,6 +27,7 @@
 #define BTN0_PIN 26
 #define BTN1_PIN 33
 #define UNITX_EN_PIN 9
+#define CHG_ON_PIN 21
 
 void setup()
 {
@@ -74,6 +75,7 @@ void setup()
   pinMode(BTN1_PIN, INPUT_PULLUP);
 
   // pinMode(UNITX_EN_PIN, OUTPUT);
+  pinMode(CHG_ON_PIN, OUTPUT);
 
   char topic[80];
   snprintf(topic, sizeof(topic), "$aws/things/%s/shadow/update", getDeviceId());
@@ -93,10 +95,12 @@ void loop()
 
   digitalWrite(RELAY_2_PIN, HIGH);
   // digitalWrite(UNITX_EN_PIN, HIGH);
+  digitalWrite(CHG_ON_PIN, HIGH);
   oledShowStatus(voltage, voltage2, true, btn0, btn1);
   delay(3000);
   digitalWrite(RELAY_2_PIN, LOW);
   // digitalWrite(UNITX_EN_PIN, LOW);
+  digitalWrite(CHG_ON_PIN, LOW);
   oledShowStatus(voltage, voltage2, false, btn0, btn1);
   delay(3000);
   ina228PrintStatus();
