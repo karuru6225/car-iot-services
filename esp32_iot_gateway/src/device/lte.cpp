@@ -237,6 +237,20 @@ bool Lte::readFile(const char *filename, std::function<bool(const uint8_t *, siz
   return true;
 }
 
+bool Lte::deleteFile(const char *filename)
+{
+  sendCmd("AT+CFSINIT");
+  char cmd[128];
+  snprintf(cmd, sizeof(cmd), "AT+CFSDFILE=3,\"%s\"", filename);
+  bool ok = sendCmd(cmd, 5000);
+  sendCmd("AT+CFSTERM");
+  if (ok)
+    logger.printf("[FILE] 削除: %s\n", filename);
+  else
+    logger.printf("[FILE] 削除失敗（存在しない可能性）: %s\n", filename);
+  return ok;
+}
+
 // ─── 時刻同期 ─────────────────────────────────────────────────────────────
 
 bool Lte::syncTime()

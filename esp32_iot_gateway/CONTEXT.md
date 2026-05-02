@@ -71,7 +71,7 @@ esp32_iot_gateway/
     ├── certs.example.h                証明書のサンプルテンプレート
     ├── provision.cpp                  プロビジョニング専用（provision env のみビルド）
     ├── device/
-    │   ├── lte.h/.cpp                 SIM7080G ATコマンド制御（GPRS接続・証明書アップロード・電源管理・ファイル読み取り）
+    │   ├── lte.h/.cpp                 SIM7080G ATコマンド制御（GPRS接続・証明書アップロード・電源管理・ファイル読み取り・削除）
     │   ├── ble_scan.h/.cpp            BLE スキャナー（SwitchBot デバイス受信・FreeRTOS キュー）
     │   ├── ads.h/.cpp                 ADS1115 I2Cドライバ（差動電圧読み取り）
     │   ├── ina228.h/.cpp              INA228 I2Cドライバ（電流・電力・温度読み取り）

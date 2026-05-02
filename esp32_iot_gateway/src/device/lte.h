@@ -45,6 +45,7 @@ public:
   bool sendCmd(const char *cmd, uint32_t timeoutMs = 3000);
 
   bool readFile(const char *filename, std::function<bool(const uint8_t *, size_t)> onChunk);
+  bool deleteFile(const char *filename);
 
 private:
   TinyGsm _modem{SerialAT};

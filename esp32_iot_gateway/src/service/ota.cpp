@@ -9,37 +9,6 @@
 
 Ota ota;
 
-// https://{bucket}.s3.{region}.amazonaws.com/{key}
-// → https://s3.{region}.amazonaws.com/{bucket}/{key} に変換
-// 形式が一致しない場合はそのままコピー
-static void toS3PathStyle(const char *url, char *out, size_t outSize)
-{
-  auto fallback = [&]() {
-    strncpy(out, url, outSize - 1);
-    out[outSize - 1] = '\0';
-  };
-
-  if (strncmp(url, "https://", 8) != 0) { fallback(); return; }
-  const char *host = url + 8;
-  const char *s3dot = strstr(host, ".s3.");
-  if (!s3dot) { fallback(); return; }
-
-  const char *regionStart = s3dot + 4;
-  const char *amzPart = strstr(regionStart, ".amazonaws.com");
-  if (!amzPart) { fallback(); return; }
-
-  int bucketLen = (int)(s3dot - host);
-  int regionLen = (int)(amzPart - regionStart);
-  if (bucketLen <= 0 || bucketLen >= 128 || regionLen <= 0 || regionLen >= 64) { fallback(); return; }
-
-  char bucket[128], region[64];
-  memcpy(bucket, host, bucketLen); bucket[bucketLen] = '\0';
-  memcpy(region, regionStart, regionLen); region[regionLen] = '\0';
-
-  const char *path = amzPart + 14; // strlen(".amazonaws.com")
-  snprintf(out, outSize, "https://s3.%s.amazonaws.com/%s%s", region, bucket, path);
-}
-
 bool Ota::apply(const char *url, const char *jobId)
 {
   const esp_partition_t *partition = esp_ota_get_next_update_partition(NULL);
@@ -52,9 +21,6 @@ bool Ota::apply(const char *url, const char *jobId)
 
   logger.printf("[OTA] DL URL: %.100s\n", url);
 
-  // SIM7080G ファイルシステムにダウンロード（仮想ホスト URL で動作確認中）
-  // 64 バイト制限のある AT+SH* と違い AT+HTTPTOFS は URL 長の制約がないため変換不要の可能性あり
-  // 動作確認後に toS3PathStyle() 呼び出しを追加するか判断する
   int fileSize = https.download(url, "firmware.bin");
   if (fileSize <= 0)
   {
@@ -106,6 +72,9 @@ bool Ota::apply(const char *url, const char *jobId)
 
   // 書き込み完了確定後に JobID を保存する（接続失敗時は保存しないためJobが FAILED にならない）
   setPendingJobId(jobId);
+
+  lte.deleteFile("firmware.bin");
+  lte.deleteFile("test_download.json"); // 開発時テストファイルの残留物（削除確認後に除去）
 
   logger.printf("[OTA] 完了 (%u bytes) → 再起動\n", written);
   delay(500);
