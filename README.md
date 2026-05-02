@@ -1,19 +1,19 @@
 # car-iot-services
 
-車載 IoT システム。M5Atom S3 が車載バッテリー電圧・SwitchBot BLE センサーのデータを収集し、
+車載 IoT システム。ESP32-S3 が車載バッテリー電圧・電流・電力を計測し、
 SORACOM Cat-M 経由で AWS IoT Core に送信する。
 クラウド側では S3 + Athena でデータを蓄積し、CloudFront ホスティングの Web 管理画面でグラフ表示・削除操作を行える。
 
 ## システム構成
 
 ```text
-M5Atom S3 (ESP32-S3)
-  ├── ADS1115 で車載バッテリー電圧測定
-  └── SwitchBot BLE センサースキャン（温湿度計 / CO2センサー）
-        ↓ MQTT over TLS
+ESP32-S3-MINI-1 (esp32_iot_gateway)
+  ├── ADS1115 で 2 系統バッテリー電圧測定（サブ / メイン）
+  └── INA228 でサブバッテリー電流・電力・温度測定
+        ↓ MQTT over TLS (AWS IoT Shadow)
   SIM7080G (SORACOM Cat-M)
         ↓
-  AWS IoT Core  topic: sensors/{device_id}/data
+  AWS IoT Core
         ↓ Topic Rule
   Lambda (ingest) → S3 (raw/year=.../month=.../day=.../hour=.../)
                           ↓
@@ -28,19 +28,19 @@ M5Atom S3 (ESP32-S3)
 
 | 項目 | 内容 |
 | ---- | ---- |
-| MCU | M5Atom S3（ESP32-S3） |
-| ADC | ADS1115（I2C: SDA=G38, SCL=G39, ADDR=0x49） |
-| センサー | SwitchBot WoIOSensor（温湿度計）/ CO2センサー |
+| MCU | ESP32-S3-MINI-1-N8（`m5atom_power_adc` 基板直付け） |
+| ADC | ADS1115（I2C: SDA=GPIO17, SCL=GPIO18, ADDR=0x48） |
+| 電流計 | INA228（I2C: SDA=GPIO17, SCL=GPIO18, ADDR=0x40） |
 | LTE | M5Stack U128（SIM7080G）、SORACOM SIM |
-| 電源 | 車載 12V → DC-DC → M5Atom S3 |
+| 電源 | 車載 12V → LM2596（12V→5V）→ AMS1117-3.3（5V→3.3V）→ ESP32 |
 
 ## リポジトリ構成
 
 ```text
 car-iot-services/
-├── m5atom_iot_gateway/    M5Atom S3 ゲートウェイ（電圧測定・BLE スキャン・MQTT送信）
-├── esp32_iot_gateway/     ESP32-S3-MINI-1 ゲートウェイ（OTA・AWS IoT Jobs）
+├── esp32_iot_gateway/     ESP32-S3-MINI-1 ゲートウェイ（アクティブ）
 │   └── OTA.md             OTA 仕様ドキュメント
+├── m5atom_iot_gateway/    M5Atom S3 ゲートウェイ（段階的廃止予定）
 ├── m5atom_power_adc/      新 PCB KiCad プロジェクト（電源・ADC・リレー・ESP32-S3 直付け）
 │   ├── CIRCUIT.md         回路設計仕様書
 │   └── *.kicad_sch        階層シート構成（メイン + GroveUnit / RelayControl / VoltageSense）
@@ -105,12 +105,15 @@ terraform output web_url
 
 ## デバイスファームウェア
 
-PlatformIO でビルド・書き込み。`m5atom_iot_gateway/` を参照。
+PlatformIO でビルド・書き込み。`esp32_iot_gateway/` を参照。
 
 ```powershell
-# terraform apply 後に実行すると certs.h が自動生成される
+# 初回プロビジョニング（証明書発行・SPIFFS 書き込み）
 cd infra
-.\gen_certs.ps1 -Profile myprofile
+.\provision_device.ps1 -Profile myprofile
+
+# OTA デプロイ（ビルド → S3 → IoT Job 作成）
+.\deploy_ota.ps1 -Profile myprofile
 ```
 
-詳細は [CONTEXT.md](CONTEXT.md) を参照。
+詳細は [CONTEXT.md](CONTEXT.md) および [esp32_iot_gateway/OTA.md](esp32_iot_gateway/OTA.md) を参照。
