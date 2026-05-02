@@ -1,25 +1,24 @@
 # car-iot-services プロジェクト設定
 
-車載 IoT システム。M5Atom S3 + SIM7080G で車載バッテリー電圧・温湿度・CO2 を AWS IoT Core に送信し、Web 管理画面でグラフ表示する。
+車載 IoT システム。ESP32-S3 + SIM7080G で車載バッテリー電圧・電流・電力を AWS IoT Core に送信し、Web 管理画面でグラフ表示する。
+アクティブな開発は `esp32_iot_gateway`。`m5atom_iot_gateway` は段階的廃止予定。
 
 ## よく使うコマンド
+
+PlatformIO 操作は `/pio` スキルを使う（ビルド・書き込み・シリアルモニタ）。
 
 ```bash
 # Python（システム未インストール。PlatformIO 付属を使う）
 ~/.platformio/penv/Scripts/python.exe script.py
 
-# ビルド（m5atom_iot_gateway ディレクトリで実行）
-pio run
-
-# ビルド＋書き込み
-pio run -t upload
-
-# シリアルモニタ
-pio device monitor
-
-# ビルド＋書き込み＋シリアルモニタ
-pio run -t upload && pio device monitor
+# pio コマンド（PATH 未登録のためフルパスで実行）
+~/.platformio/penv/Scripts/pio.exe run                        # ビルド
+~/.platformio/penv/Scripts/pio.exe run -t upload              # ビルド＋書き込み
+~/.platformio/penv/Scripts/pio.exe device monitor             # シリアルモニタ
+~/.platformio/penv/Scripts/pio.exe run -e provision           # provision env でビルド
 ```
+
+上記コマンドは `esp32_iot_gateway/` ディレクトリで実行する。
 
 ## コーディング規約（Arduino C++）
 
@@ -49,4 +48,6 @@ pio run -t upload && pio device monitor
 
 詳細な設計・構成は以下を参照：
 - `CONTEXT.md` — システム概要・ハードウェア・データフロー・設計決定
-- `ARCHITECTURE.md` — レイヤー構成・依存ルール・命名規則
+- `esp32_iot_gateway/ARCHITECTURE.md` — レイヤー構成・依存ルール・命名規則
+- `esp32_iot_gateway/CONTEXT.md` — esp32_iot_gateway 固有の詳細
+- `esp32_iot_gateway/OTA.md` — OTA 仕様
