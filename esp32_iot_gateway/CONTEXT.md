@@ -68,7 +68,6 @@ esp32_iot_gateway/
 └── src/
     ├── main.cpp                       エントリポイント: 初期化・OTA チェック・Shadow 送信
     ├── config.h / config.cpp          全層共通定数・NVS アクセス（デバイスID / MQTT ホスト / 証明書 CRC / OTA ジョブID）
-    ├── certs.example.h                証明書のサンプルテンプレート
     ├── provision.cpp                  プロビジョニング専用（provision env のみビルド）
     ├── device/
     │   ├── lte.h/.cpp                 SIM7080G ATコマンド制御（GPRS接続・証明書アップロード・電源管理・ファイル読み取り・削除）
