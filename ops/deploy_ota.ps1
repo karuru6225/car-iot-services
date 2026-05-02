@@ -1,11 +1,11 @@
-# deploy_ota.ps1 - OTA ファームウェアをビルド・アップロード・Job 作成
+# deploy_ota.ps1 - Build, upload, and create OTA firmware job
 #
-# 使い方:
+# Usage:
 #   .\deploy_ota.ps1 -Version 1.2.0
 #   .\deploy_ota.ps1 -Version 1.2.0 -ThingName esp32-gw-aabbccddeeff
 #
-# ThingName を省略すると esp32-gw-* に一致する全 Thing を対象にする
-# ops\ ディレクトリで実行すること
+# Omitting ThingName targets all Things matching esp32-gw-*
+# Run from the ops\ directory
 
 param(
   [Parameter(Mandatory)][string]$Version,
@@ -34,7 +34,7 @@ $BuildDir    = "$ProjectDir\.pio\build\esp32-s3-devkitc-1"
 $FirmwareBin = "$BuildDir\firmware.bin"
 $Pio         = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
 
-# ─── Terraform outputs から設定を取得 ────────────────────────────────────────
+# ─── Read settings from Terraform outputs ─────────────────────────────────────
 
 Push-Location "$ScriptDir\..\infra"
 $Bucket  = terraform output -raw firmware_bucket
@@ -45,58 +45,58 @@ Pop-Location
 $FirmwareKey = "firmware/v$Version.bin"
 $FirmwareUrl = "$BaseUrl/$FirmwareKey"
 $JobDocKey   = "jobs/v$Version.json"
-$JobId       = "ota-v$Version"
+$JobId       = "ota-v$($Version -replace '\.', '_')"
 
-Write-Host "=== OTA デプロイ ==="
+Write-Host "=== OTA Deploy ==="
 Write-Host "VERSION:  $Version"
 Write-Host "BUCKET:   $Bucket"
 Write-Host "JOB_ID:   $JobId"
 Write-Host ""
 
-# ─── 1. ビルド ────────────────────────────────────────────────────────────────
+# ─── 1. Build ─────────────────────────────────────────────────────────────────
 
-Write-Host ">>> ファームウェアをビルド中..."
+Write-Host ">>> Building firmware..."
 Push-Location $ProjectDir
 & $Pio run
 Pop-Location
-Write-Host "ビルド完了: $FirmwareBin"
+Write-Host "Build complete: $FirmwareBin"
 
-# ─── 2. firmware.bin を S3 にアップロード ────────────────────────────────────
+# ─── 2. Upload firmware.bin to S3 ─────────────────────────────────────────────
 
-Write-Host ">>> firmware.bin を S3 にアップロード中..."
+Write-Host ">>> Uploading firmware.bin to S3..."
 aws s3 cp $FirmwareBin "s3://$Bucket/$FirmwareKey"
-Write-Host "アップロード完了: $FirmwareUrl"
+Write-Host "Upload complete: $FirmwareUrl"
 
-# ─── 3. ジョブドキュメントを生成・アップロード ───────────────────────────────
+# ─── 3. Generate and upload job document ──────────────────────────────────────
 
-Write-Host ">>> ジョブドキュメントを生成中..."
+Write-Host ">>> Generating job document..."
 $JobDoc = @{ operation = "ota"; version = $Version; url = $FirmwareUrl } | ConvertTo-Json
 $TmpJson = [System.IO.Path]::GetTempFileName() + ".json"
-$JobDoc | Set-Content $TmpJson -Encoding UTF8
+[System.IO.File]::WriteAllText($TmpJson, $JobDoc, (New-Object System.Text.UTF8Encoding($false)))
 aws s3 cp $TmpJson "s3://$Bucket/$JobDocKey"
 Remove-Item $TmpJson -Force
-Write-Host "ジョブドキュメントをアップロードしました"
+Write-Host "Job document uploaded"
 
-# ─── 4. 対象 Thing を決定 ─────────────────────────────────────────────────────
+# ─── 4. Resolve target Things ─────────────────────────────────────────────────
 
 $AccountId = (aws sts get-caller-identity | ConvertFrom-Json).Account
 
 if ($ThingName) {
   $Targets = "arn:aws:iot:${Region}:${AccountId}:thing/$ThingName"
-  Write-Host "ターゲット: $Targets"
+  Write-Host "Target: $Targets"
 } else {
-  Write-Host ">>> esp32-gw-* に一致する Thing を検索中..."
+  Write-Host ">>> Searching for Things matching esp32-gw-*..."
   $Things = (aws iot list-things | ConvertFrom-Json).things |
     Where-Object { $_.thingName -like "esp32-gw-*" } |
     Select-Object -ExpandProperty thingName
-  if (-not $Things) { throw "esp32-gw-* に一致する Thing が見つかりません" }
-  Write-Host "対象 Thing: $($Things -join ', ')"
+  if (-not $Things) { throw "No Things matching esp32-gw-* found" }
+  Write-Host "Targets: $($Things -join ', ')"
   $Targets = ($Things | ForEach-Object { "arn:aws:iot:${Region}:${AccountId}:thing/$_" }) -join ','
 }
 
-# ─── 5. IoT Job を作成 ────────────────────────────────────────────────────────
+# ─── 5. Create IoT Job ────────────────────────────────────────────────────────
 
-Write-Host ">>> IoT Job を作成中..."
+Write-Host ">>> Creating IoT Job..."
 $DocUrl = "https://s3.$Region.amazonaws.com/$Bucket/$JobDocKey"
 aws iot create-job `
   --job-id $JobId `
@@ -105,7 +105,7 @@ aws iot create-job `
   --timeout-config inProgressTimeoutInMinutes=90
 
 Write-Host ""
-Write-Host "=== デプロイ完了 ==="
+Write-Host "=== Deploy complete ==="
 Write-Host "Job ID:       $JobId"
 Write-Host "Firmware URL: $FirmwareUrl"
-Write-Host "デバイスの次回起動時に OTA が適用されます"
+Write-Host "OTA will be applied on the device's next boot"
