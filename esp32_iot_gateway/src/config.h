@@ -10,6 +10,13 @@
 // DeepSleep
 static const uint32_t SLEEP_INTERVAL_SEC = 300;
 
+// BLE
+static const uint16_t SWITCHBOT_COMPANY_ID = 0x0969;
+static const int      SCAN_TIME            = 10;
+static const int      QUEUE_SIZE           = 20;
+static const int      MAX_TARGETS          = 10;
+static const int      PAYLOAD_SENSOR_SIZE  = 256;
+
 // SPIFFS 証明書パス
 #define CERT_PATH_CA     "/certs/ca.crt"
 #define CERT_PATH_DEVICE "/certs/device.crt"

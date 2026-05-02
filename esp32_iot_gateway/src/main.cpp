@@ -19,9 +19,12 @@
 #include "device/oled.h"
 #include "device/ads.h"
 #include "device/ina228.h"
+#include "device/ble_scan.h"
 
 #include "domain/measurement.h"
 #include "domain/telemetry.h"
+#include "domain/ble_targets.h"
+#include "domain/sensor_factory.h"
 
 #include <esp_sleep.h>
 
@@ -80,15 +83,52 @@ void setup()
   // pinMode(UNITX_EN_PIN, OUTPUT);
   pinMode(CHG_ON_PIN, OUTPUT);
 
+  // BLE スキャン（SCAN_TIME 秒）
+  bleTargets.load();
+  bleScanner.setup();
+  logger.printf("[BLE] スキャン開始 (%d秒)...\n", SCAN_TIME);
+  bleScanner.start(SCAN_TIME);
+  bleScanner.clearResults();
+  bleScanner.deinit(); // DeepSleep 前に BLE を停止
+
+  // タイムスタンプ（時刻同期済みの場合のみ付与）
+  char tsField[32] = "";
+  time_t now = time(nullptr);
+  if (now > 1000000000L)
+  {
+    char ts[25];
+    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
+    snprintf(tsField, sizeof(tsField), ",\"ts\":\"%s\"", ts);
+  }
+
+  // BLE センサーデータを送信
+  char sensorTopic[80];
+  snprintf(sensorTopic, sizeof(sensorTopic), "sensors/%s/data", getDeviceId());
+  SensorVariant v;
+  char sensorPayload[PAYLOAD_SENSOR_SIZE];
+  while (xQueueReceive(bleScanner.queue, &v, 0) == pdTRUE)
+  {
+    std::visit([&](auto &d) {
+      if (!d.parsed) return;
+      using T = std::decay_t<decltype(d)>;
+      if constexpr (std::is_same_v<T, ThermometerData>)
+        buildThermometerPayload(sensorPayload, sizeof(sensorPayload), d, tsField);
+      else
+        buildCo2Payload(sensorPayload, sizeof(sensorPayload), d, tsField);
+      logger.printf("[BLE] 送信: %s\n", sensorPayload);
+      mqtt.publish(sensorTopic, sensorPayload);
+    }, v);
+  }
+
   VoltageReading v1 = {adsReadDiff01()};
   VoltageReading v2 = {adsReadDiff23()};
   PowerReading pwr  = {ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()};
 
-  char topic[80];
-  snprintf(topic, sizeof(topic), "$aws/things/%s/shadow/update", getDeviceId());
+  char shadowTopic[80];
+  snprintf(shadowTopic, sizeof(shadowTopic), "$aws/things/%s/shadow/update", getDeviceId());
   char payload[256];
-  buildShadowPayload(payload, sizeof(payload), v1, v2, pwr, time(nullptr));
-  mqtt.publish(topic, payload);
+  buildShadowPayload(payload, sizeof(payload), v1, v2, pwr, now);
+  mqtt.publish(shadowTopic, payload);
   delay(1000);
   lte.powerOff(); // 電源オフ（完全に電源を切る。再度電源オンするには setup() を呼ぶ必要がある）
 }
