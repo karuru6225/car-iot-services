@@ -137,6 +137,7 @@ bool Ota::check()
   if (!mqtt.subscribe(acceptedTopic))
     return false;
   mqtt.subscribe(rejectedTopic);
+  delay(500); // SIM7080G側のsubscription確立を待つ
 
   if (!mqtt.publish(getTopic, "{}"))
     return false;

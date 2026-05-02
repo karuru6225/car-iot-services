@@ -132,25 +132,25 @@ bool Mqtt::pollMqtt(char *outTopic, int topicSize,
       continue;
     }
 
-    // +SMSUB: "topic",length\n
-    int q1 = buf.indexOf('"', idx + 7);
-    int q2 = buf.indexOf('"', q1 + 1);
-    int comma = buf.indexOf(',', q2 + 1);
-    int nl = buf.indexOf('\n', comma + 1);
-    if (q1 < 0 || q2 < 0 || comma < 0 || nl < 0)
+    // SIM7080G URC: +SMSUB: "<topic>","<payload>"\r\n
+    // \n が来るまでバッファが揃うのを待つ
+    int nl = buf.indexOf('\n', idx);
+    if (nl < 0)
     {
       delay(10);
       continue;
     }
 
-    int payloadLen = buf.substring(comma + 1, nl).toInt();
+    // トピック: 引用符で囲まれた部分
+    int q1 = buf.indexOf('"', idx + 7);
+    int q2 = buf.indexOf('"', q1 + 1);
+    if (q1 < 0 || q2 < 0) { buf = buf.substring(nl + 1); continue; }
 
-    while ((int)buf.length() < nl + 1 + payloadLen && millis() < deadline)
-    {
-      while (SerialAT.available())
-        buf += (char)SerialAT.read();
-      delay(5);
-    }
+    // ペイロード: q2+1 は ","  の ","、q2+3 から中身、末尾の " まで
+    int payloadStart = q2 + 3;
+    int endQuote     = buf.lastIndexOf('"', nl);
+    if (payloadStart >= nl || endQuote <= q2 + 2) { buf = buf.substring(nl + 1); continue; }
+    int payloadLen = endQuote - payloadStart;
 
     if (outTopic && topicSize > 0)
     {
@@ -161,12 +161,11 @@ bool Mqtt::pollMqtt(char *outTopic, int topicSize,
     if (outPayload && payloadSize > 0)
     {
       int len = min(payloadLen, payloadSize - 1);
-      strncpy(outPayload, buf.c_str() + nl + 1, len);
+      strncpy(outPayload, buf.c_str() + payloadStart, len);
       outPayload[len] = '\0';
     }
 
-    logger.printf("[MQTT] recv(%d bytes): %.100s\n",
-                  payloadLen, buf.c_str() + nl + 1);
+    logger.printf("[MQTT] recv(%d bytes): %.100s\n", payloadLen, buf.c_str() + payloadStart);
     return true;
   }
   return false;

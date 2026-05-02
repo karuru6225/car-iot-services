@@ -44,7 +44,7 @@ void setup()
   oledInit();
   adsInit();
   ina228Init();
-  oledPrint("Hello, world!");
+  oledPrint("FW: " FIRMWARE_VERSION);
 
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
 
@@ -101,28 +101,18 @@ void setup()
     snprintf(tsField, sizeof(tsField), ",\"ts\":\"%s\"", ts);
   }
 
-  // BLE センサーデータを送信
-  char sensorTopic[80];
-  snprintf(sensorTopic, sizeof(sensorTopic), "sensors/%s/data", getDeviceId());
+  // BLE センサーデータ送信（一時無効）
   SensorVariant v;
-  char sensorPayload[PAYLOAD_SENSOR_SIZE];
   while (xQueueReceive(bleScanner.queue, &v, 0) == pdTRUE)
   {
     std::visit([&](auto &d) {
-      if (!d.parsed) return;
-      using T = std::decay_t<decltype(d)>;
-      if constexpr (std::is_same_v<T, ThermometerData>)
-        buildThermometerPayload(sensorPayload, sizeof(sensorPayload), d, tsField);
-      else
-        buildCo2Payload(sensorPayload, sizeof(sensorPayload), d, tsField);
-      logger.printf("[BLE] 送信: %s\n", sensorPayload);
-      mqtt.publish(sensorTopic, sensorPayload);
+      logger.printf("[BLE] スキャン: addr=%s rssi=%d parsed=%d\n", d.address, d.rssi, d.parsed);
     }, v);
   }
 
   VoltageReading v1 = {adsReadDiff01()};
   VoltageReading v2 = {adsReadDiff23()};
-  PowerReading pwr  = {ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()};
+  PowerReading pwr = {ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()};
 
   char shadowTopic[80];
   snprintf(shadowTopic, sizeof(shadowTopic), "$aws/things/%s/shadow/update", getDeviceId());
