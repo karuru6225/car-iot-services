@@ -20,6 +20,9 @@
 #include "device/ads.h"
 #include "device/ina228.h"
 
+#include "domain/measurement.h"
+#include "domain/telemetry.h"
+
 #include <esp_sleep.h>
 
 #define SPEEKER_PIN 34
@@ -77,10 +80,14 @@ void setup()
   // pinMode(UNITX_EN_PIN, OUTPUT);
   pinMode(CHG_ON_PIN, OUTPUT);
 
+  VoltageReading v1 = {adsReadDiff01()};
+  VoltageReading v2 = {adsReadDiff23()};
+  PowerReading pwr  = {ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()};
+
   char topic[80];
   snprintf(topic, sizeof(topic), "$aws/things/%s/shadow/update", getDeviceId());
-  char payload[160];
-  snprintf(payload, sizeof(payload), "{\"state\":{\"reported\":{\"ts\":%lld}}}", (long long)time(nullptr));
+  char payload[256];
+  buildShadowPayload(payload, sizeof(payload), v1, v2, pwr, time(nullptr));
   mqtt.publish(topic, payload);
   delay(1000);
   lte.powerOff(); // 電源オフ（完全に電源を切る。再度電源オンするには setup() を呼ぶ必要がある）
