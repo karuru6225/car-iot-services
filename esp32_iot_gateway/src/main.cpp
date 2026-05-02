@@ -11,8 +11,8 @@
 #include <Arduino.h>
 #include "config.h"
 #include "device/lte.h"
-#include "app/logger.h"
-#include "app/ota.h"
+#include "service/logger.h"
+#include "service/ota.h"
 
 #include "device/speaker.h"
 #include "device/oled.h"
