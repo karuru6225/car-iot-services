@@ -1,4 +1,4 @@
-#include "device.h"
+#include "config.h"
 #include <esp_mac.h>
 #include <nvs.h>
 #include <cstdio>

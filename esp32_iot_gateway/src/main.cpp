@@ -10,15 +10,14 @@
 
 #include <Arduino.h>
 #include "config.h"
-#include "infra/lte.h"
-#include "infra/logger.h"
-#include "infra/ota.h"
-#include "infra/device.h"
+#include "device/lte.h"
+#include "app/logger.h"
+#include "app/ota.h"
 
-#include "music.h"
-#include "oled.h"
-#include "ads.h"
-#include "ina228.h"
+#include "device/speaker.h"
+#include "device/oled.h"
+#include "device/ads.h"
+#include "device/ina228.h"
 
 #include <esp_sleep.h>
 

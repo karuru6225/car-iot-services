@@ -1,6 +1,5 @@
 #include "lte.h"
-#include "logger.h"
-#include "device.h"
+#include "../app/logger.h"
 #include "../config.h"
 #include <esp_rom_crc.h>
 #include <SPIFFS.h>
