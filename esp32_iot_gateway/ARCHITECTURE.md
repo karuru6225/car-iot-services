@@ -26,7 +26,7 @@ src/
 
 | ファイル | 役割 |
 |----------|------|
-| `lte.h/.cpp` | SIM7080G ATコマンド制御（GPRS接続, 証明書アップロード, 電源管理, ファイル読み取り） |
+| `lte.h/.cpp` | SIM7080G ATコマンド制御（GPRS接続, 証明書アップロード, 電源管理, ファイル読み取り・削除） |
 | `ble_scan.h/.cpp` | BLE スキャナー（SwitchBot Manufacturer Data 受信、FreeRTOS キュー経由で domain に渡す） |
 | `ads.h/.cpp` | ADS1115 I2Cドライバ（差動電圧読み取り） |
 | `ina228.h/.cpp` | INA228 I2Cドライバ（電流・電力・温度読み取り） |
@@ -56,7 +56,7 @@ device / service を include してはいけない。標準ライブラリのみ
 | ファイル | 役割 |
 |----------|------|
 | `mqtt.h/.cpp` | MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用） |
-| `https.h/.cpp` | AT+SH* スタックを使った HTTPS GET / ダウンロード（SIM7080G の CA 制限を回避） |
+| `https.h/.cpp` | HTTPS GET（AT+SH* ストリーミング）/ ファイルダウンロード（AT+HTTPTOFS → SIM FS） |
 | `ota.h/.cpp` | AWS IoT Jobs 確認・ファームウェア適用・ロールバック管理 |
 | `logger.h/.cpp` | シリアルデバッグ出力（横断的関心事） |
 

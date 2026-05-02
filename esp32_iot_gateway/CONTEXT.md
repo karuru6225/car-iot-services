@@ -87,9 +87,11 @@ esp32_iot_gateway/
     │   └── ble_targets.h/.cpp         監視対象 BLE アドレスの NVS 永続化
     └── service/
         ├── mqtt.h/.cpp                MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用）
-        ├── https.h/.cpp               AT+SH* ベースの HTTPS GET / ファイルダウンロード
+        ├── https.h/.cpp               HTTPS GET（AT+SH*）/ ファイルダウンロード（AT+HTTPTOFS）
         ├── ota.h/.cpp                 AWS IoT Jobs 確認・ファームウェア適用・ロールバック管理
         └── logger.h/.cpp              シリアルデバッグ出力
+└── lib/
+    └── uzlib/                         gzip 解凍ライブラリ（esp32-targz 同梱版・gzip OTA 圧縮実装準備）
 ```
 
 ## データフロー
@@ -136,7 +138,7 @@ ESP32-S3-MINI-1
 
 | インスタンス | 型 | 役割 |
 | --- | --- | --- |
-| `lte` | `Lte` | SIM7080G ATコマンド制御・GPRS接続・証明書管理・ファイル読み取り |
+| `lte` | `Lte` | SIM7080G ATコマンド制御・GPRS接続・証明書管理・ファイル読み取り・削除 |
 | `mqtt` | `Mqtt` | MQTT publish / subscribe / pollMqtt |
 | `https` | `Https` | AT+SH* 経由 HTTPS GET / ダウンロード |
 | `ota` | `Ota` | AWS IoT Jobs 確認・FW 適用・ロールバック管理 |
@@ -225,7 +227,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.1.0+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `"1.3.0+" GIT_HASH` | ファームウェアバージョン |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔（秒） |
 | `CERT_PATH_CA` | `"/certs/ca.crt"` | SPIFFS 上の CA 証明書パス |
@@ -288,6 +290,20 @@ device/lte.h の定数:
 - S3 仮想ホスト URL（`bucket.s3.region.amazonaws.com`）で動作確認済み（path-style 変換不要）
 - CFSRFILE チャンクサイズ: 4096 バイト（書き込み高速化）
 - Job 状態報告: ロールバック判定を next パーティションの ABORTED 状態で実施。MQTT 失敗時は job_id を NVS に残して次回起動時にリトライ
+
+### TODO: OTA ファームウェアの gzip 圧縮（任意・高速化）
+
+**背景**: 実測で Phase1（セルラー DL）71秒・Phase2（UART 読み取り）127秒。Phase2 がボトルネック。
+
+**方針**:
+
+- `deploy_ota.ps1` でビルド後に `firmware.bin.gz` として S3 にアップロード
+- `ota.apply()` 内で `lte.readFile()` コールバックに uzlib のストリーミング解凍を挟む
+- `uzlib` は `lib/uzlib/` に配置済み（esp32-targz 同梱版）
+- 解凍 API: `uzlib_uncompress_init()` → `uzlib_gzip_parse_header()` → `uzlib_uncompress_chksum()`
+- 32KB のスライディングウィンドウバッファが必要（ESP32 の RAM には余裕あり）
+
+**期待効果**: gzip 50% 圧縮で Phase1 ~35秒・Phase2 ~60秒 → 合計 ~97秒（現状 198秒）
 
 ### フェーズ 2: AWS IoT からのコマンド受信（未着手）
 
