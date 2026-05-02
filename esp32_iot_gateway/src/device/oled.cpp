@@ -26,6 +26,31 @@ void oledPrint(const char *text)
   display.display();
 }
 
+void oledShowOtaProgress(const char *stage, size_t current, size_t total)
+{
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("OTA Update");
+  display.println(stage);
+
+  if (total > 0)
+  {
+    int pct = (int)(current * 100 / total);
+    display.printf("%d%% (%u KB / %u KB)\n", pct, current / 1024, total / 1024);
+
+    // プログレスバー（幅120px、y=36）
+    static const int BAR_X = 4, BAR_Y = 36, BAR_W = 120, BAR_H = 8;
+    display.drawRect(BAR_X, BAR_Y, BAR_W, BAR_H, SSD1306_WHITE);
+    int filled = BAR_W * pct / 100;
+    if (filled > 0)
+      display.fillRect(BAR_X, BAR_Y, filled, BAR_H, SSD1306_WHITE);
+  }
+
+  display.display();
+}
+
 void oledShowStatus(float voltage, float voltage2, bool relayOn, bool btn0, bool btn1)
 {
   display.clearDisplay();

@@ -1,5 +1,6 @@
 #include "ota.h"
 #include "../device/lte.h"
+#include "../device/oled.h"
 #include "mqtt.h"
 #include "https.h"
 #include "logger.h"
@@ -21,12 +22,16 @@ bool Ota::apply(const char *url, const char *jobId)
 
   logger.printf("[OTA] DL URL: %.100s\n", url);
 
+  oledShowOtaProgress("Downloading...", 0, 0);
+  uint32_t t0 = millis();
   int fileSize = https.download(url, "firmware.bin");
   if (fileSize <= 0)
   {
     logger.println("[OTA] ダウンロード失敗");
+    oledPrint("OTA DL failed");
     return false;
   }
+  logger.printf("[OTA] Phase1(DL): %u ms  %d bytes\n", millis() - t0, fileSize);
 
   esp_ota_handle_t handle;
   esp_err_t err = esp_ota_begin(partition, OTA_SIZE_UNKNOWN, &handle);
@@ -37,6 +42,8 @@ bool Ota::apply(const char *url, const char *jobId)
   }
 
   size_t written = 0;
+  int lastPct = -1;
+  uint32_t t1 = millis();
   bool readOk = lte.readFile("firmware.bin",
                              [&](const uint8_t *data, size_t len) -> bool
                              {
@@ -47,9 +54,16 @@ bool Ota::apply(const char *url, const char *jobId)
                                  return false;
                                }
                                written += len;
-                               logger.printf("[OTA] %u bytes 書き込み済み\n", written);
+                               int pct = (int)(written * 100 / fileSize);
+                               if (pct != lastPct)
+                               {
+                                 oledShowOtaProgress("Writing...", written, fileSize);
+                                 lastPct = pct;
+                               }
                                return true;
                              });
+
+  logger.printf("[OTA] Phase2(UART読み取り+書き込み): %u ms  %u bytes\n", millis() - t1, written);
 
   if (!readOk)
   {
