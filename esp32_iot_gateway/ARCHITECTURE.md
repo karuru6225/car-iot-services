@@ -37,11 +37,10 @@ src/
 ハードウェアにもネットワークにも依存しないビジネスロジック。
 device / service を include してはいけない。標準ライブラリのみ使用可。
 
-| ファイル | 役割 |
-|----------|------|
-| `measurement.h` | 計測値の構造体（VoltageReading, PowerReading 等） |
-| `battery.h/.cpp` | バッテリー状態判定（電圧しきい値チェック, 充電/放電/異常の分類） |
-| `telemetry.h/.cpp` | AWS Shadow ペイロードの JSON シリアライズ |
+| ファイル            | 役割                                                           |
+|---------------------|----------------------------------------------------------------|
+| `measurement.h`     | 計測値の構造体（VoltageReading, PowerReading）                 |
+| `telemetry.h/.cpp`  | AWS Shadow ペイロードの JSON シリアライズ（buildShadowPayload）|
 
 ### service/
 
@@ -87,12 +86,6 @@ domain/   （どこからでも参照可。自身は何にも依存しない）
 // device/lte.cpp — NG
 #include "../service/mqtt.h"  // 上位層の参照は禁止
 ```
-
-### 現状の課題
-
-`device/lte.cpp` が MQTT接続・publish・subscribe・pollMqtt まで担っており、
-service層の責務が device層に漏れている。
-段階的に `service/mqtt` として分離することで解消する。
 
 ---
 
