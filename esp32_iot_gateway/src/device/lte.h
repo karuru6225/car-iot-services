@@ -37,21 +37,6 @@ public:
   // GPRS 接続中か確認
   bool isConnected();
 
-  // MQTT 接続中か確認（AT+SMSTATE? で判定）
-  bool isMqttConnected();
-
-  // AWS IoT Core に MQTT over TLS で JSON を publish
-  bool publish(const char *topic, const char *payload);
-
-  // MQTT トピックをサブスクライブ
-  bool subscribe(const char *topic);
-
-  // 受信メッセージをポーリング（+SMSUB: URC を監視）
-  // outTopic / outPayload は nullptr 可（不要な場合）
-  bool pollMqtt(char *outTopic, int topicSize,
-                char *outPayload, int payloadSize,
-                uint32_t timeoutMs = 3000);
-
   // HTTPS GET でバイナリをストリーミングダウンロード
   // onChunk: データを受け取るたびに呼ばれる。false を返すと中断
   // 戻り値: HTTP ステータスコード（200=成功、0=接続失敗）
@@ -61,14 +46,15 @@ public:
   // AT+CCLK? で ESP32 RTC を UTC に同期
   bool syncTime();
 
+  // AT コマンド送受信（service/mqtt が使用）
+  String sendCmdResp(const char *cmd, uint32_t timeoutMs = 3000);
+  bool sendCmd(const char *cmd, uint32_t timeoutMs = 3000);
+
 private:
   TinyGsm _modem{SerialAT};
   TinyGsmClient _client{_modem};
 
   void uploadCert(const char *filename, const char *pem);
-  bool mqttConnect();
-  String sendCmdResp(const char *cmd, uint32_t timeoutMs = 3000);
-  bool sendCmd(const char *cmd, uint32_t timeoutMs = 3000);
 
   static bool parseUrl(const char *url,
                        char *host, int hostSize,

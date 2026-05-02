@@ -1,5 +1,6 @@
 #include "ota.h"
 #include "../device/lte.h"
+#include "mqtt.h"
 #include "logger.h"
 #include "../config.h"
 #include <esp_ota_ops.h>
@@ -93,7 +94,7 @@ bool Ota::updateJobStatus(const char *jobId, const char *status, const char *rea
     snprintf(payload, sizeof(payload), "{\"status\":\"%s\"}", status);
   }
 
-  return lte.publish(topic, payload);
+  return mqtt.publish(topic, payload);
 }
 
 void Ota::reportPendingJobResult()
@@ -133,16 +134,16 @@ bool Ota::check()
   snprintf(getTopic, sizeof(getTopic),
            "$aws/things/%s/jobs/$next/get", getDeviceId());
 
-  if (!lte.subscribe(acceptedTopic))
+  if (!mqtt.subscribe(acceptedTopic))
     return false;
-  lte.subscribe(rejectedTopic);
+  mqtt.subscribe(rejectedTopic);
 
-  if (!lte.publish(getTopic, "{}"))
+  if (!mqtt.publish(getTopic, "{}"))
     return false;
 
   char recvTopic[128];
   static char payload[1024];
-  if (!lte.pollMqtt(recvTopic, sizeof(recvTopic), payload, sizeof(payload), 5000))
+  if (!mqtt.pollMqtt(recvTopic, sizeof(recvTopic), payload, sizeof(payload), 5000))
   {
     logger.println("[OTA] Jobs レスポンスなし");
     return false;

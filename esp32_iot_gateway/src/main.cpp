@@ -13,6 +13,7 @@
 #include "device/lte.h"
 #include "service/logger.h"
 #include "service/ota.h"
+#include "service/mqtt.h"
 
 #include "device/speaker.h"
 #include "device/oled.h"
@@ -47,7 +48,7 @@ void setup()
 
   // MQTT 接続が確認できた場合のみ起動を確定（LTE 障害時はロールバックさせる）
   // Jobs 経由で SUCCEEDED を報告済みの場合は confirmBoot() は no-op になる
-  if (lte.isMqttConnected())
+  if (mqtt.isConnected())
     ota.confirmBoot();
 
 #ifndef DEBUG_MODE
@@ -80,7 +81,7 @@ void setup()
   snprintf(topic, sizeof(topic), "$aws/things/%s/shadow/update", getDeviceId());
   char payload[160];
   snprintf(payload, sizeof(payload), "{\"state\":{\"reported\":{\"ts\":%lld}}}", (long long)time(nullptr));
-  lte.publish(topic, payload);
+  mqtt.publish(topic, payload);
   delay(1000);
   lte.powerOff(); // 電源オフ（完全に電源を切る。再度電源オンするには setup() を呼ぶ必要がある）
 }
