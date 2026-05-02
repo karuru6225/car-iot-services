@@ -160,7 +160,7 @@ bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, siz
 
     // AT+CFSRFILE=<dir>,<name>,<mode>,<size>,<pos>
     // mode=1: 指定位置から読み取り。バイナリ対応のため readBytes を使う
-    static const int CHUNK = 512;
+    static const int CHUNK = 4096;
     static uint8_t   chunk[CHUNK];
     int offset = 0;
 

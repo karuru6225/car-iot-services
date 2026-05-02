@@ -9,6 +9,37 @@
 
 Ota ota;
 
+// https://{bucket}.s3.{region}.amazonaws.com/{key}
+// → https://s3.{region}.amazonaws.com/{bucket}/{key} に変換
+// 形式が一致しない場合はそのままコピー
+static void toS3PathStyle(const char *url, char *out, size_t outSize)
+{
+  auto fallback = [&]() {
+    strncpy(out, url, outSize - 1);
+    out[outSize - 1] = '\0';
+  };
+
+  if (strncmp(url, "https://", 8) != 0) { fallback(); return; }
+  const char *host = url + 8;
+  const char *s3dot = strstr(host, ".s3.");
+  if (!s3dot) { fallback(); return; }
+
+  const char *regionStart = s3dot + 4;
+  const char *amzPart = strstr(regionStart, ".amazonaws.com");
+  if (!amzPart) { fallback(); return; }
+
+  int bucketLen = (int)(s3dot - host);
+  int regionLen = (int)(amzPart - regionStart);
+  if (bucketLen <= 0 || bucketLen >= 128 || regionLen <= 0 || regionLen >= 64) { fallback(); return; }
+
+  char bucket[128], region[64];
+  memcpy(bucket, host, bucketLen); bucket[bucketLen] = '\0';
+  memcpy(region, regionStart, regionLen); region[regionLen] = '\0';
+
+  const char *path = amzPart + 14; // strlen(".amazonaws.com")
+  snprintf(out, outSize, "https://s3.%s.amazonaws.com/%s%s", region, bucket, path);
+}
+
 bool Ota::apply(const char *url, const char *jobId)
 {
   const esp_partition_t *partition = esp_ota_get_next_update_partition(NULL);
@@ -19,6 +50,18 @@ bool Ota::apply(const char *url, const char *jobId)
   }
   logger.printf("[OTA] 書き込み先: %s\n", partition->label);
 
+  logger.printf("[OTA] DL URL: %.100s\n", url);
+
+  // SIM7080G ファイルシステムにダウンロード（仮想ホスト URL で動作確認中）
+  // 64 バイト制限のある AT+SH* と違い AT+HTTPTOFS は URL 長の制約がないため変換不要の可能性あり
+  // 動作確認後に toS3PathStyle() 呼び出しを追加するか判断する
+  int fileSize = https.download(url, "firmware.bin");
+  if (fileSize <= 0)
+  {
+    logger.println("[OTA] ダウンロード失敗");
+    return false;
+  }
+
   esp_ota_handle_t handle;
   esp_err_t err = esp_ota_begin(partition, OTA_SIZE_UNKNOWN, &handle);
   if (err != ESP_OK)
@@ -28,21 +71,22 @@ bool Ota::apply(const char *url, const char *jobId)
   }
 
   size_t written = 0;
-  int status = https.get(url, [&](const uint8_t *data, size_t len) -> bool
-                              {
-    esp_err_t e = esp_ota_write(handle, data, len);
-    if (e != ESP_OK) {
-      logger.printf("[OTA] write 失敗: 0x%x\n", e);
-      return false;
-    }
-    written += len;
-    logger.printf("[OTA] %u bytes 書き込み済み\n", written);
-    return true; });
+  bool readOk = lte.readFile("/customer/firmware.bin",
+    [&](const uint8_t *data, size_t len) -> bool {
+      esp_err_t e = esp_ota_write(handle, data, len);
+      if (e != ESP_OK) {
+        logger.printf("[OTA] write 失敗: 0x%x\n", e);
+        return false;
+      }
+      written += len;
+      logger.printf("[OTA] %u bytes 書き込み済み\n", written);
+      return true;
+    });
 
-  if (status != 200)
+  if (!readOk)
   {
     esp_ota_abort(handle);
-    logger.printf("[OTA] ダウンロード失敗 (HTTP %d)\n", status);
+    logger.println("[OTA] ファイル読み取り失敗");
     return false;
   }
 
@@ -106,24 +150,43 @@ void Ota::reportPendingJobResult()
   char jobId[64] = {};
   if (!getPendingJobId(jobId, sizeof(jobId)))
     return;
+  logger.printf("[OTA] 保留ジョブ確認: %s\n", jobId);
 
-  const esp_partition_t *running = esp_ota_get_running_partition();
-  esp_ota_img_states_t state;
-  bool isNewFirmware = (esp_ota_get_state_partition(running, &state) == ESP_OK) && (state == ESP_OTA_IMG_PENDING_VERIFY);
-
-  if (isNewFirmware)
+  // ロールバック検出: 次の書き込み先パーティションが ABORTED なら旧FWに戻っている
+  bool rolledBack = false;
+  const esp_partition_t *nextUpdate = esp_ota_get_next_update_partition(NULL);
+  if (nextUpdate)
   {
-    updateJobStatus(jobId, "SUCCEEDED");
-    esp_ota_mark_app_valid_cancel_rollback();
-    logger.printf("[OTA] ジョブ %s: SUCCEEDED・起動確認完了\n", jobId);
+    esp_ota_img_states_t nextState;
+    if (esp_ota_get_state_partition(nextUpdate, &nextState) == ESP_OK)
+      rolledBack = (nextState == ESP_OTA_IMG_ABORTED || nextState == ESP_OTA_IMG_INVALID);
   }
-  else
+
+  if (rolledBack)
   {
     updateJobStatus(jobId, "FAILED", "rollback");
     logger.printf("[OTA] ジョブ %s: FAILED（ロールバック検出）\n", jobId);
+    clearPendingJobId();
+    return;
   }
 
-  clearPendingJobId();
+  // 新ファームウェア初回起動なら先に起動確認（MQTT 失敗でもロールバックを防止）
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  esp_ota_img_states_t runState;
+  if (esp_ota_get_state_partition(running, &runState) == ESP_OK &&
+      runState == ESP_OTA_IMG_PENDING_VERIFY)
+    esp_ota_mark_app_valid_cancel_rollback();
+
+  if (updateJobStatus(jobId, "SUCCEEDED"))
+  {
+    logger.printf("[OTA] ジョブ %s: SUCCEEDED\n", jobId);
+    clearPendingJobId();
+  }
+  else
+  {
+    // MQTT 失敗: job_id を残して次回起動時に再試行
+    logger.printf("[OTA] ジョブ %s: MQTT 失敗、次回起動時に再試行\n", jobId);
+  }
 }
 
 bool Ota::check()

@@ -50,7 +50,7 @@ void setup()
 
   // Jobs で次のジョブを確認。更新あれば apply() → esp_restart()（戻らない）
   // 前回 OTA の結果報告（SUCCEEDED/FAILED）も内部で行う
-  // ota.check();
+  ota.check();
 
   // MQTT 接続が確認できた場合のみ起動を確定（LTE 障害時はロールバックさせる）
   // Jobs 経由で SUCCEEDED を報告済みの場合は confirmBoot() は no-op になる
