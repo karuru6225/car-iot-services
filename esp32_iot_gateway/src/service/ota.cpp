@@ -38,16 +38,18 @@ bool Ota::apply(const char *url, const char *jobId)
 
   size_t written = 0;
   bool readOk = lte.readFile("firmware.bin",
-    [&](const uint8_t *data, size_t len) -> bool {
-      esp_err_t e = esp_ota_write(handle, data, len);
-      if (e != ESP_OK) {
-        logger.printf("[OTA] write 失敗: 0x%x\n", e);
-        return false;
-      }
-      written += len;
-      logger.printf("[OTA] %u bytes 書き込み済み\n", written);
-      return true;
-    });
+                             [&](const uint8_t *data, size_t len) -> bool
+                             {
+                               esp_err_t e = esp_ota_write(handle, data, len);
+                               if (e != ESP_OK)
+                               {
+                                 logger.printf("[OTA] write 失敗: 0x%x\n", e);
+                                 return false;
+                               }
+                               written += len;
+                               logger.printf("[OTA] %u bytes 書き込み済み\n", written);
+                               return true;
+                             });
 
   if (!readOk)
   {
@@ -74,7 +76,6 @@ bool Ota::apply(const char *url, const char *jobId)
   setPendingJobId(jobId);
 
   lte.deleteFile("firmware.bin");
-  lte.deleteFile("test_download.json"); // 開発時テストファイルの残留物（削除確認後に除去）
 
   logger.printf("[OTA] 完了 (%u bytes) → 再起動\n", written);
   delay(500);
