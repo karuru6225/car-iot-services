@@ -14,7 +14,6 @@
 #include "service/logger.h"
 #include "service/ota.h"
 #include "service/mqtt.h"
-#include "service/https.h"
 
 #include "device/speaker.h"
 #include "device/oled.h"
@@ -48,35 +47,6 @@ void setup()
   oledPrint("FW: " FIRMWARE_VERSION);
 
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
-
-#ifdef DEBUG_MODE
-  // HTTPS 動作確認（DEBUG のみ）
-  logger.println("[TEST] HTTPS GET テスト開始...");
-  https.get("https://httpbin.org/get", [](const uint8_t *data, size_t len) -> bool
-            {
-    logger.printf("[TEST] chunk %d bytes: %.*s\n", (int)len, (int)len, (const char *)data);
-    return true; });
-  logger.println("[TEST] HTTPS GET テスト完了");
-
-  logger.println("[TEST] HTTPS ダウンロードテスト開始...");
-  const char *testUrl = "https://httpbin.org/get";
-  const char *testFile = "test_download.json";
-  const int downloadResult = https.download(testUrl, testFile);
-  if (downloadResult > 0)
-  {
-    logger.printf("[TEST] ダウンロード成功: %d bytes\n", downloadResult);
-    logger.println("[TEST] ファイル読み取り開始...");
-    lte.readFile(testFile, [](const uint8_t *data, size_t len) -> bool
-                 {
-      logger.printf("[TEST] read %d bytes: %.*s\n", (int)len, (int)len, (const char *)data);
-      return true; });
-    logger.println("[TEST] ファイル読み取り完了");
-  }
-  else
-  {
-    logger.println("[TEST] ダウンロード失敗");
-  }
-#endif
 
   // Jobs で次のジョブを確認。更新あれば apply() → esp_restart()（戻らない）
   // 前回 OTA の結果報告（SUCCEEDED/FAILED）も内部で行う

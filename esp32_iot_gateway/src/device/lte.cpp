@@ -149,12 +149,13 @@ bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, siz
     if (resp.indexOf("ERROR") >= 0)
     {
       logger.printf("[FILE] %s: not found\n", filepath);
+      sendCmd("AT+CFSTERM");
       return false;
     }
     int q1 = resp.indexOf(':');
-    if (q1 < 0) return false;
+    if (q1 < 0) { sendCmd("AT+CFSTERM"); return false; }
     int fileSize = resp.substring(q1 + 1).toInt();
-    if (fileSize <= 0) return false;
+    if (fileSize <= 0) { sendCmd("AT+CFSTERM"); return false; }
     logger.printf("[FILE] %s: %d bytes\n", filepath, fileSize);
 
     // AT+CFSRFILE=<dir>,<name>,<mode>,<size>,<pos>
@@ -191,6 +192,7 @@ bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, siz
       if (idx < 0 || nl < 0)
       {
         logger.printf("[FILE] CFSRFILE timeout at %d\n", offset);
+        sendCmd("AT+CFSTERM");
         return false;
       }
 
@@ -198,6 +200,7 @@ bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, siz
       if (actual <= 0)
       {
         logger.printf("[FILE] CFSRFILE size=0 at %d\n", offset);
+        sendCmd("AT+CFSTERM");
         return false;
       }
 
@@ -229,8 +232,8 @@ bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, siz
         }
       }
 
-      if (received <= 0) return false;
-      if (!onChunk(chunk, received)) return false;
+      if (received <= 0) { sendCmd("AT+CFSTERM"); return false; }
+      if (!onChunk(chunk, received)) { sendCmd("AT+CFSTERM"); return false; }
 
       offset += received;
       logger.printf("[FILE] %d / %d bytes\n", offset, fileSize);
