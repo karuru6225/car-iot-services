@@ -131,24 +131,18 @@ void Lte::uploadCert(const char *filename, const char *pem)
                 filename, len, resp.indexOf("OK") >= 0 ? "OK" : "NG");
 }
 
-bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, size_t)> onChunk)
+bool Lte::readFile(const char *filename, std::function<bool(const uint8_t *, size_t)> onChunk)
 {
-  // /customer/ プレフィックスを除去（index=3 固定）
-  static const char PREFIX[] = "/customer/";
-  const char *name = (strncmp(filepath, PREFIX, sizeof(PREFIX) - 1) == 0)
-                       ? filepath + sizeof(PREFIX) - 1
-                       : filepath;
-
   sendCmd("AT+CFSINIT");
 
   // ファイルサイズ確認
   {
     char cmd[128];
-    snprintf(cmd, sizeof(cmd), "AT+CFSGFIS=3,\"%s\"", name);
+    snprintf(cmd, sizeof(cmd), "AT+CFSGFIS=3,\"%s\"", filename);
     String resp = sendCmdResp(cmd, 5000);
     if (resp.indexOf("ERROR") >= 0)
     {
-      logger.printf("[FILE] %s: not found\n", filepath);
+      logger.printf("[FILE] %s: not found\n", filename);
       sendCmd("AT+CFSTERM");
       return false;
     }
@@ -156,7 +150,7 @@ bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, siz
     if (q1 < 0) { sendCmd("AT+CFSTERM"); return false; }
     int fileSize = resp.substring(q1 + 1).toInt();
     if (fileSize <= 0) { sendCmd("AT+CFSTERM"); return false; }
-    logger.printf("[FILE] %s: %d bytes\n", filepath, fileSize);
+    logger.printf("[FILE] %s: %d bytes\n", filename, fileSize);
 
     // AT+CFSRFILE=<dir>,<name>,<mode>,<size>,<pos>
     // mode=1: 指定位置から読み取り。バイナリ対応のため readBytes を使う
@@ -168,7 +162,7 @@ bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, siz
     {
       int readLen = min(CHUNK, fileSize - offset);
       char rcmd[128];
-      snprintf(rcmd, sizeof(rcmd), "AT+CFSRFILE=3,\"%s\",1,%d,%d", name, readLen, offset);
+      snprintf(rcmd, sizeof(rcmd), "AT+CFSRFILE=3,\"%s\",1,%d,%d", filename, readLen, offset);
 
       logger.printf("  [AT] %s\n", rcmd);
       SerialAT.println(rcmd);

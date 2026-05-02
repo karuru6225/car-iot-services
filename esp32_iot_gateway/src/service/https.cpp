@@ -218,14 +218,14 @@ int Https::get(const char *url,
   return 200;
 }
 
-int Https::download(const char *url, const char *filepath)
+int Https::download(const char *url, const char *filename)
 {
-  logger.printf("[HTTPS] ダウンロード: %s → /customer/%s\n", url, filepath);
+  logger.printf("[HTTPS] ダウンロード: %s → /customer/%s\n", url, filename);
 
   // AT+HTTPTOFS=<url>,<file_path>[,<timeout>]
   // タイムアウトは 300 秒（1MB 超のファームウェアを想定）
   char cmd[900];
-  snprintf(cmd, sizeof(cmd), "AT+HTTPTOFS=\"%s\",\"/customer/%s\",300", url, filepath);
+  snprintf(cmd, sizeof(cmd), "AT+HTTPTOFS=\"%s\",\"/customer/%s\",300", url, filename);
 
   // OK を待ってから +HTTPTOFS: URC を別途受信（SHREQ と同パターン）
   lte.sendCmd(cmd, 5000);

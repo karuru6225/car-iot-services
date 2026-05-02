@@ -71,7 +71,7 @@ bool Ota::apply(const char *url, const char *jobId)
   }
 
   size_t written = 0;
-  bool readOk = lte.readFile("/customer/firmware.bin",
+  bool readOk = lte.readFile("firmware.bin",
     [&](const uint8_t *data, size_t len) -> bool {
       esp_err_t e = esp_ota_write(handle, data, len);
       if (e != ESP_OK) {
