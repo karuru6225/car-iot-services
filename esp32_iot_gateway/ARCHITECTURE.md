@@ -26,7 +26,8 @@ src/
 
 | ファイル | 役割 |
 |----------|------|
-| `lte.h/.cpp` | SIM7080G ATコマンド制御（GPRS接続, 証明書アップロード, 電源管理） |
+| `lte.h/.cpp` | SIM7080G ATコマンド制御（GPRS接続, 証明書アップロード, 電源管理, ファイル読み取り） |
+| `ble_scan.h/.cpp` | BLE スキャナー（SwitchBot Manufacturer Data 受信、FreeRTOS キュー経由で domain に渡す） |
 | `ads.h/.cpp` | ADS1115 I2Cドライバ（差動電圧読み取り） |
 | `ina228.h/.cpp` | INA228 I2Cドライバ（電流・電力・温度読み取り） |
 | `oled.h/.cpp` | SSD1306 OLEDドライバ（表示制御） |
@@ -40,7 +41,12 @@ device / service を include してはいけない。標準ライブラリのみ
 | ファイル            | 役割                                                           |
 |---------------------|----------------------------------------------------------------|
 | `measurement.h`     | 計測値の構造体（VoltageReading, PowerReading）                 |
-| `telemetry.h/.cpp`  | AWS Shadow ペイロードの JSON シリアライズ（buildShadowPayload）|
+| `telemetry.h/.cpp`  | JSON シリアライズ（buildShadowPayload / buildThermometerPayload / buildCo2Payload）|
+| `sensor.h`          | BLE センサー共通構造体（SensorBase）                          |
+| `thermometer.h/.cpp`| SwitchBot 温湿度計パーサー（ThermometerData / ThermometerParser）|
+| `co2meter.h/.cpp`   | SwitchBot CO2センサーパーサー（Co2MeterData / Co2MeterParser）|
+| `sensor_factory.h/.cpp` | センサー種別振り分け（SensorVariant = std::variant）      |
+| `ble_targets.h/.cpp`| 監視対象 BLE アドレスの NVS 永続化（BleTargets、NS: "switchbot"）|
 
 ### service/
 
@@ -50,7 +56,8 @@ device / service を include してはいけない。標準ライブラリのみ
 | ファイル | 役割 |
 |----------|------|
 | `mqtt.h/.cpp` | MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用） |
-| `ota.h/.cpp` | AWS IoT Jobs 確認・ファームウェアダウンロード・適用・ロールバック管理 |
+| `https.h/.cpp` | AT+SH* スタックを使った HTTPS GET / ダウンロード（SIM7080G の CA 制限を回避） |
+| `ota.h/.cpp` | AWS IoT Jobs 確認・ファームウェア適用・ロールバック管理 |
 | `logger.h/.cpp` | シリアルデバッグ出力（横断的関心事） |
 
 ---

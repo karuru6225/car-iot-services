@@ -71,16 +71,23 @@ esp32_iot_gateway/
     ├── certs.example.h                証明書のサンプルテンプレート
     ├── provision.cpp                  プロビジョニング専用（provision env のみビルド）
     ├── device/
-    │   ├── lte.h/.cpp                 SIM7080G ATコマンド制御（GPRS接続・証明書アップロード・電源管理・HTTPS OTA）
+    │   ├── lte.h/.cpp                 SIM7080G ATコマンド制御（GPRS接続・証明書アップロード・電源管理・ファイル読み取り）
+    │   ├── ble_scan.h/.cpp            BLE スキャナー（SwitchBot デバイス受信・FreeRTOS キュー）
     │   ├── ads.h/.cpp                 ADS1115 I2Cドライバ（差動電圧読み取り）
     │   ├── ina228.h/.cpp              INA228 I2Cドライバ（電流・電力・温度読み取り）
     │   ├── oled.h/.cpp                SSD1306 OLEDドライバ（表示制御）
     │   └── speaker.h/.cpp             ブザードライバ（tone PWM制御）
     ├── domain/
     │   ├── measurement.h              計測値構造体（VoltageReading, PowerReading）
-    │   └── telemetry.h/.cpp           AWS Shadow ペイロード JSON 組み立て（buildShadowPayload）
+    │   ├── telemetry.h/.cpp           ペイロード JSON 組み立て（Shadow / Thermometer / CO2）
+    │   ├── sensor.h                   BLE センサー共通構造体（SensorBase）
+    │   ├── thermometer.h/.cpp         SwitchBot 温湿度計パーサー
+    │   ├── co2meter.h/.cpp            SwitchBot CO2センサーパーサー
+    │   ├── sensor_factory.h/.cpp      センサー種別振り分け（SensorVariant）
+    │   └── ble_targets.h/.cpp         監視対象 BLE アドレスの NVS 永続化
     └── service/
         ├── mqtt.h/.cpp                MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用）
+        ├── https.h/.cpp               AT+SH* ベースの HTTPS GET / ファイルダウンロード
         ├── ota.h/.cpp                 AWS IoT Jobs 確認・ファームウェア適用・ロールバック管理
         └── logger.h/.cpp              シリアルデバッグ出力
 ```
@@ -129,9 +136,12 @@ ESP32-S3-MINI-1
 
 | インスタンス | 型 | 役割 |
 | --- | --- | --- |
-| `lte` | `Lte` | SIM7080G ATコマンド制御・GPRS接続・証明書管理・HTTPS OTA |
+| `lte` | `Lte` | SIM7080G ATコマンド制御・GPRS接続・証明書管理・ファイル読み取り |
 | `mqtt` | `Mqtt` | MQTT publish / subscribe / pollMqtt |
+| `https` | `Https` | AT+SH* 経由 HTTPS GET / ダウンロード |
 | `ota` | `Ota` | AWS IoT Jobs 確認・FW 適用・ロールバック管理 |
+| `bleScanner` | `BleScanner` | BLE スキャン・FreeRTOS キューへの書き込み |
+| `bleTargets` | `BleTargets` | 監視対象 BLE アドレスの NVS 管理 |
 | `logger` | `Logger` | Serial デバッグ出力（`printf`/`println`） |
 
 ドメイン型:
@@ -140,6 +150,9 @@ ESP32-S3-MINI-1
 | --- | --- |
 | `VoltageReading` | 電圧計測値（`float voltage`） |
 | `PowerReading` | 電力計測値（`float current, power, temp`） |
+| `ThermometerData` | SwitchBot 温湿度計データ（SensorBase + temp/humidity/battery） |
+| `Co2MeterData` | SwitchBot CO2センサーデータ（ThermometerData + co2） |
+| `SensorVariant` | `std::variant<ThermometerData, Co2MeterData>` |
 
 ## 重要な設計決定
 
@@ -212,13 +225,18 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.0.0+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `"1.1.0+" GIT_HASH` | ファームウェアバージョン |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔（秒） |
 | `CERT_PATH_CA` | `"/certs/ca.crt"` | SPIFFS 上の CA 証明書パス |
 | `CERT_PATH_DEVICE` | `"/certs/device.crt"` | SPIFFS 上のデバイス証明書パス |
 | `CERT_PATH_KEY` | `"/certs/device.key"` | SPIFFS 上の秘密鍵パス |
 | `MQTT_PORT` | `8883` | AWS IoT Core MQTT ポート |
+| `SWITCHBOT_COMPANY_ID` | `0x0969` | SwitchBot BLE Manufacturer ID |
+| `SCAN_TIME` | `10` | BLE スキャン時間（秒） |
+| `QUEUE_SIZE` | `20` | BLE キュー最大サイズ |
+| `MAX_TARGETS` | `10` | 監視対象 BLE デバイス最大数 |
+| `PAYLOAD_SENSOR_SIZE` | `256` | BLE センサーペイロードバッファ（バイト） |
 
 device/lte.h の定数:
 
@@ -245,37 +263,54 @@ device/lte.h の定数:
 
 ## 作業中・引き継ぎ事項
 
-### ~~フェーズ 1: OTA ファームウェアアップデート~~ **実装済み**
+### ~~フェーズ 1: OTA ファームウェアアップデート~~ **MQTT 疎通まで完了**
 
 `service/ota.h/.cpp` に AWS IoT Jobs ベースの OTA を実装。詳細は `OTA.md` 参照。
 
-- AWS IoT Jobs で次ジョブを確認 → S3 署名付き URL から HTTPS GET でダウンロード
-- `esp_ota_write()` でチャンクごとに書き込み、`esp_ota_end()` で SHA-256 検証
+- AWS IoT Jobs で次ジョブを確認・受信（`pollMqtt` の SIM7080G URC フォーマット対応済み）
+- **OTA ダウンロード部分は差し替えが必要**（下記 TODO 参照）
 - ロールバック: MQTT 接続確認後に `esp_ota_mark_app_valid_cancel_rollback()` を呼ぶ
 - パーティション: `partitions_two_ota.csv`（`app0` / `app1` 交互使用）
+- `ops/deploy_ota.ps1` でビルド・S3アップロード・Job作成を一括実行
 
-### フェーズ 2（次）: AWS IoT からのコマンド受信
+### ~~フェーズ 3: BLE スキャン~~ **基盤実装済み（送信は一時無効）**
 
-AWS IoT Core から ESP32 へ MQTT でコマンドを送り、デバイスが応答する機能。
+- `device/ble_scan.h/.cpp`, `domain/sensor*.h/.cpp`, `domain/ble_targets.h/.cpp` 追加済み
+- `main.cpp` で BLE スキャン → キュー受信 → ログ出力まで動作確認済み
+- **BLE センサーデータの MQTT 送信は `main.cpp` でコメントアウト中**（OTA 完成後に有効化）
+- 監視対象デバイスの NVS 管理実装済み（登録モード UI は未実装）
+
+### TODO: OTA ダウンロードフローの差し替え（最優先）
+
+**背景**: SIM7080G では `AT+SMCONN`（MQTT）接続後に `AT+CAOPEN` 系が全ブロックされる。
+`service/https.h/.cpp` に `AT+SH*` スタック（MQTT と独立）を実装して回避策確立済み。
+
+**現状の問題**: `ota.apply()` が `https.get()` + SHREAD ストリーミングを使っているが、
+S3 の URL が `AT+SHCONF="URL"` の 64 バイト制限を超えるため動かない。
+
+**実装方針（決定済み）**:
+1. `https.download(url, "/customer/firmware.bin")` → `AT+HTTPTOFS` でファイルシステムにDL
+   - S3 URL を path-style に変換: `https://s3.ap-northeast-1.amazonaws.com/{bucket}/{key}`
+2. `lte.readFile("/customer/firmware.bin", onChunk)` → `AT+CFSRFILE` でチャンク読み取り → `esp_ota_write()`
+   - `AT+CFSINIT` → `AT+CFSRFILE=3,"filename",1,size,offset` → `AT+CFSTERM`
+   - **httpbin.org で download + readFile の動作確認済み**
+3. `ota.apply()` を上記フローに書き換え
+
+**未確認事項**: SIM7080G ファイルシステムに 1MB 超のファームを格納できるか
+
+### フェーズ 2: AWS IoT からのコマンド受信（未着手）
 
 | 機能 | 概要 |
 | ---- | ---- |
 | Subscribe トピック | `sensors/{device_id}/command` |
-| 想定コマンド | リレー制御、設定変更、即時送信トリガー等（詳細は実装時に確定） |
-| 実装方針 | SIM7080G 内蔵 MQTT の AT+SMCONF+AT+SMSUB を使用、受信コールバックで解析 |
+| 想定コマンド | リレー制御、設定変更、即時送信トリガー等 |
 
-### フェーズ 3（次）: センサーデータの MQTT 送信
-
-- ADS1115 電圧・INA228 電力を Shadow 以外のトピックにも publish
-- BLE スキャン（温湿度 / CO2）の追加
-- DeepSleep サイクルでの定期送信
-
-### フェーズ 4（次）: 操作ボタン UI
+### フェーズ 4: 操作ボタン UI（未着手）
 
 - Btn0（GPIO26）/ Btn1（GPIO33）で画面操作・登録モード遷移
 - OLED への状態表示拡充（`device/oled.h` は実装済み）
 
-### フェーズ 5（残り）: リレー・ブザー制御
+### フェーズ 5: リレー・ブザー制御（未着手）
 
 | 機能 | GPIO | 概要 |
 | ---- | ---- | ---- |
