@@ -280,23 +280,14 @@ device/lte.h の定数:
 - **BLE センサーデータの MQTT 送信は `main.cpp` でコメントアウト中**（OTA 完成後に有効化）
 - 監視対象デバイスの NVS 管理実装済み（登録モード UI は未実装）
 
-### TODO: OTA ダウンロードフローの差し替え（最優先）
+### ~~TODO: OTA ダウンロードフローの差し替え~~ **完了**
 
-**背景**: SIM7080G では `AT+SMCONN`（MQTT）接続後に `AT+CAOPEN` 系が全ブロックされる。
-`service/https.h/.cpp` に `AT+SH*` スタック（MQTT と独立）を実装して回避策確立済み。
+`ota.apply()` を `AT+HTTPTOFS`（SIM FS へダウンロード）+ `AT+CFSRFILE`（チャンク読み取り → `esp_ota_write()`）フローに刷新済み。
 
-**現状の問題**: `ota.apply()` が `https.get()` + SHREAD ストリーミングを使っているが、
-S3 の URL が `AT+SHCONF="URL"` の 64 バイト制限を超えるため動かない。
-
-**実装方針（決定済み）**:
-1. `https.download(url, "/customer/firmware.bin")` → `AT+HTTPTOFS` でファイルシステムにDL
-   - S3 URL を path-style に変換: `https://s3.ap-northeast-1.amazonaws.com/{bucket}/{key}`
-2. `lte.readFile("/customer/firmware.bin", onChunk)` → `AT+CFSRFILE` でチャンク読み取り → `esp_ota_write()`
-   - `AT+CFSINIT` → `AT+CFSRFILE=3,"filename",1,size,offset` → `AT+CFSTERM`
-   - **httpbin.org で download + readFile の動作確認済み**
-3. `ota.apply()` を上記フローに書き換え
-
-**未確認事項**: SIM7080G ファイルシステムに 1MB 超のファームを格納できるか
+- `AT+SHCONF="URL"` の 64 バイト制限を回避（AT+HTTPTOFS は URL 長制限なし）
+- S3 仮想ホスト URL（`bucket.s3.region.amazonaws.com`）で動作確認済み（path-style 変換不要）
+- CFSRFILE チャンクサイズ: 4096 バイト（書き込み高速化）
+- Job 状態報告: ロールバック判定を next パーティションの ABORTED 状態で実施。MQTT 失敗時は job_id を NVS に残して次回起動時にリトライ
 
 ### フェーズ 2: AWS IoT からのコマンド受信（未着手）
 
