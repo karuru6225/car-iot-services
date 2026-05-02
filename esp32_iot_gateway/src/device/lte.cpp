@@ -88,7 +88,6 @@ bool Lte::isConnected()
   return _modem.isGprsConnected();
 }
 
-
 // ─── 証明書アップロード ───────────────────────────────────────────────────
 
 void Lte::uploadCert(const char *filename, const char *pem)
@@ -132,174 +131,113 @@ void Lte::uploadCert(const char *filename, const char *pem)
                 filename, len, resp.indexOf("OK") >= 0 ? "OK" : "NG");
 }
 
-// ─── HTTPS ダウンロード（OTA 用）────────────────────────────────────────
-
-bool Lte::parseUrl(const char *url,
-                   char *host, int hostSize,
-                   int &port,
-                   char *path, int pathSize)
+bool Lte::readFile(const char *filepath, std::function<bool(const uint8_t *, size_t)> onChunk)
 {
-  const char *p = url;
-  if (strncmp(p, "https://", 8) == 0)
+  // /customer/ プレフィックスを除去（index=3 固定）
+  static const char PREFIX[] = "/customer/";
+  const char *name = (strncmp(filepath, PREFIX, sizeof(PREFIX) - 1) == 0)
+                       ? filepath + sizeof(PREFIX) - 1
+                       : filepath;
+
+  sendCmd("AT+CFSINIT");
+
+  // ファイルサイズ確認
   {
-    port = 443;
-    p += 8;
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd), "AT+CFSGFIS=3,\"%s\"", name);
+    String resp = sendCmdResp(cmd, 5000);
+    if (resp.indexOf("ERROR") >= 0)
+    {
+      logger.printf("[FILE] %s: not found\n", filepath);
+      return false;
+    }
+    int q1 = resp.indexOf(':');
+    if (q1 < 0) return false;
+    int fileSize = resp.substring(q1 + 1).toInt();
+    if (fileSize <= 0) return false;
+    logger.printf("[FILE] %s: %d bytes\n", filepath, fileSize);
+
+    // AT+CFSRFILE=<dir>,<name>,<mode>,<size>,<pos>
+    // mode=1: 指定位置から読み取り。バイナリ対応のため readBytes を使う
+    static const int CHUNK = 512;
+    static uint8_t   chunk[CHUNK];
+    int offset = 0;
+
+    while (offset < fileSize)
+    {
+      int readLen = min(CHUNK, fileSize - offset);
+      char rcmd[128];
+      snprintf(rcmd, sizeof(rcmd), "AT+CFSRFILE=3,\"%s\",1,%d,%d", name, readLen, offset);
+
+      logger.printf("  [AT] %s\n", rcmd);
+      SerialAT.println(rcmd);
+
+      // +CFSRFILE: <actual>\r\n<data> を受信
+      unsigned long deadline = millis() + 10000;
+      String        header   = "";
+      int           idx = -1, nl = -1;
+      while (millis() < deadline)
+      {
+        while (SerialAT.available())
+          header += (char)SerialAT.read();
+        idx = header.indexOf("+CFSRFILE:");
+        if (idx >= 0)
+        {
+          nl = header.indexOf('\n', idx);
+          if (nl >= 0) break;
+        }
+        delay(5);
+      }
+      if (idx < 0 || nl < 0)
+      {
+        logger.printf("[FILE] CFSRFILE timeout at %d\n", offset);
+        return false;
+      }
+
+      int actual = header.substring(idx + 10, nl).toInt();
+      if (actual <= 0)
+      {
+        logger.printf("[FILE] CFSRFILE size=0 at %d\n", offset);
+        return false;
+      }
+
+      // 先行データをコピー
+      int preloaded = 0;
+      int preStart  = nl + 1;
+      int preAvail  = min((int)header.length() - preStart, actual);
+      for (int i = 0; i < preAvail; i++)
+        chunk[preloaded++] = (uint8_t)header[preStart + i];
+
+      // 残りを readBytes で読む（\0 に安全）
+      int received = preloaded;
+      if (received < actual)
+      {
+        SerialAT.setTimeout(10000);
+        received += SerialAT.readBytes((char *)chunk + preloaded, actual - preloaded);
+      }
+
+      // 末尾の OK を読み捨て
+      {
+        unsigned long t      = millis();
+        String        trail  = "";
+        while (millis() - t < 3000)
+        {
+          while (SerialAT.available())
+            trail += (char)SerialAT.read();
+          if (trail.indexOf("OK") >= 0) break;
+          delay(5);
+        }
+      }
+
+      if (received <= 0) return false;
+      if (!onChunk(chunk, received)) return false;
+
+      offset += received;
+      logger.printf("[FILE] %d / %d bytes\n", offset, fileSize);
+    }
   }
-  else if (strncmp(p, "http://", 7) == 0)
-  {
-    port = 80;
-    p += 7;
-  }
-  else
-    return false;
-
-  const char *hostEnd = p;
-  while (*hostEnd && *hostEnd != '/' && *hostEnd != ':')
-    hostEnd++;
-
-  int hostLen = hostEnd - p;
-  if (hostLen <= 0 || hostLen >= hostSize)
-    return false;
-  strncpy(host, p, hostLen);
-  host[hostLen] = '\0';
-  p = hostEnd;
-
-  if (*p == ':')
-  {
-    p++;
-    port = atoi(p);
-    while (*p && *p != '/')
-      p++;
-  }
-
-  strncpy(path, *p ? p : "/", pathSize - 1);
-  path[pathSize - 1] = '\0';
+  sendCmd("AT+CFSTERM");
   return true;
-}
-
-int Lte::httpGetOta(const char *url,
-                    std::function<bool(const uint8_t *, size_t)> onChunk)
-{
-  char host[128];
-  char path[768]; // S3 署名付き URL は長い
-  int port = 443;
-  if (!parseUrl(url, host, sizeof(host), port, path, sizeof(path)))
-  {
-    logger.println("[OTA] URL パースエラー");
-    return 0;
-  }
-
-  logger.printf("[OTA] 接続: %s:%d\n", host, port);
-
-  // MQTT とは独立した TLS 接続（SIM7080G は同時接続可能）
-  // モデム内蔵 CA ストアで検証。Amazon Root CA が含まれない場合は
-  // SPIFFS の /certs/ca.crt に S3 の Root CA を追加して uploadCert() で登録すること
-  TinyGsmClientSecure client(_modem);
-  if (!client.connect(host, port))
-  {
-    logger.println("[OTA] HTTP 接続失敗");
-    return 0;
-  }
-
-  client.printf("GET %s HTTP/1.0\r\n", path);
-  client.printf("Host: %s\r\n", host);
-  client.print("Connection: close\r\n\r\n");
-
-  // ステータス行を読む
-  unsigned long t = millis();
-  String statusLine = "";
-  while (millis() - t < 10000)
-  {
-    while (client.available())
-    {
-      char c = client.read();
-      if (c == '\n')
-        goto statusDone;
-      if (c != '\r')
-        statusLine += c;
-    }
-    if (!client.connected())
-      break;
-    delay(1);
-  }
-statusDone:
-  int statusCode = 0;
-  if (statusLine.startsWith("HTTP/"))
-    statusCode = statusLine.substring(9, 12).toInt();
-
-  logger.printf("[OTA] HTTP %d\n", statusCode);
-  if (statusCode != 200)
-  {
-    client.stop();
-    return statusCode;
-  }
-
-  // 残りのヘッダーを読み飛ばす（空行まで）
-  String line = "";
-  while (millis() - t < 15000)
-  {
-    while (client.available())
-    {
-      char c = client.read();
-      if (c == '\n')
-      {
-        if (line.length() == 0)
-          goto headerDone;
-        line = "";
-      }
-      else if (c != '\r')
-      {
-        line += c;
-      }
-    }
-    if (!client.connected())
-      break;
-    delay(1);
-  }
-headerDone:
-
-  // ボディをチャンク単位で読んで onChunk に渡す
-  uint8_t buf[512];
-  while (true)
-  {
-    unsigned long chunkStart = millis();
-    int len = 0;
-    while (len < (int)sizeof(buf))
-    {
-      if (client.available())
-      {
-        buf[len++] = client.read();
-        chunkStart = millis();
-      }
-      else if (!client.connected())
-      {
-        break;
-      }
-      else if (millis() - chunkStart > 10000)
-      {
-        logger.println("[OTA] ダウンロードタイムアウト");
-        client.stop();
-        return 0;
-      }
-      else
-      {
-        delay(1);
-      }
-    }
-    if (len > 0)
-    {
-      if (!onChunk(buf, len))
-      {
-        client.stop();
-        return 0;
-      }
-    }
-    if (!client.connected() && !client.available())
-      break;
-  }
-
-  client.stop();
-  return 200;
 }
 
 // ─── 時刻同期 ─────────────────────────────────────────────────────────────

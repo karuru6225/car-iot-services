@@ -37,29 +37,20 @@ public:
   // GPRS 接続中か確認
   bool isConnected();
 
-  // HTTPS GET でバイナリをストリーミングダウンロード
-  // onChunk: データを受け取るたびに呼ばれる。false を返すと中断
-  // 戻り値: HTTP ステータスコード（200=成功、0=接続失敗）
-  int httpGetOta(const char *url,
-                 std::function<bool(const uint8_t *, size_t)> onChunk);
-
   // AT+CCLK? で ESP32 RTC を UTC に同期
   bool syncTime();
 
-  // AT コマンド送受信（service/mqtt が使用）
+  // AT コマンド送受信（service/mqtt, service/https が使用）
   String sendCmdResp(const char *cmd, uint32_t timeoutMs = 3000);
   bool sendCmd(const char *cmd, uint32_t timeoutMs = 3000);
+
+  bool readFile(const char *filename, std::function<bool(const uint8_t *, size_t)> onChunk);
 
 private:
   TinyGsm _modem{SerialAT};
   TinyGsmClient _client{_modem};
 
   void uploadCert(const char *filename, const char *pem);
-
-  static bool parseUrl(const char *url,
-                       char *host, int hostSize,
-                       int &port,
-                       char *path, int pathSize);
 };
 
 extern Lte lte;

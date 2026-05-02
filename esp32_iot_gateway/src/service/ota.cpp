@@ -1,6 +1,7 @@
 #include "ota.h"
 #include "../device/lte.h"
 #include "mqtt.h"
+#include "https.h"
 #include "logger.h"
 #include "../config.h"
 #include <esp_ota_ops.h>
@@ -8,7 +9,7 @@
 
 Ota ota;
 
-bool Ota::apply(const char *url)
+bool Ota::apply(const char *url, const char *jobId)
 {
   const esp_partition_t *partition = esp_ota_get_next_update_partition(NULL);
   if (!partition)
@@ -27,7 +28,7 @@ bool Ota::apply(const char *url)
   }
 
   size_t written = 0;
-  int status = lte.httpGetOta(url, [&](const uint8_t *data, size_t len) -> bool
+  int status = https.get(url, [&](const uint8_t *data, size_t len) -> bool
                               {
     esp_err_t e = esp_ota_write(handle, data, len);
     if (e != ESP_OK) {
@@ -58,6 +59,9 @@ bool Ota::apply(const char *url)
     logger.printf("[OTA] boot partition 設定失敗: 0x%x\n", err);
     return false;
   }
+
+  // 書き込み完了確定後に JobID を保存する（接続失敗時は保存しないためJobが FAILED にならない）
+  setPendingJobId(jobId);
 
   logger.printf("[OTA] 完了 (%u bytes) → 再起動\n", written);
   delay(500);
@@ -194,12 +198,17 @@ bool Ota::check()
 
   updateJobStatus(jobId, "IN_PROGRESS");
 
-  setPendingJobId(jobId);
+  // AT+SH* スタックは MQTT（AT+SM*）と独立しているため、MQTT切断のみで OK
+  lte.sendCmd("AT+SMDISC", 5000);
 
-  // url は doc のライフタイムに依存するためコピーして渡す
+  // url・jobId は doc のライフタイムに依存するためコピーして渡す
   static char urlBuf[768];
   strncpy(urlBuf, url, sizeof(urlBuf) - 1);
   urlBuf[sizeof(urlBuf) - 1] = '\0';
 
-  return apply(urlBuf);
+  static char jobIdBuf[64];
+  strncpy(jobIdBuf, jobId, sizeof(jobIdBuf) - 1);
+  jobIdBuf[sizeof(jobIdBuf) - 1] = '\0';
+
+  return apply(urlBuf, jobIdBuf);
 }

@@ -45,7 +45,9 @@ Pop-Location
 $FirmwareKey = "firmware/v$Version.bin"
 $FirmwareUrl = "$BaseUrl/$FirmwareKey"
 $JobDocKey   = "jobs/v$Version.json"
-$JobId       = "ota-v$($Version -replace '\.', '_')"
+$Timestamp   = Get-Date -Format "yyyyMMddHHmmss"
+$BaseJobId   = "ota-v$($Version -replace '\.', '_')"
+$JobId       = "$BaseJobId-$Timestamp"
 
 Write-Host "=== OTA Deploy ==="
 Write-Host "VERSION:  $Version"
@@ -94,7 +96,28 @@ if ($ThingName) {
   $Targets = ($Things | ForEach-Object { "arn:aws:iot:${Region}:${AccountId}:thing/$_" }) -join ','
 }
 
-# ─── 5. Create IoT Job ────────────────────────────────────────────────────────
+# ─── 5. Cancel and delete existing jobs for this version ─────────────────────
+
+Write-Host ">>> Cleaning up existing jobs matching '$BaseJobId*'..."
+# list-jobs の有効ステータス: IN_PROGRESS / COMPLETED / SCHEDULED / DELETION_IN_PROGRESS / CANCELED
+$statusesToClean = @("IN_PROGRESS", "SCHEDULED", "COMPLETED", "CANCELED", "DELETION_IN_PROGRESS")
+foreach ($status in $statusesToClean) {
+  $response = aws iot list-jobs --status $status | ConvertFrom-Json
+  foreach ($job in $response.jobs) {
+    if ($job.jobId -like "$BaseJobId*") {
+      Write-Host "  Found [$status] $($job.jobId) — deleting..."
+      # IN_PROGRESS / SCHEDULED のみキャンセルが必要。それ以外はスキップ
+      if ($status -in @("IN_PROGRESS", "SCHEDULED")) {
+        try { aws iot cancel-job --job-id $job.jobId --force 2>&1 | Out-Null } catch {}
+      }
+      aws iot delete-job --job-id $job.jobId --force
+      Write-Host "  Deleted: $($job.jobId)"
+    }
+  }
+}
+Write-Host "Cleanup complete."
+
+# ─── 6. Create IoT Job ────────────────────────────────────────────────────────
 
 Write-Host ">>> Creating IoT Job..."
 $DocUrl = "https://s3.$Region.amazonaws.com/$Bucket/$JobDocKey"
