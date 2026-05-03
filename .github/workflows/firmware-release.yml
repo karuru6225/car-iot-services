@@ -35,7 +35,9 @@ jobs:
       - name: PlatformIO キャッシュ
         uses: actions/cache@v4
         with:
-          path: ~/.platformio
+          path: |
+            ~/.platformio
+            esp32_iot_gateway/.pio/libdeps
           key: pio-${{ hashFiles('esp32_iot_gateway/platformio.ini') }}
 
       - name: PlatformIO インストール
