@@ -26,6 +26,12 @@ void oledPrint(const char *text)
   display.display();
 }
 
+void oledClear()
+{
+  display.clearDisplay();
+  display.display();
+}
+
 void oledShowOtaProgress(const char *stage, size_t current, size_t total)
 {
   display.clearDisplay();
@@ -70,7 +76,8 @@ void oledShowStatus(float voltage, float voltage2, bool relayOn, bool btn0, bool
 // TextSize=1: 1文字 6×8px、128px幅で21文字、64px高で8行
 // タイトル行(y=0) + 区切り線(y=8) + アイテム最大6行(y=10,19,28,37,46,55)
 
-void oledShowMenu(const char *title, const char *items[], int count, int cursor) {
+void oledShowMenu(const char *title, const char *items[], int count, int cursor)
+{
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -80,8 +87,10 @@ void oledShowMenu(const char *title, const char *items[], int count, int cursor)
 
   const int MAX_VISIBLE = 6;
   int offset = cursor - MAX_VISIBLE + 1;
-  if (offset < 0) offset = 0;
-  for (int i = 0; i < MAX_VISIBLE && (i + offset) < count; i++) {
+  if (offset < 0)
+    offset = 0;
+  for (int i = 0; i < MAX_VISIBLE && (i + offset) < count; i++)
+  {
     int idx = i + offset;
     display.setCursor(0, 10 + i * 9);
     display.print(idx == cursor ? "> " : "  ");
@@ -90,20 +99,23 @@ void oledShowMenu(const char *title, const char *items[], int count, int cursor)
   display.display();
 }
 
-void oledShowMessage(const char *line1, const char *line2) {
+void oledShowMessage(const char *line1, const char *line2)
+{
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 20);
   display.println(line1);
-  if (line2) {
+  if (line2)
+  {
     display.setCursor(0, 32);
     display.println(line2);
   }
   display.display();
 }
 
-void oledShowConfirm(const char *message, const char *item, int yesNoCursor) {
+void oledShowConfirm(const char *message, const char *item, int yesNoCursor)
+{
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -116,7 +128,8 @@ void oledShowConfirm(const char *message, const char *item, int yesNoCursor) {
   display.print("BTN1 long: cancel");
 
   // Yes ボタン (x=8, w=44)
-  if (yesNoCursor == 0) {
+  if (yesNoCursor == 0)
+  {
     display.fillRoundRect(8, 30, 44, 14, 2, SSD1306_WHITE);
     display.setTextColor(SSD1306_BLACK);
   }
@@ -125,7 +138,8 @@ void oledShowConfirm(const char *message, const char *item, int yesNoCursor) {
   display.setTextColor(SSD1306_WHITE);
 
   // No ボタン (x=76, w=40)
-  if (yesNoCursor == 1) {
+  if (yesNoCursor == 1)
+  {
     display.fillRoundRect(76, 30, 40, 14, 2, SSD1306_WHITE);
     display.setTextColor(SSD1306_BLACK);
   }
@@ -136,7 +150,8 @@ void oledShowConfirm(const char *message, const char *item, int yesNoCursor) {
   display.display();
 }
 
-void oledShowSensorData(const SensorReading &r) {
+void oledShowSensorData(const SensorReading &r)
+{
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -153,7 +168,8 @@ void oledShowSensorData(const SensorReading &r) {
   display.display();
 }
 
-void oledUpdateCountdown(int remainSec) {
+void oledUpdateCountdown(int remainSec)
+{
   // y=44: カウントダウン行（"Next: Xs"）
   display.fillRect(0, 44, 128, 9, SSD1306_BLACK);
   display.setTextColor(SSD1306_WHITE);

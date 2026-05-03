@@ -8,7 +8,7 @@
 //
 // デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
 
-#define DEBUG_MODE
+// #define DEBUG_MODE
 
 #include <Arduino.h>
 #include "config.h"
@@ -101,6 +101,7 @@ void loop()
     logger.println("[MAIN] DeepSleep へ移行");
     lte.disconnect();
     lte.radioOff(); // LTE_EN LOW
+    oledClear();
     esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
     esp_deep_sleep_start();
   }
@@ -115,7 +116,7 @@ void loop()
     {
       g_mode = enterMenuMode();
       oledShowSensorData(g_lastResult.reading); // メニュー終了後に計測値画面を復元
-      lastRemain = -1;                   // カウントダウンを即再描画させる
+      lastRemain = -1;                          // カウントダウンを即再描画させる
     }
     if (ev == ButtonEvent::BTN1_LONG)
     {
