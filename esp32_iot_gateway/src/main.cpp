@@ -102,10 +102,18 @@ void loop()
   {
     if (button.read() == ButtonEvent::BTN1_LONG)
     {
-      logger.println("[MAIN] BTN1 長押し → DEEP_SLEEP モードへ切り替え");
-      oledPrint("Switching sleep...");
-      g_mode = OperationMode::DEEP_SLEEP;
-      break;
+      if (g_mode == OperationMode::DEEP_SLEEP)
+      {
+        logger.println("[MAIN] BTN1 長押し → CONTINUOUS モードへ切り替え");
+        oledPrint("Switching continuous...");
+        g_mode = OperationMode::CONTINUOUS;
+      }
+      else if (g_mode == OperationMode::CONTINUOUS)
+      {
+        logger.println("[MAIN] BTN1 長押し → DEEP_SLEEP モードへ切り替え");
+        oledPrint("Switching sleep...");
+        g_mode = OperationMode::DEEP_SLEEP;
+      }
     }
     int remain = (int)((SLEEP_INTERVAL_SEC * 1000 - (millis() - waitStart)) / 1000);
     if (remain != lastRemain)
