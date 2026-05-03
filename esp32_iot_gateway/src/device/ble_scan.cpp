@@ -3,13 +3,13 @@
 
 BleScanner bleScanner;
 
-class SwitchBotCallback : public BLEAdvertisedDeviceCallbacks
+class SwitchBotCallback : public NimBLEAdvertisedDeviceCallbacks
 {
-  void onResult(BLEAdvertisedDevice dev)
+  void onResult(NimBLEAdvertisedDevice *dev)
   {
-    if (!dev.haveManufacturerData())
+    if (!dev->haveManufacturerData())
       return;
-    std::string mf = dev.getManufacturerData();
+    std::string mf = dev->getManufacturerData();
     if (mf.length() < 2)
       return;
 
@@ -17,12 +17,12 @@ class SwitchBotCallback : public BLEAdvertisedDeviceCallbacks
     if (companyId != SWITCHBOT_COMPANY_ID)
       return;
 
-    std::string addr = dev.getAddress().toString();
+    std::string addr = dev->getAddress().toString();
     if (!bleScanner.registrationMode && !bleTargets.isTarget(addr.c_str()))
       return;
 
-    std::string sd = dev.haveServiceData() ? dev.getServiceData() : std::string();
-    SensorVariant v = SensorParserFactory::parse(addr.c_str(), dev.getRSSI(), mf, sd);
+    std::string sd = dev->haveServiceData() ? dev->getServiceData() : std::string();
+    SensorVariant v = SensorParserFactory::parse(addr.c_str(), dev->getRSSI(), mf, sd);
     xQueueSend(bleScanner.queue, &v, 0);
   }
 };
@@ -30,8 +30,8 @@ class SwitchBotCallback : public BLEAdvertisedDeviceCallbacks
 void BleScanner::setup()
 {
   queue = xQueueCreate(QUEUE_SIZE, sizeof(SensorVariant));
-  BLEDevice::init("");
-  _scan = BLEDevice::getScan();
+  NimBLEDevice::init("");
+  _scan = NimBLEDevice::getScan();
   _scan->setAdvertisedDeviceCallbacks(new SwitchBotCallback());
   _scan->setActiveScan(true);
   _scan->setInterval(100);
@@ -50,5 +50,5 @@ void BleScanner::clearResults()
 
 void BleScanner::deinit()
 {
-  BLEDevice::deinit(true);
+  NimBLEDevice::deinit(true);
 }

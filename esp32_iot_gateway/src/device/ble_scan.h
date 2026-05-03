@@ -1,7 +1,5 @@
 #pragma once
-#include <BLEDevice.h>
-#include <BLEScan.h>
-#include <BLEAdvertisedDevice.h>
+#include <NimBLEDevice.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include "../config.h"
@@ -19,7 +17,7 @@ public:
   void deinit();
 
 private:
-  BLEScan *_scan = nullptr;
+  NimBLEScan *_scan = nullptr;
 };
 
 extern BleScanner bleScanner;
