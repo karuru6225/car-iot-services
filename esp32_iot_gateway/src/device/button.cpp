@@ -2,16 +2,18 @@
 
 Button button;
 
-void Button::begin(uint8_t pin0, uint8_t pin1) {
-  _pin0 = pin0;
-  _pin1 = pin1;
-  pinMode(_pin0, INPUT_PULLUP);
-  pinMode(_pin1, INPUT_PULLUP);
+void Button::begin() {
+  pinMode(BTN0_PIN, INPUT_PULLUP);
+  pinMode(BTN1_PIN, INPUT_PULLUP);
+}
+
+bool Button::isDown(uint8_t btn) {
+  return digitalRead(btn == 0 ? BTN0_PIN : BTN1_PIN) == LOW;
 }
 
 ButtonEvent Button::read() {
-  bool btn0 = digitalRead(_pin0) == LOW;
-  bool btn1 = digitalRead(_pin1) == LOW;
+  bool btn0 = digitalRead(BTN0_PIN) == LOW;
+  bool btn1 = digitalRead(BTN1_PIN) == LOW;
   unsigned long now = millis();
   ButtonEvent ev = ButtonEvent::NONE;
 

@@ -28,8 +28,6 @@
 #include <esp_sleep.h>
 
 #define RELAY_2_PIN 15
-#define BTN0_PIN 26
-#define BTN1_PIN 33
 #define UNITX_EN_PIN 9
 #define CHG_ON_PIN 21
 
@@ -45,11 +43,11 @@ void setup()
   oledPrint("FW: " FIRMWARE_VERSION);
   speakerInit();
   playMelody(bootStart);
-  button.begin(BTN0_PIN, BTN1_PIN);
+  button.begin();
 
   // BTN0 を押しながら起動でメニューモードへ（LTE 未起動のままオフライン動作）
   delay(1300);
-  if (digitalRead(BTN0_PIN) == LOW)
+  if (button.isDown(0))
   {
     oledPrint("Menu Mode");
     enterMenuMode(); // 戻らない
