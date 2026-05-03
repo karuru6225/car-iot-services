@@ -56,9 +56,11 @@ void setup()
   adsInit();
   ina228Init();
   oledPrint("FW: " FIRMWARE_VERSION);
-  speakerInit();
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
+  {
+    speakerInit();
     playMelody(bootStart);
+  }
   button.begin();
   bleScanner.setup();
 
