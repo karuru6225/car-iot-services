@@ -54,6 +54,11 @@ void speakerInit()
   digitalWrite(BUZZER_PIN, HIGH); // 負論理
 }
 
+void playTone(int freq, int durationMs)
+{
+  tone(BUZZER_PIN, freq, durationMs);
+}
+
 void playMelody(const Note *melody)
 {
   // {0, 0} をセンチネルとして末尾を検出する

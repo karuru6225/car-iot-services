@@ -15,8 +15,8 @@
 
 typedef struct Note
 {
-  int freq;
-  int dur;
+    int freq;
+    int dur;
 } Note;
 
 // 起動開始（単音）
@@ -25,13 +25,14 @@ const Note bootStart[] = {
     {0, 0},
 };
 
-// 起動完了（3音上昇）
 const Note boot[] = {
-    {1000, 100},
-    {1500, 100},
-    {2000, 100},
+    {C4 * 4, 80},
+    {F4 * 4, 80},
+    {A4 * 4, 80},
+    {C5 * 4, 80},
     {0, 0},
 };
 
 void speakerInit();
 void playMelody(const Note *melody);
+void playTone(int freq, int durationMs); // ノンブロッキング単音
