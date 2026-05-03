@@ -101,6 +101,7 @@ void loop()
 
   if (g_mode == OperationMode::DEEP_SLEEP)
   {
+    delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
     logger.println("[MAIN] DeepSleep へ移行");
     lte.disconnect();
     lte.radioOff(); // LTE_EN LOW
