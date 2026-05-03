@@ -32,6 +32,7 @@ src/
 | `ina228.h/.cpp` | INA228 I2Cドライバ（電流・電力・温度読み取り） |
 | `oled.h/.cpp` | SSD1306 OLEDドライバ（表示制御） |
 | `speaker.h/.cpp` | ブザー / スピーカードライバ（tone PWM制御） |
+| `button.h/.cpp` | デバウンス・長押し検出（`ButtonEvent`、ピン定数内包） |
 
 ### domain/
 
@@ -58,6 +59,8 @@ device / service を include してはいけない。標準ライブラリのみ
 | `mqtt.h/.cpp` | MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用） |
 | `https.h/.cpp` | HTTPS GET（AT+SH* ストリーミング）/ ファイルダウンロード（AT+HTTPTOFS → SIM FS） |
 | `ota.h/.cpp` | AWS IoT Jobs 確認・ファームウェア適用・ロールバック管理 |
+| `monitor.h/.cpp` | 計測サイクル（`measure()` / `publish()`）・`MeasureResult` 定義 |
+| `menu.h/.cpp` | OLED + 2ボタン設定メニュー、`enterMenuMode()` → `OperationMode` を返す |
 | `logger.h/.cpp` | シリアルデバッグ出力（横断的関心事） |
 
 ---

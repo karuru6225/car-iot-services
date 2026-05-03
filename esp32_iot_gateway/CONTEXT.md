@@ -34,26 +34,41 @@ SIM7080G（SORACOM Cat-M）経由で AWS IoT Core に MQTT over TLS で送信す
 
 ## 動作モード
 
-### 本番モード（デフォルト、`#define DEBUG_MODE` コメントアウト時）
+### 起動フロー（共通）
 
-1. BLE スキャン（10 秒）
-2. ADS1115 から 2 系統電圧読み取り + INA228 から電流・電力・積算電力量読み取り + キューから BLE データを収集してペイロード生成
-3. LTE 接続確認・再接続（切断時）
-4. 全ペイロードを AWS IoT Core に MQTT publish（最大 3 分リトライ）
-5. MQTT/GPRS 切断 → LTE 電源オフ（LTE_EN=LOW）→ DeepSleep 5 分 → `setup()` から再起動
+1. 周辺機器初期化（OLED / ADS / INA228 / スピーカー / ボタン / BLE スキャナー）
+2. DeepSleep 復帰かどうかを `esp_sleep_get_wakeup_cause()` で判定（復帰時はメロディをスキップ）
+3. BTN0 を押しながら起動 → `enterMenuMode()` → `OperationMode` を返す（LTE 未起動のままオフライン動作）
+4. LTE 接続 → OTA チェック → `loop()` へ
 
-### デバッグモード（`#define DEBUG_MODE` 有効時）
+### DEEP_SLEEP モード（`#define DEBUG_MODE` コメントアウト時のデフォルト）
 
-1. BLE スキャン → 電圧測定 → MQTT publish → SEND_INTERVAL_SEC（60 秒）待機
-2. 待機中に長押し検出で登録モードへ
-3. DeepSleep しない（繰り返しループ）
+`loop()` が1サイクルで完結し DeepSleep に入る：
 
-### 登録モード（デバッグモード中に長押しで起動）
+1. `measure()`: BLE スキャン（10秒）+ ADS1115/INA228 読み取り → `MeasureResult` を返す
+2. `publish()`: Shadow + BLE センサーペイロードを MQTT publish
+3. OLED に計測値を表示
+4. LTE 切断 → `lte.radioOff()`（LTE_EN=LOW）→ DeepSleep 5分 → `setup()` から再起動
 
-1. BLE スキャンで SwitchBot デバイスを検索
-2. 見つかったデバイス一覧を Serial 出力
-3. 短押し（Btn0）: 次の項目へ
-4. 長押し（Btn0）: 選択中のデバイスを登録（未登録）または削除（登録済）、または戻る
+### CONTINUOUS モード（`#define DEBUG_MODE` 有効時のデフォルト、またはメニューで選択）
+
+`loop()` が繰り返す：
+
+1. `measure()` → `publish()` → OLED 表示（DEEP_SLEEP モードと同じ計測・送信処理）
+2. SLEEP_INTERVAL_SEC（300秒）待機しながらボタン監視・カウントダウン表示
+   - BTN0 短押し: メニューを開く（終了後 OLED を計測値画面に復元）
+   - BTN1 長押し: DEEP_SLEEP モードへ切り替え（次ループで DeepSleep）
+
+### メニューモード（起動時 BTN0 長押し、または CONTINUOUS 待機中 BTN0 短押し）
+
+OLED + 2ボタンの設定メニュー。詳細は `MENU.md` 参照。
+
+- `BLE: Register` — BLE スキャンして SwitchBot デバイスを NVS 登録
+- `BLE: Remove` — 登録済みデバイスを NVS から削除
+- `Sensor View` — ADS1115/INA228 リアルタイム表示（50ms 更新）
+- `System Info` — FW バージョン・デバイス ID 表示
+- `Continuous` — CONTINUOUS モードで起動（LTE を開始して loop へ）
+- `Restart` — `esp_restart()`
 
 ## ファイル構成
 
@@ -66,7 +81,7 @@ esp32_iot_gateway/
 ├── CONTEXT.md                         本ファイル
 ├── ARCHITECTURE.md                    レイヤー構成・依存ルール・命名規則
 └── src/
-    ├── main.cpp                       エントリポイント: 初期化・OTA チェック・Shadow 送信
+    ├── main.cpp                       エントリポイント: 初期化・起動モード判定・loop() で計測/送信サイクル
     ├── config.h / config.cpp          全層共通定数・NVS アクセス（デバイスID / MQTT ホスト / 証明書 CRC / OTA ジョブID）
     ├── provision.cpp                  プロビジョニング専用（provision env のみビルド）
     ├── device/
@@ -75,7 +90,8 @@ esp32_iot_gateway/
     │   ├── ads.h/.cpp                 ADS1115 I2Cドライバ（差動電圧読み取り）
     │   ├── ina228.h/.cpp              INA228 I2Cドライバ（電流・電力・温度読み取り）
     │   ├── oled.h/.cpp                SSD1306 OLEDドライバ（表示制御）
-    │   └── speaker.h/.cpp             ブザードライバ（tone PWM制御）
+    │   ├── speaker.h/.cpp             ブザードライバ（tone PWM制御・ノンブロッキング playTone() 含む）
+    │   └── button.h/.cpp              デバウンス・長押し検出（BTN0/BTN1 ピン定数内包、フィードバック音内蔵）
     ├── domain/
     │   ├── measurement.h              計測値構造体（VoltageReading, PowerReading）
     │   ├── telemetry.h/.cpp           ペイロード JSON 組み立て（Shadow / Thermometer / CO2）
@@ -88,6 +104,8 @@ esp32_iot_gateway/
         ├── mqtt.h/.cpp                MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用）
         ├── https.h/.cpp               HTTPS GET（AT+SH*）/ ファイルダウンロード（AT+HTTPTOFS）
         ├── ota.h/.cpp                 AWS IoT Jobs 確認・ファームウェア適用・ロールバック管理
+        ├── monitor.h/.cpp             計測サイクル（measure() / publish()）・MeasureResult 定義
+        ├── menu.h/.cpp                OLED + 2ボタン設定メニュー（enterMenuMode() → OperationMode）
         └── logger.h/.cpp              シリアルデバッグ出力
 └── lib/
     └── uzlib/                         gzip 解凍ライブラリ（esp32-targz 同梱版・gzip OTA 圧縮実装準備）
@@ -143,6 +161,7 @@ ESP32-S3-MINI-1
 | `ota` | `Ota` | AWS IoT Jobs 確認・FW 適用・ロールバック管理 |
 | `bleScanner` | `BleScanner` | BLE スキャン・FreeRTOS キューへの書き込み |
 | `bleTargets` | `BleTargets` | 監視対象 BLE アドレスの NVS 管理 |
+| `button` | `Button` | BTN0/BTN1 デバウンス・長押し検出（`ButtonEvent`）・フィードバック音 |
 | `logger` | `Logger` | Serial デバッグ出力（`printf`/`println`） |
 
 ドメイン型:
@@ -151,6 +170,8 @@ ESP32-S3-MINI-1
 | --- | --- |
 | `VoltageReading` | 電圧計測値（`float voltage`） |
 | `PowerReading` | 電力計測値（`float current, power, temp`） |
+| `SensorReading` | アナログ計測値まとめ（`VoltageReading v1, v2` + `PowerReading pwr` + `time_t ts`） |
+| `MeasureResult` | 1サイクルの全計測結果（`SensorReading reading` + `SensorVariant ble[QUEUE_SIZE]` + `int bleCount`） |
 | `ThermometerData` | SwitchBot 温湿度計データ（SensorBase + temp/humidity/battery） |
 | `Co2MeterData` | SwitchBot CO2センサーデータ（ThermometerData + co2） |
 | `SensorVariant` | `std::variant<ThermometerData, Co2MeterData>` |
@@ -189,7 +210,17 @@ SHUNT_CAL = 819.2e6 × 208e-6 × 0.375e-3 × 4 ≒ 255
 ### OLED ディスプレイ
 
 `device/oled.h/.cpp` に SSD1306 ドライバを実装済み（I2C アドレス `0x3C`、SDA=GPIO17, SCL=GPIO18）。
-`oledInit()` / `oledPrint()` / `oledShowStatus()` の3関数で制御する。
+
+| 関数 | 用途 |
+| --- | --- |
+| `oledInit()` | I2C 初期化・画面クリア |
+| `oledPrint(text)` | 1行テキスト表示 |
+| `oledShowSensorData(SensorReading&)` | 計測値全表示（v1/v2/電流/電力/温度） |
+| `oledUpdateCountdown(remainSec)` | 計測値画面下部のカウントダウン行のみ部分更新（CONTINUOUS モード用） |
+| `oledShowMessage(line1, line2)` | 2行メッセージ表示 |
+| `oledShowMenu(title, items, count, cursor)` | スクロール付きメニュー表示 |
+| `oledShowConfirm(message, item, cursor)` | Yes/No 確認ダイアログ |
+| `oledShowOtaProgress(stage, current, total)` | OTA 進捗バー表示 |
 
 ### ADS1115 2 チャンネル読み取り
 
@@ -228,7 +259,8 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 | --- | --- | --- |
 | `FIRMWARE_VERSION` | `"1.3.0+" GIT_HASH` | ファームウェアバージョン |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
-| `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔（秒） |
+| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS`（動作モード） |
+| `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔 / CONTINUOUS モード待機間隔（秒） |
 | `CERT_PATH_CA` | `"/certs/ca.crt"` | SPIFFS 上の CA 証明書パス |
 | `CERT_PATH_DEVICE` | `"/certs/device.crt"` | SPIFFS 上のデバイス証明書パス |
 | `CERT_PATH_KEY` | `"/certs/device.key"` | SPIFFS 上の秘密鍵パス |
@@ -289,10 +321,13 @@ device/lte.h の定数:
 
 OLED + 2ボタンの設定メニューを実装。詳細は `MENU.md` 参照。
 
-- `service/menu.h/.cpp` — メニューステートマシン本体
-- `device/button.h/.cpp` — デバウンス・長押し検出（`ButtonEvent`）
-- BTN0（GPIO26）: カーソル移動、BTN1（GPIO33）: 決定 / 長押しで戻る
+- `service/menu.h/.cpp` — メニューステートマシン本体（`enterMenuMode()` → `OperationMode` を返す）
+- `service/monitor.h/.cpp` — 計測サイクル（`measure()` / `publish()`）
+- `device/button.h/.cpp` — デバウンス・長押し検出（BTN0/BTN1 ピン定数内包、フィードバック音内蔵）
+- BTN0（GPIO26）: カーソル移動 / CONTINUOUS 待機中はメニュー呼び出し
+- BTN1（GPIO33）: 決定 / 長押しで戻る / CONTINUOUS 待機中は DEEP_SLEEP↔CONTINUOUS トグル
 - 起動時に BTN0 を押しながら電源 ON でメニューモードに入る（LTE 未起動）
+- CONTINUOUS 待機中に BTN0 短押しでもメニューを呼び出せる（LTE 接続済みのまま）
 
 ### フェーズ 5: リレー・ブザー制御（未着手）
 
