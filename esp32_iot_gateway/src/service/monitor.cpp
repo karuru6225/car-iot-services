@@ -6,38 +6,38 @@
 #include "../device/ble_scan.h"
 #include "../device/oled.h"
 #include "../domain/telemetry.h"
-#include "../domain/measurement.h"
 #include "../domain/sensor_factory.h"
 #include "../config.h"
 #include <freertos/queue.h>
 #include <time.h>
 
-void measureAndPublish() {
-  // BLE スキャン
+SensorReading measure() {
   oledShowMessage("BLE Scanning...", "(10 sec)");
   SensorVariant dummy;
   while (xQueueReceive(bleScanner.queue, &dummy, 0) == pdTRUE) {}
   bleScanner.start(SCAN_TIME);
 
-  // 計測
-  VoltageReading v1{adsReadDiff01()};
-  VoltageReading v2{adsReadDiff23()};
-  PowerReading pwr{ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()};
-  time_t ts = time(nullptr);
+  return SensorReading{
+    {adsReadDiff01()},
+    {adsReadDiff23()},
+    {ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()},
+    time(nullptr)
+  };
+}
 
+void publish(const SensorReading &r) {
   logger.printf("[MONITOR] v1=%.2fV v2=%.2fV cur=%.4fA pwr=%.3fW tmp=%.1fC ts=%lld\n",
-                v1.voltage, v2.voltage, pwr.current, pwr.power, pwr.temp, (long long)ts);
+                r.v1.voltage, r.v2.voltage, r.pwr.current, r.pwr.power, r.pwr.temp,
+                (long long)r.ts);
 
-  // Shadow publish
   char shadowTopic[80];
   snprintf(shadowTopic, sizeof(shadowTopic), "$aws/things/%s/shadow/update", getDeviceId());
   char shadowBuf[256];
-  buildShadowPayload(shadowBuf, sizeof(shadowBuf), v1, v2, pwr, ts);
+  buildShadowPayload(shadowBuf, sizeof(shadowBuf), r.v1, r.v2, r.pwr, r.ts);
   if (!mqtt.publish(shadowTopic, shadowBuf)) {
     logger.println("[MONITOR] Shadow publish failed");
   }
 
-  // BLE センサー publish
   char sensorTopic[80];
   snprintf(sensorTopic, sizeof(sensorTopic), "sensors/%s/data", getDeviceId());
   char sensorBuf[PAYLOAD_SENSOR_SIZE];
@@ -56,7 +56,4 @@ void measureAndPublish() {
       logger.println("[MONITOR] Sensor publish failed");
     }
   }
-
-  // OLED 更新
-  oledShowSensorData(v1.voltage, v2.voltage, pwr.current, pwr.power, pwr.temp);
 }

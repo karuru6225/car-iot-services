@@ -136,18 +136,18 @@ void oledShowConfirm(const char *message, const char *item, int yesNoCursor) {
   display.display();
 }
 
-void oledShowSensorData(float v1, float v2, float cur, float pwr, float temp) {
+void oledShowSensorData(const SensorReading &r) {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
-  display.printf("V1:%.2fV V2:%.2fV", v1, v2);
+  display.printf("V1:%.2fV V2:%.2fV", r.v1.voltage, r.v2.voltage);
   display.setCursor(0, 12);
-  display.printf("Cur: %.2fA", cur);
+  display.printf("Cur: %.2fA", r.pwr.current);
   display.setCursor(0, 22);
-  display.printf("Pwr: %.1fW", pwr);
+  display.printf("Pwr: %.1fW", r.pwr.power);
   display.setCursor(0, 32);
-  display.printf("Tmp: %.1fC", temp);
+  display.printf("Tmp: %.1fC", r.pwr.temp);
   display.setCursor(0, 56);
   display.print("BTN1 long: back");
   display.display();

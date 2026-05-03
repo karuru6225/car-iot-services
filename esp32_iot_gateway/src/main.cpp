@@ -41,6 +41,7 @@ static OperationMode g_mode = OperationMode::DEEP_SLEEP;
 #endif
 
 static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
+static SensorReading g_lastReading = {};
 
 void setup()
 {
@@ -91,7 +92,9 @@ void setup()
 
 void loop()
 {
-  measureAndPublish();
+  g_lastReading = measure();
+  publish(g_lastReading);
+  oledShowSensorData(g_lastReading);
 
   if (g_mode == OperationMode::DEEP_SLEEP)
   {
@@ -111,6 +114,8 @@ void loop()
     if (ev == ButtonEvent::BTN0_SHORT)
     {
       g_mode = enterMenuMode();
+      oledShowSensorData(g_lastReading); // メニュー終了後に計測値画面を復元
+      lastRemain = -1;                   // カウントダウンを即再描画させる
     }
     if (ev == ButtonEvent::BTN1_LONG)
     {

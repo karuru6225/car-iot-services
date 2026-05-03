@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "../domain/measurement.h"
 
 void oledInit();
 void oledPrint(const char *text);
@@ -11,5 +12,5 @@ void oledShowOtaProgress(const char *stage, size_t current, size_t total);
 void oledShowMenu(const char *title, const char *items[], int count, int cursor);
 void oledShowMessage(const char *line1, const char *line2 = nullptr);
 void oledShowConfirm(const char *message, const char *item, int yesNoCursor);
-void oledShowSensorData(float v1, float v2, float cur, float pwr, float temp);
+void oledShowSensorData(const SensorReading &reading);
 void oledUpdateCountdown(int remainSec); // 計測値画面の下部だけ更新（継続モード用）

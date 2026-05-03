@@ -184,12 +184,13 @@ static MenuState tickBleRemoveConfirm(ButtonEvent ev) {
 }
 
 static MenuState tickSensor(ButtonEvent ev) {
-  float v1  = adsReadDiff01();
-  float v2  = adsReadDiff23();
-  float cur = ina228ReadCurrent();
-  float pwr = ina228ReadPower();
-  float tmp = ina228ReadTemp();
-  oledShowSensorData(v1, v2, cur, pwr, tmp);
+  SensorReading r{
+    {adsReadDiff01()},
+    {adsReadDiff23()},
+    {ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()},
+    0
+  };
+  oledShowSensorData(r);
   if (ev == ButtonEvent::BTN1_LONG) return MenuState::MAIN;
   return MenuState::SENSOR;
 }

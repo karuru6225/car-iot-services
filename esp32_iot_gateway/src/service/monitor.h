@@ -1,3 +1,5 @@
 #pragma once
+#include "../domain/measurement.h"
 
-void measureAndPublish();
+SensorReading measure();
+void publish(const SensorReading &reading);
