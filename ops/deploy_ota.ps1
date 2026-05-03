@@ -30,7 +30,7 @@ if ($Profile) {
 
 $ScriptDir   = $PSScriptRoot
 $ProjectDir  = Resolve-Path "$ScriptDir\..\esp32_iot_gateway"
-$BuildDir    = "$ProjectDir\.pio\build\esp32-s3-devkitc-1"
+$BuildDir    = "$ProjectDir\.pio\build\esp32-s3-devkitc-1-release"
 $FirmwareBin = "$BuildDir\firmware.bin"
 $Pio         = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
 

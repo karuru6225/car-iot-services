@@ -1,0 +1,101 @@
+name: Firmware Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  AWS_REGION: ap-northeast-1
+  PIO_ENV: esp32-s3-devkitc-1-release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # GitHub Release 作成に必要
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: タグからバージョンを抽出
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: config.h の FIRMWARE_VERSION を書き換え
+        run: |
+          sed -i 's/#define FIRMWARE_VERSION "[^"]*"/#define FIRMWARE_VERSION "${{ steps.ver.outputs.version }}+"/' \
+            esp32_iot_gateway/src/config.h
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: PlatformIO キャッシュ
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('esp32_iot_gateway/platformio.ini') }}
+
+      - name: PlatformIO インストール
+        run: pip install platformio
+
+      - name: ファームウェアビルド（release env）
+        run: pio run -e ${{ env.PIO_ENV }}
+        working-directory: esp32_iot_gateway
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: firmware.bin を S3 にアップロード
+        run: |
+          VERSION=${{ steps.ver.outputs.version }}
+          aws s3 cp \
+            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin \
+            "s3://${{ secrets.FIRMWARE_BUCKET }}/firmware/v${VERSION}.bin"
+
+      - name: IoT Job ドキュメントを S3 にアップロード
+        run: |
+          VERSION=${{ steps.ver.outputs.version }}
+          FIRMWARE_URL="https://${{ secrets.FIRMWARE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/firmware/v${VERSION}.bin"
+          printf '{"operation":"ota","version":"%s","url":"%s"}' "$VERSION" "$FIRMWARE_URL" > job.json
+          aws s3 cp job.json "s3://${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
+
+      - name: IoT OTA ジョブを作成
+        run: |
+          VERSION=${{ steps.ver.outputs.version }}
+          JOB_ID="ota-v$(echo "$VERSION" | tr '.' '_')-$(date +%Y%m%d%H%M%S)"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          mapfile -t THING_NAMES < <(
+            aws iot list-things \
+              --query 'things[].thingName' \
+              --output text | tr '\t' '\n' | grep '^esp32-gw-'
+          )
+          if [ ${#THING_NAMES[@]} -eq 0 ]; then
+            echo "ERROR: esp32-gw-* の Thing が見つかりません" && exit 1
+          fi
+
+          TARGETS=()
+          for name in "${THING_NAMES[@]}"; do
+            TARGETS+=("arn:aws:iot:${{ env.AWS_REGION }}:${ACCOUNT_ID}:thing/${name}")
+          done
+
+          DOC_URL="https://s3.${{ env.AWS_REGION }}.amazonaws.com/${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
+          aws iot create-job \
+            --job-id "$JOB_ID" \
+            --targets "${TARGETS[@]}" \
+            --document-source "$DOC_URL" \
+            --timeout-config inProgressTimeoutInMinutes=90
+
+          echo "Job: $JOB_ID"
+          echo "Targets: ${TARGETS[*]}"
+
+      - name: GitHub Release を作成
+        uses: softprops/action-gh-release@v2
+        with:
+          files: esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin
+          generate_release_notes: true
