@@ -1,3 +1,8 @@
+output "github_actions_role_arn" {
+  description = "GitHub Actions firmware release が assume する IAM ロール ARN（GitHub Variables AWS_ROLE_ARN に設定）"
+  value       = aws_iam_role.github_actions_firmware.arn
+}
+
 output "iot_endpoint" {
   description = "IoT Core の MQTT エンドポイント（デバイスに設定する）"
   value       = data.aws_iot_endpoint.main.endpoint_address

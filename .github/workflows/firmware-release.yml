@@ -13,7 +13,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # GitHub Release 作成に必要
+      contents: write      # GitHub Release 作成
+      id-token: write      # OIDC トークン取得（AWS assume role に必要）
 
     steps:
       - uses: actions/checkout@v4
@@ -46,8 +47,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: firmware.bin を S3 にアップロード
@@ -55,14 +55,14 @@ jobs:
           VERSION=${{ steps.ver.outputs.version }}
           aws s3 cp \
             esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin \
-            "s3://${{ secrets.FIRMWARE_BUCKET }}/firmware/v${VERSION}.bin"
+            "s3://${{ vars.FIRMWARE_BUCKET }}/firmware/v${VERSION}.bin"
 
       - name: IoT Job ドキュメントを S3 にアップロード
         run: |
           VERSION=${{ steps.ver.outputs.version }}
-          FIRMWARE_URL="https://${{ secrets.FIRMWARE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/firmware/v${VERSION}.bin"
+          FIRMWARE_URL="https://${{ vars.FIRMWARE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/firmware/v${VERSION}.bin"
           printf '{"operation":"ota","version":"%s","url":"%s"}' "$VERSION" "$FIRMWARE_URL" > job.json
-          aws s3 cp job.json "s3://${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
+          aws s3 cp job.json "s3://${{ vars.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
 
       - name: IoT OTA ジョブを作成
         run: |
@@ -84,7 +84,7 @@ jobs:
             TARGETS+=("arn:aws:iot:${{ env.AWS_REGION }}:${ACCOUNT_ID}:thing/${name}")
           done
 
-          DOC_URL="https://s3.${{ env.AWS_REGION }}.amazonaws.com/${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
+          DOC_URL="https://s3.${{ env.AWS_REGION }}.amazonaws.com/${{ vars.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
           aws iot create-job \
             --job-id "$JOB_ID" \
             --targets "${TARGETS[@]}" \
