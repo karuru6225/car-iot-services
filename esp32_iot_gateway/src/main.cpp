@@ -40,18 +40,24 @@ static OperationMode g_mode = OperationMode::CONTINUOUS;
 static OperationMode g_mode = OperationMode::DEEP_SLEEP;
 #endif
 
+static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
+
 void setup()
 {
+  g_wakeupCause = esp_sleep_get_wakeup_cause();
+
   logger.init();
   delay(1000);
-  logger.printf("\n=== esp32_iot_gateway %s 起動 ===\n", FIRMWARE_VERSION);
+  logger.printf("\n=== esp32_iot_gateway %s 起動 (wakeup=%d) ===\n",
+                FIRMWARE_VERSION, (int)g_wakeupCause);
 
   oledInit();
   adsInit();
   ina228Init();
   oledPrint("FW: " FIRMWARE_VERSION);
   speakerInit();
-  playMelody(bootStart);
+  if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
+    playMelody(bootStart);
   button.begin();
   bleScanner.setup();
 
@@ -77,7 +83,8 @@ void setup()
   logger.printf("[MAIN] 起動完了 mode=%s\n",
                 g_mode == OperationMode::CONTINUOUS ? "CONTINUOUS" : "DEEP_SLEEP");
 
-  playMelody(boot);
+  if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
+    playMelody(boot);
   pinMode(RELAY_2_PIN, OUTPUT);
   pinMode(CHG_ON_PIN, OUTPUT);
 }
