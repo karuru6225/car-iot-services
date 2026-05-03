@@ -1,4 +1,6 @@
 #pragma once
 #include <Arduino.h>
 
-void enterMenuMode();
+enum class OperationMode { DEEP_SLEEP, CONTINUOUS };
+
+OperationMode enterMenuMode();

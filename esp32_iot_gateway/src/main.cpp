@@ -1,10 +1,12 @@
 // esp32_iot_gateway
 //
-// 起動 → LTE 接続 → OTA チェック（更新あれば適用・再起動）
-// → DeepSleep（本番モード）または待機ループ（デバッグモード）
+// 起動 → (BTN0 長押し) メニュー → LTE 接続 → OTA チェック → loop()
 //
-// デバッグモード: #define DEBUG_MODE を有効にすると DeepSleep しない
-// メニューモード: 起動時に BTN0 を押しながら電源 ON で設定メニューへ
+// loop() の動作モード:
+//   DEEP_SLEEP  : measureAndPublish() → DeepSleep 5分（デフォルト本番動作）
+//   CONTINUOUS  : measureAndPublish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
+//
+// デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
 
 #define DEBUG_MODE
 
@@ -14,6 +16,7 @@
 #include "service/logger.h"
 #include "service/ota.h"
 #include "service/mqtt.h"
+#include "service/monitor.h"
 
 #include "device/speaker.h"
 #include "device/oled.h"
@@ -31,6 +34,12 @@
 #define UNITX_EN_PIN 9
 #define CHG_ON_PIN 21
 
+#ifdef DEBUG_MODE
+static OperationMode g_mode = OperationMode::CONTINUOUS;
+#else
+static OperationMode g_mode = OperationMode::DEEP_SLEEP;
+#endif
+
 void setup()
 {
   logger.init();
@@ -44,13 +53,14 @@ void setup()
   speakerInit();
   playMelody(bootStart);
   button.begin();
+  bleScanner.setup();
 
   // BTN0 を押しながら起動でメニューモードへ（LTE 未起動のままオフライン動作）
   delay(1300);
   if (button.isDown(0))
   {
     oledPrint("Menu Mode");
-    enterMenuMode(); // 戻らない
+    g_mode = enterMenuMode();
   }
 
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
@@ -64,24 +74,38 @@ void setup()
   if (mqtt.isConnected())
     ota.confirmBoot();
 
-#ifndef DEBUG_MODE
-  logger.println("[MAIN] OTA チェック完了 → DeepSleep");
-  lte.disconnect();
-  lte.radioOff(); // LTE_EN LOW
-  esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
-  esp_deep_sleep_start();
-#else
-  logger.println("[MAIN] OTA チェック完了（デバッグモード: 待機ループ）");
-#endif
+  logger.printf("[MAIN] 起動完了 mode=%s\n",
+                g_mode == OperationMode::CONTINUOUS ? "CONTINUOUS" : "DEEP_SLEEP");
 
   playMelody(boot);
-
   pinMode(RELAY_2_PIN, OUTPUT);
-
-  // pinMode(UNITX_EN_PIN, OUTPUT);
   pinMode(CHG_ON_PIN, OUTPUT);
 }
 
 void loop()
 {
+  measureAndPublish();
+
+  if (g_mode == OperationMode::DEEP_SLEEP)
+  {
+    logger.println("[MAIN] DeepSleep へ移行");
+    lte.disconnect();
+    lte.radioOff(); // LTE_EN LOW
+    esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
+    esp_deep_sleep_start();
+  }
+
+  // CONTINUOUS: SLEEP_INTERVAL_SEC 秒待機しながらボタン監視
+  unsigned long waitStart = millis();
+  while (millis() - waitStart < (uint32_t)SLEEP_INTERVAL_SEC * 1000)
+  {
+    if (button.read() == ButtonEvent::BTN1_LONG)
+    {
+      logger.println("[MAIN] BTN1 長押し → DEEP_SLEEP モードへ切り替え");
+      oledPrint("Switching sleep...");
+      g_mode = OperationMode::DEEP_SLEEP;
+      break;
+    }
+    delay(50);
+  }
 }

@@ -20,6 +20,7 @@ enum class MenuState {
   BLE_REMOVE_CONFIRM,
   SENSOR,
   SYS_INFO,
+  DONE_CONTINUOUS,
 };
 
 // ---- 共有状態 ----
@@ -29,9 +30,10 @@ static const char *MAIN_ITEMS[] = {
   "BLE: Remove",
   "Sensor View",
   "System Info",
+  "Continuous",
   "Restart",
 };
-static const int MAIN_ITEM_COUNT = 5;
+static const int MAIN_ITEM_COUNT = 6;
 
 struct ScanResult {
   char addr[18];
@@ -58,7 +60,8 @@ static MenuState tickMain(ButtonEvent ev) {
       case 1: return MenuState::BLE_REMOVE;
       case 2: return MenuState::SENSOR;
       case 3: return MenuState::SYS_INFO;
-      case 4: esp_restart();
+      case 4: return MenuState::DONE_CONTINUOUS;
+      case 5: esp_restart();
     }
   }
   return MenuState::MAIN;
@@ -199,9 +202,8 @@ static MenuState tickSysInfo(ButtonEvent ev) {
 
 // ---- エントリポイント ----
 
-void enterMenuMode() {
+OperationMode enterMenuMode() {
   bleTargets.load();
-  bleScanner.setup();
 
   MenuState state = MenuState::MAIN;
   s_cursor = 0;
@@ -218,6 +220,11 @@ void enterMenuMode() {
       case MenuState::BLE_REMOVE_CONFIRM: next = tickBleRemoveConfirm(ev);  break;
       case MenuState::SENSOR:             next = tickSensor(ev);            break;
       case MenuState::SYS_INFO:           next = tickSysInfo(ev);           break;
+      case MenuState::DONE_CONTINUOUS:    return OperationMode::CONTINUOUS;
+    }
+
+    if (next == MenuState::DONE_CONTINUOUS) {
+      return OperationMode::CONTINUOUS;
     }
 
     if (next != state) {
