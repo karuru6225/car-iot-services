@@ -11,6 +11,7 @@ class BleScanner
 {
 public:
   QueueHandle_t queue = nullptr;
+  bool registrationMode = false; // true のとき bleTargets フィルタをスキップ
 
   void setup();
   void start(int seconds);

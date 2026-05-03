@@ -1,10 +1,10 @@
 // esp32_iot_gateway
-// フェーズ1: OTA ファームウェアアップデート
 //
 // 起動 → LTE 接続 → OTA チェック（更新あれば適用・再起動）
 // → DeepSleep（本番モード）または待機ループ（デバッグモード）
 //
 // デバッグモード: #define DEBUG_MODE を有効にすると DeepSleep しない
+// メニューモード: 起動時に BTN0 を押しながら電源 ON で設定メニューへ
 
 #define DEBUG_MODE
 
@@ -20,15 +20,13 @@
 #include "device/ads.h"
 #include "device/ina228.h"
 #include "device/ble_scan.h"
+#include "device/button.h"
 
-#include "domain/measurement.h"
-#include "domain/telemetry.h"
 #include "domain/ble_targets.h"
-#include "domain/sensor_factory.h"
+#include "service/menu.h"
 
 #include <esp_sleep.h>
 
-#define SPEEKER_PIN 34
 #define RELAY_2_PIN 15
 #define BTN0_PIN 26
 #define BTN1_PIN 33
@@ -45,6 +43,17 @@ void setup()
   adsInit();
   ina228Init();
   oledPrint("FW: " FIRMWARE_VERSION);
+  speakerInit();
+  playMelody(bootStart);
+  button.begin(BTN0_PIN, BTN1_PIN);
+
+  // BTN0 を押しながら起動でメニューモードへ（LTE 未起動のままオフライン動作）
+  delay(1300);
+  if (digitalRead(BTN0_PIN) == LOW)
+  {
+    oledPrint("Menu Mode");
+    enterMenuMode(); // 戻らない
+  }
 
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
 
@@ -66,78 +75,15 @@ void setup()
 #else
   logger.println("[MAIN] OTA チェック完了（デバッグモード: 待機ループ）");
 #endif
-  // tone(SPEEKER_PIN, 1000, 100); // 起動確認用の音
-  // delay(100);
-  // tone(SPEEKER_PIN, 1500, 100);
-  // delay(100);
-  // tone(SPEEKER_PIN, 2000, 100);
 
-  playMelody(SPEEKER_PIN);
-  pinMode(SPEEKER_PIN, OUTPUT);
-  digitalWrite(SPEEKER_PIN, HIGH); // SPEAKER_PINは負論理。HIGHで回路遮断
+  playMelody(boot);
 
   pinMode(RELAY_2_PIN, OUTPUT);
-  pinMode(BTN0_PIN, INPUT_PULLUP);
-  pinMode(BTN1_PIN, INPUT_PULLUP);
 
   // pinMode(UNITX_EN_PIN, OUTPUT);
   pinMode(CHG_ON_PIN, OUTPUT);
-
-  // BLE スキャン（SCAN_TIME 秒）
-  bleTargets.load();
-  bleScanner.setup();
-  logger.printf("[BLE] スキャン開始 (%d秒)...\n", SCAN_TIME);
-  bleScanner.start(SCAN_TIME);
-  bleScanner.clearResults();
-  bleScanner.deinit(); // DeepSleep 前に BLE を停止
-
-  // タイムスタンプ（時刻同期済みの場合のみ付与）
-  char tsField[32] = "";
-  time_t now = time(nullptr);
-  if (now > 1000000000L)
-  {
-    char ts[25];
-    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
-    snprintf(tsField, sizeof(tsField), ",\"ts\":\"%s\"", ts);
-  }
-
-  // BLE センサーデータ送信（一時無効）
-  SensorVariant v;
-  while (xQueueReceive(bleScanner.queue, &v, 0) == pdTRUE)
-  {
-    std::visit([&](auto &d)
-               { logger.printf("[BLE] スキャン: addr=%s rssi=%d parsed=%d\n", d.address, d.rssi, d.parsed); }, v);
-  }
-
-  VoltageReading v1 = {adsReadDiff01()};
-  VoltageReading v2 = {adsReadDiff23()};
-  PowerReading pwr = {ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()};
-
-  char shadowTopic[80];
-  snprintf(shadowTopic, sizeof(shadowTopic), "$aws/things/%s/shadow/update", getDeviceId());
-  char payload[256];
-  buildShadowPayload(payload, sizeof(payload), v1, v2, pwr, now);
-  mqtt.publish(shadowTopic, payload);
-  delay(1000);
-  lte.powerOff(); // 電源オフ（完全に電源を切る。再度電源オンするには setup() を呼ぶ必要がある）
 }
 
 void loop()
 {
-  bool btn0 = digitalRead(BTN0_PIN) == LOW;
-  bool btn1 = digitalRead(BTN1_PIN) == LOW;
-  float voltage = adsReadDiff01();
-  float voltage2 = adsReadDiff23();
-
-  digitalWrite(RELAY_2_PIN, HIGH);
-  // digitalWrite(UNITX_EN_PIN, HIGH);
-  digitalWrite(CHG_ON_PIN, HIGH);
-  oledShowStatus(voltage, voltage2, true, btn0, btn1);
-  delay(3000);
-  digitalWrite(RELAY_2_PIN, LOW);
-  // digitalWrite(UNITX_EN_PIN, LOW);
-  digitalWrite(CHG_ON_PIN, LOW);
-  oledShowStatus(voltage, voltage2, false, btn0, btn1);
-  delay(3000);
-  ina228PrintStatus();
 }

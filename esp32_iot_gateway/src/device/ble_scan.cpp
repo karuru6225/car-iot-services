@@ -18,7 +18,7 @@ class SwitchBotCallback : public BLEAdvertisedDeviceCallbacks
       return;
 
     std::string addr = dev.getAddress().toString();
-    if (!bleTargets.isTarget(addr.c_str()))
+    if (!bleScanner.registrationMode && !bleTargets.isTarget(addr.c_str()))
       return;
 
     std::string sd = dev.haveServiceData() ? dev.getServiceData() : std::string();
