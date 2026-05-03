@@ -63,6 +63,7 @@ void setup()
   }
   button.begin();
   bleScanner.setup();
+  bleTargets.load();
 
   // BTN0 を押しながら起動でメニューモードへ（LTE 未起動のままオフライン動作）
   delay(1300);
