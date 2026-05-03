@@ -7,6 +7,9 @@
 #endif
 #define FIRMWARE_VERSION "1.3.0+" GIT_HASH
 
+// 動作モード
+enum class OperationMode { DEEP_SLEEP, CONTINUOUS };
+
 // DeepSleep
 static const uint32_t SLEEP_INTERVAL_SEC = 300;
 
