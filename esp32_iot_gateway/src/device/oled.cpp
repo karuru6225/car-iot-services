@@ -152,3 +152,16 @@ void oledShowSensorData(float v1, float v2, float cur, float pwr, float temp) {
   display.print("BTN1 long: back");
   display.display();
 }
+
+void oledUpdateCountdown(int remainSec) {
+  // y=44: カウントダウン行（"Next: Xs"）
+  display.fillRect(0, 44, 128, 9, SSD1306_BLACK);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 44);
+  display.printf("Next: %ds", remainSec);
+  // y=56: ボタンガイドを継続モード用に上書き
+  display.fillRect(0, 56, 128, 8, SSD1306_BLACK);
+  display.setCursor(0, 56);
+  display.print("BTN1: sleep");
+  display.display();
+}

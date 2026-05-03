@@ -95,8 +95,9 @@ void loop()
     esp_deep_sleep_start();
   }
 
-  // CONTINUOUS: SLEEP_INTERVAL_SEC 秒待機しながらボタン監視
+  // CONTINUOUS: SLEEP_INTERVAL_SEC 秒待機しながらボタン監視・カウントダウン表示
   unsigned long waitStart = millis();
+  int lastRemain = -1;
   while (millis() - waitStart < (uint32_t)SLEEP_INTERVAL_SEC * 1000)
   {
     if (button.read() == ButtonEvent::BTN1_LONG)
@@ -105,6 +106,12 @@ void loop()
       oledPrint("Switching sleep...");
       g_mode = OperationMode::DEEP_SLEEP;
       break;
+    }
+    int remain = (int)((SLEEP_INTERVAL_SEC * 1000 - (millis() - waitStart)) / 1000);
+    if (remain != lastRemain)
+    {
+      oledUpdateCountdown(remain);
+      lastRemain = remain;
     }
     delay(50);
   }
