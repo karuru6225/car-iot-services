@@ -107,7 +107,12 @@ void loop()
   int lastRemain = -1;
   while (millis() - waitStart < (uint32_t)SLEEP_INTERVAL_SEC * 1000)
   {
-    if (button.read() == ButtonEvent::BTN1_LONG)
+    ButtonEvent ev = button.read();
+    if (ev == ButtonEvent::BTN0_SHORT)
+    {
+      g_mode = enterMenuMode();
+    }
+    if (ev == ButtonEvent::BTN1_LONG)
     {
       if (g_mode == OperationMode::DEEP_SLEEP)
       {
