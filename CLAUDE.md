@@ -65,7 +65,12 @@ include パスは `src/` 基準で書く:
 ## プロジェクト参照
 
 詳細な設計・構成は以下を参照：
-- `CONTEXT.md` — システム概要・ハードウェア・データフロー・設計決定
+
+- `CONTEXT.md` — システム概要・データフロー・クラウド設計決定・m5atom_power_adc 設計メモ
+- `ARCHITECTURE.md` — システム全体構成図（デバイス＋クラウド）・クラウドインフラ一覧
 - `esp32_iot_gateway/ARCHITECTURE.md` — レイヤー構成・依存ルール・命名規則
-- `esp32_iot_gateway/CONTEXT.md` — esp32_iot_gateway 固有の詳細
+- `esp32_iot_gateway/CONTEXT.md` — ハードウェア詳細・GPIO ピン・実装状態・設計ノート
 - `esp32_iot_gateway/OTA.md` — OTA 仕様
+- `esp32_iot_gateway/MENU.md` — OLED＋2ボタン設定メニュー仕様
+- `m5atom_power_adc/HARDWARE.md` — PCB 基板設計メモ（BOM・回路・PCB レイアウト）
+- `m5atom_power_adc/CIRCUIT.md` — 回路仕様（ブロック図・接続図）

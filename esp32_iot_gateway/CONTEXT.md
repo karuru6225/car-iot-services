@@ -184,7 +184,7 @@ SHUNT_CAL = 819.2e6 × 208e-6 × 0.375e-3 × 4 ≒ 255
 - 起動時に SHUNT_CAL を毎回書き込む（電源 OFF でリセット）
 - ADCRANGE=1 使用時は SHUNT_CAL の値を×4すること（上記計算に含み済み）
 
-詳細: `CONTEXT.md`（プロジェクトルート）の「電流測定IC: LTC2944 → INA228 代替」セクション参照。
+詳細（部品比較・シャント設計）: `m5atom_power_adc/HARDWARE.md` の「サブバッテリー電流計測（INA228）」セクション参照。
 
 ### OLED ディスプレイ
 
@@ -264,32 +264,6 @@ device/lte.h の定数:
 
 ## 作業中・引き継ぎ事項
 
-### ~~フェーズ 1: OTA ファームウェアアップデート~~ **MQTT 疎通まで完了**
-
-`service/ota.h/.cpp` に AWS IoT Jobs ベースの OTA を実装。詳細は `OTA.md` 参照。
-
-- AWS IoT Jobs で次ジョブを確認・受信（`pollMqtt` の SIM7080G URC フォーマット対応済み）
-- **OTA ダウンロード部分は差し替えが必要**（下記 TODO 参照）
-- ロールバック: MQTT 接続確認後に `esp_ota_mark_app_valid_cancel_rollback()` を呼ぶ
-- パーティション: `partitions_two_ota.csv`（`app0` / `app1` 交互使用）
-- `ops/deploy_ota.ps1` でビルド・S3アップロード・Job作成を一括実行
-
-### ~~フェーズ 3: BLE スキャン~~ **基盤実装済み（送信は一時無効）**
-
-- `device/ble_scan.h/.cpp`, `domain/sensor*.h/.cpp`, `domain/ble_targets.h/.cpp` 追加済み
-- `main.cpp` で BLE スキャン → キュー受信 → ログ出力まで動作確認済み
-- **BLE センサーデータの MQTT 送信は `main.cpp` でコメントアウト中**（OTA 完成後に有効化）
-- 監視対象デバイスの NVS 管理実装済み（登録モード UI は未実装）
-
-### ~~TODO: OTA ダウンロードフローの差し替え~~ **完了**
-
-`ota.apply()` を `AT+HTTPTOFS`（SIM FS へダウンロード）+ `AT+CFSRFILE`（チャンク読み取り → `esp_ota_write()`）フローに刷新済み。
-
-- `AT+SHCONF="URL"` の 64 バイト制限を回避（AT+HTTPTOFS は URL 長制限なし）
-- S3 仮想ホスト URL（`bucket.s3.region.amazonaws.com`）で動作確認済み（path-style 変換不要）
-- CFSRFILE チャンクサイズ: 4096 バイト（書き込み高速化）
-- Job 状態報告: ロールバック判定を next パーティションの ABORTED 状態で実施。MQTT 失敗時は job_id を NVS に残して次回起動時にリトライ
-
 ### TODO: OTA ファームウェアの gzip 圧縮（任意・高速化）
 
 **背景**: 実測で Phase1（セルラー DL）71秒・Phase2（UART 読み取り）127秒。Phase2 がボトルネック。
@@ -311,10 +285,14 @@ device/lte.h の定数:
 | Subscribe トピック | `sensors/{device_id}/command` |
 | 想定コマンド | リレー制御、設定変更、即時送信トリガー等 |
 
-### フェーズ 4: 操作ボタン UI（未着手）
+### ~~フェーズ 4: 操作ボタン UI~~ **実装済み**
 
-- Btn0（GPIO26）/ Btn1（GPIO33）で画面操作・登録モード遷移
-- OLED への状態表示拡充（`device/oled.h` は実装済み）
+OLED + 2ボタンの設定メニューを実装。詳細は `MENU.md` 参照。
+
+- `service/menu.h/.cpp` — メニューステートマシン本体
+- `device/button.h/.cpp` — デバウンス・長押し検出（`ButtonEvent`）
+- BTN0（GPIO26）: カーソル移動、BTN1（GPIO33）: 決定 / 長押しで戻る
+- 起動時に BTN0 を押しながら電源 ON でメニューモードに入る（LTE 未起動）
 
 ### フェーズ 5: リレー・ブザー制御（未着手）
 
