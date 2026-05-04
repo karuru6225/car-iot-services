@@ -34,6 +34,8 @@
 #define UNITX_EN_PIN 9
 #define CHG_ON_PIN 21
 
+#define DEBUG_SKIP_NETWORK
+
 #ifdef DEBUG_MODE
 static OperationMode g_mode = OperationMode::CONTINUOUS;
 #else
@@ -54,7 +56,8 @@ void setup()
 
   oledInit();
   adsInit();
-  ina228Init();
+  ina228.init();
+  ina228.resetCharge(); // 起動時に充電量をリセット（必要に応じて削除してください）
   oledPrint("FW: " FIRMWARE_VERSION);
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
   {
@@ -62,8 +65,11 @@ void setup()
     playMelody(bootStart);
   }
   button.begin();
+
+#ifndef DEBUG_SKIP_NETWORK
   bleScanner.setup();
   bleTargets.load();
+#endif
 
   // BTN0 を押しながら起動でメニューモードへ（LTE 未起動のままオフライン動作）
   delay(1300);
@@ -73,6 +79,7 @@ void setup()
     g_mode = enterMenuMode();
   }
 
+#ifndef DEBUG_SKIP_NETWORK
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
 
   // Jobs で次のジョブを確認。更新あれば apply() → esp_restart()（戻らない）
@@ -83,6 +90,7 @@ void setup()
   // Jobs 経由で SUCCEEDED を報告済みの場合は confirmBoot() は no-op になる
   if (mqtt.isConnected())
     ota.confirmBoot();
+#endif
 
   logger.printf("[MAIN] 起動完了 mode=%s\n",
                 g_mode == OperationMode::CONTINUOUS ? "CONTINUOUS" : "DEEP_SLEEP");
@@ -95,16 +103,20 @@ void setup()
 
 void loop()
 {
+#ifndef DEBUG_SKIP_NETWORK
   g_lastResult = measure();
   publish(g_lastResult);
   oledShowSensorData(g_lastResult.reading);
+#endif
 
   if (g_mode == OperationMode::DEEP_SLEEP)
   {
     delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
     logger.println("[MAIN] DeepSleep へ移行");
+#ifndef DEBUG_SKIP_NETWORK
     lte.disconnect();
     lte.radioOff(); // LTE_EN LOW
+#endif
     oledClear();
     esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
     esp_deep_sleep_start();

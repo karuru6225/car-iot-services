@@ -28,7 +28,7 @@ MeasureResult measure()
   result.reading = {
       {adsReadDiff01()},
       {adsReadDiff23()},
-      {ina228ReadCurrent(), ina228ReadPower(), ina228ReadTemp()},
+      {ina228.readCurrent(), ina228.readPower(), ina228.readTemp()},
       time(nullptr)};
 
   // BLE キューを全件収集
