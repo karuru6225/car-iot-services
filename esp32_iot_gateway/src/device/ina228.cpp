@@ -72,7 +72,7 @@ bool Ina228::init()
   // R_shunt = 75mV / 200A = 0.375mΩ
   // CURRENT_LSB = 208μA
   // SHUNT_CAL = 819.2×10^6 × CURRENT_LSB × R_shunt × 4（ADCRANGE=1 のため×4）
-  //           = 819.2e6 × 208e-6 × 0.375e-3 × 4 ≒ 255 × 16 = 4096
+  //           = 819.2e6 × 208e-6 × 0.375e-3 × 4 ≒ 4096
   // ADCRANGE=1 → ±40.96mV、フルスケール電流 ±109A (I = V/R_shunt = 40.96mV / 0.375mΩ = 109A)
   wr16(0x00, CONFIG);
   wr16(0x02, SHUNT_CAL);
