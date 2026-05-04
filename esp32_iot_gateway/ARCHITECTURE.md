@@ -29,7 +29,7 @@ src/
 | `lte.h/.cpp` | SIM7080G ATコマンド制御（GPRS接続, 証明書アップロード, 電源管理, ファイル読み取り・削除） |
 | `ble_scan.h/.cpp` | BLE スキャナー（SwitchBot Manufacturer Data 受信、FreeRTOS キュー経由で domain に渡す） |
 | `ads.h/.cpp` | ADS1115 I2Cドライバ（差動電圧読み取り） |
-| `ina228.h/.cpp` | INA228 I2Cドライバ（電流・電力・温度読み取り） |
+| `ina228.h/.cpp` | `Ina228` クラス。INA228 I2Cドライバ（電流・電力・温度・積算電荷量の読み取り、電荷リセット） |
 | `oled.h/.cpp` | SSD1306 OLEDドライバ（表示制御） |
 | `speaker.h/.cpp` | ブザー / スピーカードライバ（tone PWM制御） |
 | `button.h/.cpp` | デバウンス・長押し検出（`ButtonEvent`、ピン定数内包） |

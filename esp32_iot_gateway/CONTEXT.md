@@ -163,6 +163,7 @@ ESP32-S3-MINI-1
 | `bleTargets` | `BleTargets` | 監視対象 BLE アドレスの NVS 管理 |
 | `button` | `Button` | BTN0/BTN1 デバウンス・長押し検出（`ButtonEvent`）・フィードバック音 |
 | `logger` | `Logger` | Serial デバッグ出力（`printf`/`println`） |
+| `ina228` | `Ina228` | INA228 I2Cドライバ（電流・電力・温度・積算電荷量の読み取り） |
 
 ドメイン型:
 
@@ -185,16 +186,27 @@ ADS1115 と同じ I2C バス（SDA=GPIO17, SCL=GPIO18）に並列接続。
 
 **起動時の初期化手順（毎回必須）：**
 
-1. `SHUNT_CAL` レジスタを書き込む（VS リセットで消えるため DeepSleep 復帰後も必要）
-2. ADCRANGE=1（`CONFIG` レジスタ bit2=1）を設定する
+1. `CONFIG` レジスタを書き込む（ADCRANGE=1 + 変換時間 4120us + 平均化 1024 samples）
+2. `SHUNT_CAL` レジスタを書き込む（VS リセットで消えるため DeepSleep 復帰後も必要）
+
+**CONFIG レジスタ設定値：**
+
+| フィールド | 設定値 | 内容 |
+| --- | --- | --- |
+| ADCRANGE (bit4) | 1 | ±40.96mV 入力レンジ |
+| VBUSCT (bits[11:9]) | 0b111 | VBUS 変換時間 4120μs |
+| VSHCT (bits[8:6]) | 0b111 | シャント電圧変換時間 4120μs |
+| VTCT (bits[5:3]) | 0b111 | 温度変換時間 4120μs |
+| AVG (bits[2:0]) | 0b111 | 平均化 1024 サンプル |
 
 **SHUNT_CAL 計算（ADCRANGE=1）：**
 
 ```text
-SHUNT_CAL = 819.2 × 10^6 × CURRENT_LSB × R_shunt × 4  ← ADCRANGE=1 なので×4
-シャント: 0.375mΩ（200A/75mV品）、フルスケール電流 ±109A
-CURRENT_LSB = 109A / 2^19 ≒ 208μA
-SHUNT_CAL = 819.2e6 × 208e-6 × 0.375e-3 × 4 ≒ 255
+R_shunt = 75mV / 200A = 0.375mΩ
+CURRENT_LSB = 208μA
+SHUNT_CAL = 819.2×10^6 × CURRENT_LSB × R_shunt × 4（ADCRANGE=1 のため×4）
+           = 819.2e6 × 208e-6 × 0.375e-3 × 4 ≒ 4096
+ADCRANGE=1 → ±40.96mV、フルスケール電流 ±109A (I = V/R_shunt = 40.96mV / 0.375mΩ = 109A)
 ```
 
 **注意事項：**
@@ -202,8 +214,8 @@ SHUNT_CAL = 819.2e6 × 208e-6 × 0.375e-3 × 4 ≒ 255
 - A0/A1 はフローティング禁止（GND/SCL/SDA/VS のいずれかに接続）
 - VS ピン直近に 100nF デカップリング必須
 - VBUSはIN+と同ノードに接続（PCB上で直結）
-- 起動時に SHUNT_CAL を毎回書き込む（電源 OFF でリセット）
-- ADCRANGE=1 使用時は SHUNT_CAL の値を×4すること（上記計算に含み済み）
+- 起動時に CONFIG・SHUNT_CAL を毎回書き込む（電源 OFF でリセット）
+- `readCurrent()` は符号反転済み（レジスタの増減方向が直感と逆のため）
 
 詳細（部品比較・シャント設計）: `m5atom_power_adc/HARDWARE.md` の「サブバッテリー電流計測（INA228）」セクション参照。
 
