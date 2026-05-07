@@ -366,3 +366,41 @@ INA228 ドライバを `Ina228` クラスに移行済み（`device/ina228.h/.cpp
 | リレー制御 × 3 | IO11/IO13/IO15 | NPN BJT（MMBT2222A）ドライバ、HIGH = ON |
 | リレーセンシング × 3 | IO10/IO12/IO14 | 外部スイッチ検出、負論理（HIGH = OFF） |
 | ブザー | IO35 | AO3401A ハイサイドスイッチ、LEDC PWM 2700Hz、負論理 |
+
+### TODO: BLE ダッシュボード表示器（未着手）
+
+ESP32-S3 を BLE Central として動かし、運転席から視認できる外付けディスプレイに計測値をリアルタイム表示する。
+
+**ハードウェア候補**:
+
+- **CYD（ESP32-2432S028）**: 2.8インチTFT、ESP32内蔵、~$15、PlatformIO 対応済み。視認性・価格のバランスが良くファーストチョイス
+- LilyGO T-Display-S3 AMOLED（2.41インチ）: 輝度・発色が高く直射日光に強い
+
+**表示項目（案）**:
+
+- バッテリー電圧 / 電流 / 電力（INA228 計測値）
+- 接続状態（BLE / LTE）
+
+**実装方針**:
+
+- ESP32-S3 側: NimBLE で BLE Peripheral（GATT Server）を追加。計測値を Notify で送信
+- CYD 側: NimBLE で BLE Central（GATT Client）を実装。受信データを TFT に描画
+- 既存の LTE / MQTT 処理とは非同期で動作させる（`millis()` ベースで一定周期送信）
+
+### TODO: スマホ BLE 連携（未着手）
+
+ESP32-S3 を BLE Peripheral として動かし、スマホのブラウザから設定・監視を行う。
+
+**方針**: Web Bluetooth API を使う（専用アプリ不要、Chrome で動作）
+
+**想定機能**:
+
+- LTE 圏外でのリアルタイム電圧・電流・電力確認
+- NVS 設定値の読み書き（低電圧アラート閾値など）
+- 既存の Web ダッシュボードに BLE 接続ボタンを追加する形で統合
+
+**実装方針**:
+
+- ESP32-S3 側: Nordic UART Service（NUS）を BLE GATT Server として実装
+- Web 側: Web Bluetooth API で NUS に接続し、JSON で値をやり取り
+- BLE ダッシュボード表示器 TODO と Peripheral を共用できる（同一 GATT Server）
