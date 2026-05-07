@@ -25,6 +25,11 @@ static const int PAYLOAD_SENSOR_SIZE = 256;
 #define CERT_PATH_DEVICE "/certs/device.crt"
 #define CERT_PATH_KEY "/certs/device.key"
 
+// オフラインバッファ（RTC メモリ + SPIFFS 永続化）
+// 1エントリ ≈ 28 bytes、RTC SLOW 8KB に収まる上限
+static const int OFFLINE_BUFFER_MAX = 200;
+#define OFFLINE_BUFFER_PATH "/buffer.bin"
+
 // MQTT デフォルト設定
 static const int MQTT_PORT = 8883;
 

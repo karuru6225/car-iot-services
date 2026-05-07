@@ -27,6 +27,7 @@
 
 #include "domain/ble_targets.h"
 #include "service/menu.h"
+#include "service/pubqueue.h"
 
 #include <esp_sleep.h>
 
@@ -34,7 +35,7 @@
 #define UNITX_EN_PIN 9
 #define CHG_ON_PIN 21
 
-#define DEBUG_SKIP_NETWORK
+// #define DEBUG_SKIP_NETWORK
 
 #ifdef DEBUG_MODE
 static OperationMode g_mode = OperationMode::CONTINUOUS;
@@ -82,6 +83,9 @@ void setup()
 #ifndef DEBUG_SKIP_NETWORK
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
 
+  queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
+  queue.flush(); // 前回バッファ分を即送信
+
   // Jobs で次のジョブを確認。更新あれば apply() → esp_restart()（戻らない）
   // 前回 OTA の結果報告（SUCCEEDED/FAILED）も内部で行う
   ota.check();
@@ -106,6 +110,7 @@ void loop()
 #ifndef DEBUG_SKIP_NETWORK
   g_lastResult = measure();
   publish(g_lastResult);
+  queue.flush();
   oledShowSensorData(g_lastResult.reading);
 #endif
 
@@ -114,6 +119,7 @@ void loop()
     delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
     logger.println("[MAIN] DeepSleep へ移行");
 #ifndef DEBUG_SKIP_NETWORK
+    queue.save();
     lte.disconnect();
     lte.radioOff(); // LTE_EN LOW
 #endif
