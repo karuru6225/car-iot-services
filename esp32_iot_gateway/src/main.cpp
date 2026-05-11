@@ -83,11 +83,13 @@ void setup()
   }
 
 #ifndef DEBUG_SKIP_NETWORK
+  oledPrint("LTE connecting...");
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
 
   queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
   queue.flush(); // 前回バッファ分を即送信
 
+  oledPrint("OTA checking...");
   // Jobs で次のジョブを確認。更新あれば apply() → esp_restart()（戻らない）
   // 前回 OTA の結果報告（SUCCEEDED/FAILED）も内部で行う
   ota.check();
@@ -173,9 +175,12 @@ void loop()
     if (ev == ButtonEvent::BTN0_SHORT)
     {
       g_mode = enterMenuMode();
-      relayMode = getRelayMode(); // メニューで変更された可能性があるので再取得
-      oledShowSensorData(g_lastResult.reading); // メニュー終了後に計測値画面を復元
-      lastRemain = -1;                          // カウントダウンを即再描画させる
+      relayMode = getRelayMode();
+      int curRemain = (int)((SLEEP_INTERVAL_SEC * 1000 - (millis() - waitStart)) / 1000);
+      oledShowSensorData(g_lastResult.reading);
+      oledUpdateCountdown(curRemain);
+      updateRelayIndicator(curRemain, relayMode);
+      lastRemain = curRemain;
     }
     if (ev == ButtonEvent::BTN1_LONG)
     {
