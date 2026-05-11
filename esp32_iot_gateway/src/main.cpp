@@ -31,6 +31,8 @@
 
 #include <esp_sleep.h>
 
+#define RELAY_0_PIN 11
+#define RELAY_1_PIN 13
 #define RELAY_2_PIN 15
 #define UNITX_EN_PIN 9
 #define CHG_ON_PIN 21
@@ -101,8 +103,41 @@ void setup()
 
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
     playMelody(boot);
+  pinMode(RELAY_0_PIN, OUTPUT);
+  pinMode(RELAY_1_PIN, OUTPUT);
   pinMode(RELAY_2_PIN, OUTPUT);
   pinMode(CHG_ON_PIN, OUTPUT);
+}
+
+static void updateRelayIndicator(int remainSec, RelayMode mode)
+{
+  if (mode != RelayMode::SLEEP_INDICATOR)
+  {
+    digitalWrite(RELAY_0_PIN, LOW);
+    digitalWrite(RELAY_1_PIN, LOW);
+    digitalWrite(RELAY_2_PIN, LOW);
+    return;
+  }
+
+  // CONTEXT.md「ULP によるDeepSleepカウントダウンLED」の表に準拠
+  // remain 240〜300: GPIO11●  GPIO13●  GPIO15●
+  // remain 180〜240: GPIO11●  GPIO13●  GPIO15○
+  // remain 120〜180: GPIO11●  GPIO13○  GPIO15○
+  // remain  60〜120: GPIO11○  GPIO13○  GPIO15○
+  // remain   0〜 60: 全点滅（1秒周期）
+  if (remainSec < 60)
+  {
+    uint8_t blink = (remainSec % 2 == 0) ? HIGH : LOW;
+    digitalWrite(RELAY_0_PIN, blink);
+    digitalWrite(RELAY_1_PIN, blink);
+    digitalWrite(RELAY_2_PIN, blink);
+  }
+  else
+  {
+    digitalWrite(RELAY_0_PIN, remainSec >= 120 ? HIGH : LOW);
+    digitalWrite(RELAY_1_PIN, remainSec >= 180 ? HIGH : LOW);
+    digitalWrite(RELAY_2_PIN, remainSec >= 240 ? HIGH : LOW);
+  }
 }
 
 void loop()
@@ -129,6 +164,7 @@ void loop()
   }
 
   // CONTINUOUS: SLEEP_INTERVAL_SEC 秒待機しながらボタン監視・カウントダウン表示
+  RelayMode relayMode = getRelayMode();
   unsigned long waitStart = millis();
   int lastRemain = -1;
   while (millis() - waitStart < (uint32_t)SLEEP_INTERVAL_SEC * 1000)
@@ -137,6 +173,7 @@ void loop()
     if (ev == ButtonEvent::BTN0_SHORT)
     {
       g_mode = enterMenuMode();
+      relayMode = getRelayMode(); // メニューで変更された可能性があるので再取得
       oledShowSensorData(g_lastResult.reading); // メニュー終了後に計測値画面を復元
       lastRemain = -1;                          // カウントダウンを即再描画させる
     }
@@ -159,6 +196,7 @@ void loop()
     if (remain != lastRemain)
     {
       oledUpdateCountdown(remain);
+      updateRelayIndicator(remain, relayMode);
       lastRemain = remain;
     }
     delay(50);

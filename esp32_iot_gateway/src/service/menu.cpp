@@ -10,31 +10,67 @@
 #include "../config.h"
 #include <Arduino.h>
 
+// ---- メニュー定義 ----
+
+enum class MenuAction
+{
+  NONE,
+  BLE_SCAN,
+  BLE_REMOVE,
+  SENSOR,
+  SYS_INFO,
+  NVS_CLEAR,
+  RELAY_MODE,
+  CONTINUOUS,
+  RESTART,
+};
+
+struct MenuItem
+{
+  const char *label;
+  const char *path;
+  MenuAction action;
+};
+
+static const MenuItem ITEMS[] = {
+    // path="/"
+    {"BLE Settings", "/",             MenuAction::NONE      },
+    {"Sensor View",  "/",             MenuAction::SENSOR    },
+    {"System",       "/",             MenuAction::NONE      },
+    {"Continuous",   "/",             MenuAction::CONTINUOUS},
+    {"Restart",      "/",             MenuAction::RESTART   },
+    // path="/BLE Settings"
+    {"Register",     "/BLE Settings", MenuAction::BLE_SCAN  },
+    {"Remove",       "/BLE Settings", MenuAction::BLE_REMOVE},
+    // path="/System"
+    {"Info",         "/System",       MenuAction::SYS_INFO   },
+    {"Relay Mode",   "/System",       MenuAction::RELAY_MODE },
+    {"NVS Clear",    "/System",       MenuAction::NVS_CLEAR  },
+};
+static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
+
 // ---- 状態定義 ----
 
 enum class MenuState
 {
-  MAIN,
+  MENU_NAV,
   BLE_SCAN,
   BLE_SCAN_RESULT,
   BLE_REMOVE,
   BLE_REMOVE_CONFIRM,
   SENSOR,
   SYS_INFO,
+  RELAY_MODE,
+  NVS_CLEAR_CONFIRM,
   DONE_CONTINUOUS,
 };
 
-// ---- 共有状態 ----
+// ---- ナビゲーション状態 ----
 
-static const char *MAIN_ITEMS[] = {
-    "BLE: Register",
-    "BLE: Remove",
-    "Sensor View",
-    "System Info",
-    "Continuous",
-    "Restart",
-};
-static const int MAIN_ITEM_COUNT = 6;
+static char s_currentPath[64] = "/";
+static int  s_index = 0; // MENU_NAV のカーソル
+
+// ---- アクション画面共有状態 ----
 
 struct ScanResult
 {
@@ -45,58 +81,133 @@ static const int MAX_SCAN_RESULTS = 20;
 static ScanResult s_scanResults[MAX_SCAN_RESULTS];
 static int s_scanResultCount = 0;
 
-static int s_cursor = 0;
+static int s_cursor = 0;        // BLE_REMOVE / BLE_SCAN_RESULT のカーソル
 static int s_confirmCursor = 1; // 0=Yes, 1=No
 static int s_removeTarget = 0;
-static int s_savedCursor = 0; // CONFIRM から BLE_REMOVE に戻るときのカーソル復元用
+static int s_savedCursor = 0;   // CONFIRM から BLE_REMOVE に戻るときのカーソル復元用
+static RelayMode s_relayModeEdit = RelayMode::SLEEP_INDICATOR; // RELAY_MODE 編集中の値
 
-// ---- tick 関数（各状態の描画 + 入力処理、次状態を返す） ----
+// ---- パスユーティリティ ----
 
-static MenuState tickMain(ButtonEvent ev)
+static void pathPush(const char *label)
 {
-  oledShowMenu("Menu", MAIN_ITEMS, MAIN_ITEM_COUNT, s_cursor);
+  if (strcmp(s_currentPath, "/") == 0)
+  {
+    snprintf(s_currentPath, sizeof(s_currentPath), "/%s", label);
+  }
+  else
+  {
+    size_t len = strlen(s_currentPath);
+    snprintf(s_currentPath + len, sizeof(s_currentPath) - len, "/%s", label);
+  }
+}
+
+static void pathPop()
+{
+  char *last = strrchr(s_currentPath, '/');
+  if (last == nullptr || last == s_currentPath)
+  {
+    strcpy(s_currentPath, "/");
+  }
+  else
+  {
+    *last = '\0';
+    if (s_currentPath[0] == '\0') strcpy(s_currentPath, "/");
+  }
+}
+
+static const char *pathTitle()
+{
+  if (strcmp(s_currentPath, "/") == 0) return "Menu";
+  const char *last = strrchr(s_currentPath, '/');
+  return last ? last + 1 : s_currentPath;
+}
+
+// ---- tick 関数 ----
+
+static MenuState tickMenuNav(ButtonEvent ev)
+{
+  char labelBufs[16][20];
+  const char *labels[16];
+  const MenuItem *matched[16];
+  int count = 0;
+  for (int i = 0; i < ITEM_COUNT; i++)
+  {
+    if (strcmp(ITEMS[i].path, s_currentPath) == 0)
+    {
+      if (ITEMS[i].action == MenuAction::NONE)
+        snprintf(labelBufs[count], sizeof(labelBufs[count]), "%s/", ITEMS[i].label);
+      else
+        snprintf(labelBufs[count], sizeof(labelBufs[count]), "%s", ITEMS[i].label);
+      labels[count] = labelBufs[count];
+      matched[count] = &ITEMS[i];
+      count++;
+    }
+  }
+  if (count == 0)
+  {
+    pathPop();
+    return MenuState::MENU_NAV;
+  }
+  if (s_index >= count) s_index = 0;
+
+  oledShowMenu(pathTitle(), labels, count, s_index);
+
   if (ev == ButtonEvent::BTN0_SHORT)
   {
-    s_cursor = (s_cursor + 1) % MAIN_ITEM_COUNT;
+    s_index = (s_index + 1) % count;
   }
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
-    switch (s_cursor)
+    const MenuItem *item = matched[s_index];
+    if (item->action == MenuAction::NONE)
     {
-    case 0:
-      return MenuState::BLE_SCAN;
-    case 1:
-      return MenuState::BLE_REMOVE;
-    case 2:
-      return MenuState::SENSOR;
-    case 3:
-      return MenuState::SYS_INFO;
-    case 4:
-      return MenuState::DONE_CONTINUOUS;
-    case 5:
-      esp_restart();
+      pathPush(item->label);
+      s_index = 0;
+    }
+    else
+    {
+      switch (item->action)
+      {
+      case MenuAction::BLE_SCAN:    return MenuState::BLE_SCAN;
+      case MenuAction::BLE_REMOVE:  return MenuState::BLE_REMOVE;
+      case MenuAction::SENSOR:      return MenuState::SENSOR;
+      case MenuAction::SYS_INFO:    return MenuState::SYS_INFO;
+      case MenuAction::RELAY_MODE:  return MenuState::RELAY_MODE;
+      case MenuAction::NVS_CLEAR:
+        s_confirmCursor = 1;
+        return MenuState::NVS_CLEAR_CONFIRM;
+      case MenuAction::CONTINUOUS: return MenuState::DONE_CONTINUOUS;
+      case MenuAction::RESTART:    oledClear(); esp_restart(); break;
+      default:                     break;
+      }
     }
   }
-  return MenuState::MAIN;
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    if (strcmp(s_currentPath, "/") != 0)
+    {
+      pathPop();
+      s_index = 0;
+    }
+  }
+  return MenuState::MENU_NAV;
 }
 
 static MenuState tickBleScan(ButtonEvent)
 {
   oledShowMessage("BLE Scanning...", "(10 sec)");
 
-  // キューをクリア
   SensorVariant dummy;
   while (xQueueReceive(bleScanner.queue, &dummy, 0) == pdTRUE)
   {
   }
 
-  // 全 SwitchBot 機器を対象にスキャン
   bleScanner.registrationMode = true;
   bleScanner.start(SCAN_TIME);
   bleScanner.registrationMode = false;
   bleScanner.clearResults();
 
-  // アドレスで重複排除しながら結果を収集
   s_scanResultCount = 0;
   SensorVariant v;
   while (xQueueReceive(bleScanner.queue, &v, 0) == pdTRUE)
@@ -134,8 +245,7 @@ static MenuState tickBleScanResult(ButtonEvent ev)
   if (s_scanResultCount == 0)
   {
     oledShowMessage("No devices found", "BTN1 long: back");
-    if (ev == ButtonEvent::BTN1_LONG)
-      return MenuState::MAIN;
+    if (ev == ButtonEvent::BTN1_LONG) return MenuState::MENU_NAV;
     return MenuState::BLE_SCAN_RESULT;
   }
 
@@ -159,11 +269,11 @@ static MenuState tickBleScanResult(ButtonEvent ev)
     bleTargets.save();
     oledShowMessage("Registered!", s_scanResults[s_cursor].addr);
     delay(1500);
-    return MenuState::MAIN;
+    return MenuState::MENU_NAV;
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
-    return MenuState::MAIN;
+    return MenuState::MENU_NAV;
   }
   return MenuState::BLE_SCAN_RESULT;
 }
@@ -173,19 +283,16 @@ static MenuState tickBleRemove(ButtonEvent ev)
   if (bleTargets.count == 0)
   {
     oledShowMessage("No registered", "BTN1 long: back");
-    if (ev == ButtonEvent::BTN1_LONG)
-      return MenuState::MAIN;
+    if (ev == ButtonEvent::BTN1_LONG) return MenuState::MENU_NAV;
     return MenuState::BLE_REMOVE;
   }
 
-  if (s_cursor >= bleTargets.count)
-    s_cursor = bleTargets.count - 1;
+  if (s_cursor >= bleTargets.count) s_cursor = bleTargets.count - 1;
 
   char title[20];
   snprintf(title, sizeof(title), "Remove (%d)", bleTargets.count);
   const char *ptrs[MAX_TARGETS];
-  for (int i = 0; i < bleTargets.count; i++)
-    ptrs[i] = bleTargets.data[i];
+  for (int i = 0; i < bleTargets.count; i++) ptrs[i] = bleTargets.data[i];
   oledShowMenu(title, ptrs, bleTargets.count, s_cursor);
 
   if (ev == ButtonEvent::BTN0_SHORT)
@@ -196,12 +303,12 @@ static MenuState tickBleRemove(ButtonEvent ev)
   {
     s_removeTarget = s_cursor;
     s_savedCursor = s_cursor;
-    s_confirmCursor = 1; // デフォルト No
+    s_confirmCursor = 1;
     return MenuState::BLE_REMOVE_CONFIRM;
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
-    return MenuState::MAIN;
+    return MenuState::MENU_NAV;
   }
   return MenuState::BLE_REMOVE;
 }
@@ -241,8 +348,7 @@ static MenuState tickSensor(ButtonEvent ev)
       {ina228.readCurrent(), ina228.readPower(), ina228.readTemp()},
       0};
   oledShowSensorData(r);
-  if (ev == ButtonEvent::BTN1_LONG)
-    return MenuState::MAIN;
+  if (ev == ButtonEvent::BTN1_LONG) return MenuState::MENU_NAV;
   if (millis() - lastUpdate > 500)
   {
     ina228.printStatus();
@@ -254,9 +360,58 @@ static MenuState tickSensor(ButtonEvent ev)
 static MenuState tickSysInfo(ButtonEvent ev)
 {
   oledShowMessage(FIRMWARE_VERSION, getDeviceId());
-  if (ev == ButtonEvent::BTN1_LONG)
-    return MenuState::MAIN;
+  if (ev == ButtonEvent::BTN1_LONG) return MenuState::MENU_NAV;
   return MenuState::SYS_INFO;
+}
+
+static MenuState tickRelayMode(ButtonEvent ev)
+{
+  const char *modeStr = (s_relayModeEdit == RelayMode::SLEEP_INDICATOR) ? "Sleep Indicator" : "Off";
+  oledShowMessage("Relay Mode", modeStr);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_relayModeEdit = (s_relayModeEdit == RelayMode::SLEEP_INDICATOR)
+                        ? RelayMode::RELAY_OFF
+                        : RelayMode::SLEEP_INDICATOR;
+  }
+  else if (ev == ButtonEvent::BTN1_SHORT)
+  {
+    setRelayMode(s_relayModeEdit);
+    return MenuState::MENU_NAV;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::RELAY_MODE;
+}
+
+static MenuState tickNvsClearConfirm(ButtonEvent ev)
+{
+  // "device" ネームスペース（MQTT host）は残す
+  oledShowConfirm("NVS Clear?", "Keep MQTT host", s_confirmCursor);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_confirmCursor = 1 - s_confirmCursor;
+  }
+  else if (ev == ButtonEvent::BTN1_SHORT)
+  {
+    if (s_confirmCursor == 0)
+    {
+      clearMenuData();
+      oledShowMessage("NVS Cleared", "Restarting...");
+      delay(1500);
+      esp_restart();
+    }
+    return MenuState::MENU_NAV;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::NVS_CLEAR_CONFIRM;
 }
 
 // ---- エントリポイント ----
@@ -265,8 +420,9 @@ OperationMode enterMenuMode()
 {
   bleTargets.load();
 
-  MenuState state = MenuState::MAIN;
-  s_cursor = 0;
+  MenuState state = MenuState::MENU_NAV;
+  strcpy(s_currentPath, "/");
+  s_index = 0;
 
   while (true)
   {
@@ -275,48 +431,41 @@ OperationMode enterMenuMode()
 
     switch (state)
     {
-    case MenuState::MAIN:
-      next = tickMain(ev);
-      break;
-    case MenuState::BLE_SCAN:
-      next = tickBleScan(ev);
-      break;
-    case MenuState::BLE_SCAN_RESULT:
-      next = tickBleScanResult(ev);
-      break;
-    case MenuState::BLE_REMOVE:
-      next = tickBleRemove(ev);
-      break;
-    case MenuState::BLE_REMOVE_CONFIRM:
-      next = tickBleRemoveConfirm(ev);
-      break;
-    case MenuState::SENSOR:
-      next = tickSensor(ev);
-      break;
-    case MenuState::SYS_INFO:
-      next = tickSysInfo(ev);
-      break;
-    case MenuState::DONE_CONTINUOUS:
-      return OperationMode::CONTINUOUS;
+    case MenuState::MENU_NAV:           next = tickMenuNav(ev);          break;
+    case MenuState::BLE_SCAN:           next = tickBleScan(ev);          break;
+    case MenuState::BLE_SCAN_RESULT:    next = tickBleScanResult(ev);    break;
+    case MenuState::BLE_REMOVE:         next = tickBleRemove(ev);        break;
+    case MenuState::BLE_REMOVE_CONFIRM: next = tickBleRemoveConfirm(ev); break;
+    case MenuState::SENSOR:             next = tickSensor(ev);           break;
+    case MenuState::SYS_INFO:           next = tickSysInfo(ev);          break;
+    case MenuState::RELAY_MODE:         next = tickRelayMode(ev);        break;
+    case MenuState::NVS_CLEAR_CONFIRM:  next = tickNvsClearConfirm(ev);  break;
+    case MenuState::DONE_CONTINUOUS:    break; // tickMenuNav() から直接返されるため到達しない
     }
 
     if (next == MenuState::DONE_CONTINUOUS)
     {
+      oledClear();
       return OperationMode::CONTINUOUS;
     }
 
     if (next != state)
     {
-      // CONFIRM → BLE_REMOVE の遷移ではカーソル位置を復元
       if (state == MenuState::BLE_REMOVE_CONFIRM && next == MenuState::BLE_REMOVE)
       {
         s_cursor = s_savedCursor;
         if (bleTargets.count > 0 && s_cursor >= bleTargets.count)
           s_cursor = bleTargets.count - 1;
       }
+      else if (next == MenuState::MENU_NAV)
+      {
+        s_index = 0;
+      }
       else
       {
         s_cursor = 0;
+        if (next == MenuState::RELAY_MODE)
+          s_relayModeEdit = getRelayMode();
       }
       state = next;
     }

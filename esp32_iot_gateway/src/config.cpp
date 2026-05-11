@@ -9,6 +9,7 @@ static constexpr char NVS_NS_OTA[]    = "ota";
 static constexpr char NVS_MQTT_HOST[] = "mqtt_host";
 static constexpr char NVS_CERT_CRC[]  = "cert_crc";
 static constexpr char NVS_JOB_ID[]    = "job_id";
+static constexpr char NVS_RELAY_MODE[] = "relay_mode";
 
 const char *getDeviceId()
 {
@@ -79,4 +80,42 @@ void clearPendingJobId()
   nvs_erase_key(nvs, NVS_JOB_ID);
   nvs_commit(nvs);
   nvs_close(nvs);
+}
+
+RelayMode getRelayMode()
+{
+  nvs_handle_t nvs;
+  uint8_t val = (uint8_t)RelayMode::SLEEP_INDICATOR; // デフォルト
+  if (nvs_open(NVS_NS_DEVICE, NVS_READONLY, &nvs) == ESP_OK) {
+    nvs_get_u8(nvs, NVS_RELAY_MODE, &val);
+    nvs_close(nvs);
+  }
+  return (RelayMode)val;
+}
+
+void setRelayMode(RelayMode mode)
+{
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NS_DEVICE, NVS_READWRITE, &nvs) != ESP_OK) return;
+  nvs_set_u8(nvs, NVS_RELAY_MODE, (uint8_t)mode);
+  nvs_commit(nvs);
+  nvs_close(nvs);
+}
+
+static void eraseNvsNamespace(const char *ns)
+{
+  nvs_handle_t h;
+  if (nvs_open(ns, NVS_READWRITE, &h) == ESP_OK)
+  {
+    nvs_erase_all(h);
+    nvs_commit(h);
+    nvs_close(h);
+  }
+}
+
+void clearMenuData()
+{
+  eraseNvsNamespace(NVS_NS_LTE);
+  eraseNvsNamespace(NVS_NS_OTA);
+  eraseNvsNamespace("switchbot");
 }

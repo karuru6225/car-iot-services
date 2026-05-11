@@ -53,24 +53,55 @@ setup():
 ## メニュー構成
 
 ```
-[メインメニュー]
-  ├── BLE: Register    → [スキャン] → [結果一覧・登録]
-  ├── BLE: Remove      → [登録済み一覧・削除確認]
-  ├── Sensor View      → [センサーリアルタイム表示]
-  ├── System Info      → [FW バージョン・デバイス ID]
-  └── Restart          → esp_restart()
+[ルート "/"]
+  ├── BLE Settings    → ["/BLE Settings"]
+  │   ├── Register    → [スキャン] → [結果一覧・登録]
+  │   └── Remove      → [登録済み一覧・削除確認]
+  ├── Sensor View     → [センサーリアルタイム表示]
+  ├── System          → ["/System"]
+  │   ├── Info        → [FW バージョン・デバイス ID]
+  │   └── NVS Clear   → [確認] → nvs_flash_erase() + esp_restart()
+  ├── Continuous      → 継続計測モードに移行
+  └── Restart         → esp_restart()
 ```
+
+BTN1 長押しでひとつ上の階層に戻る（ルートでは何もしない）。
+
+---
+
+## 実装アーキテクチャ
+
+### MenuItem 定義（フラット配列）
+
+```cpp
+struct MenuItem {
+  const char* label;   // 表示文字列
+  const char* path;    // 属する階層パス（例: "/", "/BLE Settings"）
+  MenuAction  action;  // NONE = サブメニューを持つ、それ以外 = アクション実行
+};
+```
+
+### ナビゲーション状態
+
+```cpp
+static char s_currentPath[64];  // 現在の階層（例: "/"、"/System"）
+static int  s_index;            // 現在階層内のカーソル位置
+```
+
+`tickMenuNav()` は毎ループ `s_currentPath` と一致する MenuItem を抽出して表示する。  
+サブメニューに入るときは `pathPush(label)` で `s_currentPath` を更新する（メモリ上の文字列操作のみ、スタック不要）。  
+戻るときは `pathPop()` で末尾セグメントを削除する。
 
 ### 各画面
 
-**メインメニュー**
+**ルートメニュー / サブメニュー**（MENU_NAV 状態）
 ```
-Menu
+Menu              ← pathTitle()（ルートは "Menu"、サブは最終セグメント）
 ──────────────────────
-> BLE: Register
-  BLE: Remove
+> BLE Settings
   Sensor View
-  System Info
+  System
+  Continuous
   Restart
 ```
 
@@ -87,7 +118,7 @@ BLE Register
 > aa:bb:cc:dd:ee:ff
   ff:ee:dd:cc:bb:aa
 ```
-BTN1 短押しで選択・登録 → NVS 保存 → メインに戻る。BTN1 長押しでキャンセル。
+BTN1 短押しで選択・登録 → NVS 保存 → MENU_NAV に戻る。BTN1 長押しでキャンセル。
 
 **BLE 削除**（登録済み一覧を兼ねる）
 ```
@@ -96,7 +127,7 @@ Remove (2)
 > aa:bb:cc:dd:ee:ff
   ff:ee:dd:cc:bb:aa
 ```
-BTN1 短押しで確認画面へ。BTN1 長押しでメインに戻る。登録 0 件時は "No registered" を表示。
+BTN1 短押しで確認画面へ。BTN1 長押しで MENU_NAV に戻る。登録 0 件時は "No registered" を表示。
 
 **削除確認**
 ```
@@ -125,22 +156,37 @@ BTN1 long: back
 esp32-gw-aabbccdd
 ```
 
+**NVS クリア確認**
+```
+NVS Clear?
+All data lost!
+────────────────────
+  [Yes]       [No]
+BTN1 long: cancel
+```
+BTN0 で Yes / No 切り替え、BTN1 短押しで確定。Yes 選択時は `nvs_flash_erase()` + `esp_restart()`。
+
 ---
 
 ## ステートマシン
 
 ```
-MAIN
- ├─(BLE:Register)──→ BLE_SCAN ──→ BLE_SCAN_RESULT ──(登録/キャンセル)──→ MAIN
- ├─(BLE:Remove)────→ BLE_REMOVE ──(BTN1 短押し)──→ BLE_REMOVE_CONFIRM
- │                       ↑──────────────────────────────────────────────(確定/キャンセル)
- ├─(Sensor View)───→ SENSOR ──(BTN1 長押し)──→ MAIN
- ├─(System Info)───→ SYS_INFO ──(BTN1 長押し)──→ MAIN
- └─(Restart)────────→ esp_restart()
+MENU_NAV (汎用ナビ)
+ ├─(BLE Settings)────→ MENU_NAV("/BLE Settings")
+ │   ├─(Register)────→ BLE_SCAN ──→ BLE_SCAN_RESULT ──(登録/キャンセル)──→ MENU_NAV
+ │   └─(Remove)──────→ BLE_REMOVE ──(BTN1 短押し)──→ BLE_REMOVE_CONFIRM
+ │                         ↑──────────────────────────────────(確定/キャンセル)
+ ├─(Sensor View)──────→ SENSOR ──(BTN1 長押し)──→ MENU_NAV
+ ├─(System)───────────→ MENU_NAV("/System")
+ │   ├─(Info)─────────→ SYS_INFO ──(BTN1 長押し)──→ MENU_NAV
+ │   └─(NVS Clear)────→ NVS_CLEAR_CONFIRM ──(Yes)──→ esp_restart()
+ │                                          ──(No/長押し)──→ MENU_NAV
+ ├─(Continuous)───────→ DONE_CONTINUOUS（継続モード移行）
+ └─(Restart)──────────→ esp_restart()
 ```
 
-各状態は `tick*()` 関数（`service/menu.cpp` 内 static）が担当する。
-tick 関数は毎ループ呼ばれ、描画と入力処理を行い次状態を返す。ループ周期 50ms。
+各アクション画面の tick 関数は `service/menu.cpp` 内 static。  
+ループ周期 50ms。
 
 `BLE_REMOVE_CONFIRM → BLE_REMOVE` の遷移ではカーソル位置を復元する（`s_savedCursor`）。
 
@@ -164,9 +210,9 @@ if (!bleScanner.registrationMode && !bleTargets.isTarget(addr.c_str())) return;
 
 | ファイル | 種別 | 内容 |
 |----------|------|------|
-| `service/menu.h/.cpp` | 新規 | メニューステートマシン本体 |
-| `device/button.h/.cpp` | 新規 | デバウンス・長押し検出（`ButtonEvent`） |
-| `device/oled.h/.cpp` | 変更 | `oledShowMenu` / `oledShowMessage` / `oledShowConfirm` / `oledShowSensorData` 追加 |
-| `device/ble_scan.h/.cpp` | 変更 | `registrationMode` フラグ追加 |
-| `device/speaker.h/.cpp` | 変更 | `bootStart` メロディ追加、`playMelody` のセンチネル方式修正 |
-| `main.cpp` | 変更 | `button.begin()` / `playMelody(bootStart)` を `setup()` に追加、BTN0 起動判定追加 |
+| `service/menu.h/.cpp` | 変更 | path 方式の階層ナビ、NVS Clear 追加 |
+| `device/button.h/.cpp` | 変更なし | デバウンス・長押し検出（`ButtonEvent`） |
+| `device/oled.h/.cpp` | 変更なし | `oledShowMenu` / `oledShowMessage` / `oledShowConfirm` / `oledShowSensorData` |
+| `device/ble_scan.h/.cpp` | 変更なし | `registrationMode` フラグ |
+| `device/speaker.h/.cpp` | 変更なし | `bootStart` メロディ |
+| `main.cpp` | 変更なし | `button.begin()` / BTN0 起動判定 |
