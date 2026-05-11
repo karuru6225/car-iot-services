@@ -10,50 +10,11 @@
 #include "../config.h"
 #include <Arduino.h>
 
-// ---- メニュー定義 ----
-
-enum class MenuAction
-{
-  NONE,
-  BLE_SCAN,
-  BLE_REMOVE,
-  SENSOR,
-  SYS_INFO,
-  NVS_CLEAR,
-  RELAY_MODE,
-  CONTINUOUS,
-  RESTART,
-};
-
-struct MenuItem
-{
-  const char *label;
-  const char *path;
-  MenuAction action;
-};
-
-static const MenuItem ITEMS[] = {
-    // path="/"
-    {"BLE Settings", "/",             MenuAction::NONE      },
-    {"Sensor View",  "/",             MenuAction::SENSOR    },
-    {"System",       "/",             MenuAction::NONE      },
-    {"Continuous",   "/",             MenuAction::CONTINUOUS},
-    {"Restart",      "/",             MenuAction::RESTART   },
-    // path="/BLE Settings"
-    {"Register",     "/BLE Settings", MenuAction::BLE_SCAN  },
-    {"Remove",       "/BLE Settings", MenuAction::BLE_REMOVE},
-    // path="/System"
-    {"Info",         "/System",       MenuAction::SYS_INFO   },
-    {"Relay Mode",   "/System",       MenuAction::RELAY_MODE },
-    {"NVS Clear",    "/System",       MenuAction::NVS_CLEAR  },
-};
-static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
-
 // ---- 状態定義 ----
 
 enum class MenuState
 {
-  MENU_NAV,
+  MENU_NAV,         // 汎用ナビ（MENU_NAV は「サブメニューに入る」の targetState としても使用）
   BLE_SCAN,
   BLE_SCAN_RESULT,
   BLE_REMOVE,
@@ -62,8 +23,35 @@ enum class MenuState
   SYS_INFO,
   RELAY_MODE,
   NVS_CLEAR_CONFIRM,
+  RESTART,
   DONE_CONTINUOUS,
 };
+
+// ---- メニュー定義 ----
+
+struct MenuItem
+{
+  const char *label;
+  const char *path;
+  MenuState targetState; // MENU_NAV = サブメニューに入る、それ以外 = 画面遷移
+};
+
+static const MenuItem ITEMS[] = {
+    // path="/"
+    {"BLE Settings", "/",             MenuState::MENU_NAV        },
+    {"Sensor View",  "/",             MenuState::SENSOR          },
+    {"System",       "/",             MenuState::MENU_NAV        },
+    {"Continuous",   "/",             MenuState::DONE_CONTINUOUS },
+    {"Restart",      "/",             MenuState::RESTART         },
+    // path="/BLE Settings"
+    {"Register",     "/BLE Settings", MenuState::BLE_SCAN        },
+    {"Remove",       "/BLE Settings", MenuState::BLE_REMOVE      },
+    // path="/System"
+    {"Info",         "/System",       MenuState::SYS_INFO        },
+    {"Relay Mode",   "/System",       MenuState::RELAY_MODE      },
+    {"NVS Clear",    "/System",       MenuState::NVS_CLEAR_CONFIRM},
+};
+static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
 
 // ---- ナビゲーション状態 ----
 
@@ -135,7 +123,7 @@ static MenuState tickMenuNav(ButtonEvent ev)
   {
     if (strcmp(ITEMS[i].path, s_currentPath) == 0)
     {
-      if (ITEMS[i].action == MenuAction::NONE)
+      if (ITEMS[i].targetState == MenuState::MENU_NAV)
         snprintf(labelBufs[count], sizeof(labelBufs[count]), "%s/", ITEMS[i].label);
       else
         snprintf(labelBufs[count], sizeof(labelBufs[count]), "%s", ITEMS[i].label);
@@ -160,27 +148,14 @@ static MenuState tickMenuNav(ButtonEvent ev)
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
     const MenuItem *item = matched[s_index];
-    if (item->action == MenuAction::NONE)
+    if (item->targetState == MenuState::MENU_NAV)
     {
       pathPush(item->label);
       s_index = 0;
     }
     else
     {
-      switch (item->action)
-      {
-      case MenuAction::BLE_SCAN:    return MenuState::BLE_SCAN;
-      case MenuAction::BLE_REMOVE:  return MenuState::BLE_REMOVE;
-      case MenuAction::SENSOR:      return MenuState::SENSOR;
-      case MenuAction::SYS_INFO:    return MenuState::SYS_INFO;
-      case MenuAction::RELAY_MODE:  return MenuState::RELAY_MODE;
-      case MenuAction::NVS_CLEAR:
-        s_confirmCursor = 1;
-        return MenuState::NVS_CLEAR_CONFIRM;
-      case MenuAction::CONTINUOUS: return MenuState::DONE_CONTINUOUS;
-      case MenuAction::RESTART:    oledClear(); esp_restart(); break;
-      default:                     break;
-      }
+      return item->targetState;
     }
   }
   else if (ev == ButtonEvent::BTN1_LONG)
@@ -440,6 +415,7 @@ OperationMode enterMenuMode()
     case MenuState::SYS_INFO:           next = tickSysInfo(ev);          break;
     case MenuState::RELAY_MODE:         next = tickRelayMode(ev);        break;
     case MenuState::NVS_CLEAR_CONFIRM:  next = tickNvsClearConfirm(ev);  break;
+    case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break; // tickMenuNav() から直接返されるため到達しない
     }
 
@@ -466,6 +442,8 @@ OperationMode enterMenuMode()
         s_cursor = 0;
         if (next == MenuState::RELAY_MODE)
           s_relayModeEdit = getRelayMode();
+        else if (next == MenuState::NVS_CLEAR_CONFIRM)
+          s_confirmCursor = 1;
       }
       state = next;
     }
