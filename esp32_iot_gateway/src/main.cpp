@@ -60,7 +60,6 @@ void setup()
   oledInit();
   adsInit();
   ina228.init();
-  ina228.resetCharge(); // 起動時に充電量をリセット（必要に応じて削除してください）
   oledPrint("FW: " FIRMWARE_VERSION);
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
   {

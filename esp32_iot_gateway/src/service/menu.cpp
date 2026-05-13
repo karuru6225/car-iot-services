@@ -23,6 +23,7 @@ enum class MenuState
   SYS_INFO,
   RELAY_MODE,
   NVS_CLEAR_CONFIRM,
+  AH_RESET_CONFIRM,
   RESTART,
   DONE_CONTINUOUS,
 };
@@ -49,6 +50,7 @@ static const MenuItem ITEMS[] = {
     // path="/System"
     {"Info",         "/System",       MenuState::SYS_INFO        },
     {"Relay Mode",   "/System",       MenuState::RELAY_MODE      },
+    {"Ah Reset",     "/System",       MenuState::AH_RESET_CONFIRM},
     {"NVS Clear",    "/System",       MenuState::NVS_CLEAR_CONFIRM},
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
@@ -389,6 +391,31 @@ static MenuState tickNvsClearConfirm(ButtonEvent ev)
   return MenuState::NVS_CLEAR_CONFIRM;
 }
 
+static MenuState tickAhResetConfirm(ButtonEvent ev)
+{
+  oledShowConfirm("Ah Reset?", "Reset charge counter", s_confirmCursor);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_confirmCursor = 1 - s_confirmCursor;
+  }
+  else if (ev == ButtonEvent::BTN1_SHORT)
+  {
+    if (s_confirmCursor == 0)
+    {
+      ina228.resetCharge();
+      oledShowMessage("Ah Reset", "Done");
+      delay(1000);
+    }
+    return MenuState::MENU_NAV;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::AH_RESET_CONFIRM;
+}
+
 // ---- エントリポイント ----
 
 OperationMode enterMenuMode()
@@ -414,6 +441,7 @@ OperationMode enterMenuMode()
     case MenuState::SENSOR:             next = tickSensor(ev);           break;
     case MenuState::SYS_INFO:           next = tickSysInfo(ev);          break;
     case MenuState::RELAY_MODE:         next = tickRelayMode(ev);        break;
+    case MenuState::AH_RESET_CONFIRM:   next = tickAhResetConfirm(ev);   break;
     case MenuState::NVS_CLEAR_CONFIRM:  next = tickNvsClearConfirm(ev);  break;
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break; // tickMenuNav() から直接返されるため到達しない
@@ -442,7 +470,7 @@ OperationMode enterMenuMode()
         s_cursor = 0;
         if (next == MenuState::RELAY_MODE)
           s_relayModeEdit = getRelayMode();
-        else if (next == MenuState::NVS_CLEAR_CONFIRM)
+        else if (next == MenuState::NVS_CLEAR_CONFIRM || next == MenuState::AH_RESET_CONFIRM)
           s_confirmCursor = 1;
       }
       state = next;
