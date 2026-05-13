@@ -27,7 +27,7 @@ MeasureResult measure()
   result.reading = {
       {adsReadDiff01()},
       {adsReadDiff23()},
-      {ina228.readCurrent(), ina228.readPower(), ina228.readTemp()},
+      {ina228.readCurrent(), ina228.readPower(), ina228.readTemp(), ina228.readCharge()},
       time(nullptr)};
 
   // BLE キューを全件収集
@@ -45,8 +45,8 @@ void publish(const MeasureResult &result)
 {
   const SensorReading &r = result.reading;
 
-  logger.printf("[MONITOR] v1=%.2fV v2=%.2fV cur=%.4fA pwr=%.3fW tmp=%.1fC ts=%lld ble=%d\n",
-                r.v1.voltage, r.v2.voltage, r.pwr.current, r.pwr.power, r.pwr.temp,
+  logger.printf("[MONITOR] main=%.2fV sub=%.2fV cur=%.4fA pwr=%.3fW tmp=%.1fC ah=%.6fAh ts=%lld ble=%d\n",
+                r.main.voltage, r.sub.voltage, r.pwr.current, r.pwr.power, r.pwr.temp, r.pwr.ah,
                 (long long)r.ts, result.bleCount);
 
   queue.pushShadow(r);

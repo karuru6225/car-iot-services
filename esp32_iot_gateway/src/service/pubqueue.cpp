@@ -62,10 +62,10 @@ static void buildPayload(const QueueEntry &e, char *buf, size_t len)
   {
   case EntryType::Shadow:
   {
-    VoltageReading v1 = {e.shadow.v1};
-    VoltageReading v2 = {e.shadow.v2};
-    PowerReading pwr = {e.shadow.current, e.shadow.power, e.shadow.temp};
-    buildShadowPayload(buf, len, v1, v2, pwr, (time_t)e.shadow.ts);
+    VoltageReading main = {e.shadow.main};
+    VoltageReading sub = {e.shadow.sub};
+    PowerReading pwr = {e.shadow.current, e.shadow.power, e.shadow.temp, e.shadow.ah};
+    buildShadowPayload(buf, len, main, sub, pwr, (time_t)e.shadow.ts);
     break;
   }
   case EntryType::Thermometer:
@@ -115,11 +115,12 @@ void PubQueue::pushShadow(const SensorReading &r)
 {
   QueueEntry e;
   e.type = EntryType::Shadow;
-  e.shadow.v1 = r.v1.voltage;
-  e.shadow.v2 = r.v2.voltage;
+  e.shadow.main = r.main.voltage;
+  e.shadow.sub = r.sub.voltage;
   e.shadow.current = r.pwr.current;
   e.shadow.power = r.pwr.power;
   e.shadow.temp = r.pwr.temp;
+  e.shadow.ah = r.pwr.ah;
   e.shadow.ts = (uint32_t)r.ts;
   push(e);
 }

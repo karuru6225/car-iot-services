@@ -85,18 +85,21 @@ bool Ina228::init()
   return true;
 }
 
+// V
 float Ina228::readShuntVoltage()
 {
   // ADCRANGE=1 -> 78.125nV/LSB
   return (rd24s(0x04) >> 4) * 78.125e-9f;
 }
 
+// V
 float Ina228::readVBus()
 {
   // bits[23:4] = 20bit unsigned、LSB = 195.3125μV
   return (rd24u(0x05) >> 4) * 195.3125e-6f;
 }
 
+// A
 float Ina228::readCurrent()
 {
   // bits[23:4] = 20bit signed、LSB = CURRENT_LSB
@@ -104,17 +107,20 @@ float Ina228::readCurrent()
   return -(rd24s(0x07) >> 4) * CURRENT_LSB;
 }
 
+// W
 float Ina228::readPower()
 {
   // 24bit unsigned、P = raw × 3.2 × CURRENT_LSB
   return rd24u(0x08) * 3.2f * CURRENT_LSB;
 }
 
+// °C
 float Ina228::readTemp()
 {
   return ((int16_t)rd16(0x06)) * 7.8125e-3f;
 }
 
+// Ah
 float Ina228::readCharge()
 {
   // CHARGE レジスタは 40bit unsigned でクーロン値を保持

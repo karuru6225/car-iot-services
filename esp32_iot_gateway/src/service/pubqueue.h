@@ -7,7 +7,7 @@
 enum class EntryType : uint8_t { Shadow = 0, Thermometer = 1, Co2 = 2 };
 
 struct ShadowEntry {
-  float    v1, v2, current, power, temp;
+  float    main, sub, current, power, temp, ah;
   uint32_t ts;
 };
 

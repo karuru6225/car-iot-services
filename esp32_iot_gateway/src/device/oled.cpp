@@ -156,7 +156,7 @@ void oledShowSensorData(const SensorReading &r)
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
-  display.printf("V1:%.2fV V2:%.2fV", r.v1.voltage, r.v2.voltage);
+  display.printf("M:%.2fV S:%.2fV", r.main.voltage, r.sub.voltage);
   display.setCursor(0, 12);
   display.printf("Cur: %.2fA", r.pwr.current);
   display.setCursor(0, 22);

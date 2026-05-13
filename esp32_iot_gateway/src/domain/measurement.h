@@ -12,12 +12,13 @@ struct PowerReading
   float current; // A
   float power;   // W
   float temp;    // °C
+  float ah;      // Ah
 };
 
 struct SensorReading
 {
-  VoltageReading v1;
-  VoltageReading v2;
+  VoltageReading main;
+  VoltageReading sub;
   PowerReading pwr;
   time_t ts;
 };
