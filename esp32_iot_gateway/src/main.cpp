@@ -15,6 +15,8 @@
 #include "device/lte.h"
 #include "service/logger.h"
 #include "service/ota.h"
+#include "service/jobs.h"
+#include "service/command.h"
 #include "service/mqtt.h"
 #include "service/monitor.h"
 #include "service/shadow.h"
@@ -89,19 +91,26 @@ void setup()
   queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
   queue.flush(); // 前回バッファ分を即送信
 
-  oledPrint("OTA checking...");
-  // Jobs で次のジョブを確認。更新あれば apply() → esp_restart()（戻らない）
-  // 前回 OTA の結果報告（SUCCEEDED/FAILED）も内部で行う
-  ota.check();
+  ota.reportPendingJobResult();
 
   // MQTT 接続が確認できた場合のみ起動を確定（LTE 障害時はロールバックさせる）
-  // Jobs 経由で SUCCEEDED を報告済みの場合は confirmBoot() は no-op になる
   if (mqtt.isConnected())
     ota.confirmBoot();
 
   shadowSetup();
   shadowPublishConfig();
   shadowPollDelta(3000); // 起動時に pending な desired を即適用
+
+  oledPrint("Job checking...");
+  jobsSetup();
+  JobInfo job;
+  if (jobsGetNext(job))
+  {
+    if (strcmp(job.operation, "ota") == 0)
+      ota.handleJob(job); // 成功時は esp_restart() するため戻らない
+    else
+      commandHandleJob(job);
+  }
 #endif
 
   logger.printf("[MAIN] 起動完了 mode=%s\n",

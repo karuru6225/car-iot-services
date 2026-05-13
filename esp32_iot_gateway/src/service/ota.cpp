@@ -1,4 +1,5 @@
 #include "ota.h"
+#include "jobs.h"
 #include "../device/lte.h"
 #include "../device/oled.h"
 #include "mqtt.h"
@@ -19,7 +20,6 @@ bool Ota::apply(const char *url, const char *jobId)
     return false;
   }
   logger.printf("[OTA] 書き込み先: %s\n", partition->label);
-
   logger.printf("[OTA] DL URL: %.100s\n", url);
 
   oledShowOtaProgress("Downloading...", 0, 0);
@@ -91,7 +91,6 @@ bool Ota::apply(const char *url, const char *jobId)
 
   // 書き込み完了確定後に JobID を保存する（接続失敗時は保存しないためJobが FAILED にならない）
   setPendingJobId(jobId);
-
   lte.deleteFile("firmware.bin");
 
   logger.printf("[OTA] 完了 (%u bytes) → 再起動\n", written);
@@ -110,26 +109,6 @@ void Ota::confirmBoot()
     return;
   esp_ota_mark_app_valid_cancel_rollback();
   logger.println("[OTA] 起動確認完了");
-}
-
-bool Ota::updateJobStatus(const char *jobId, const char *status, const char *reason)
-{
-  char topic[160];
-  snprintf(topic, sizeof(topic),
-           "$aws/things/%s/jobs/%s/update", getDeviceId(), jobId);
-
-  char payload[256];
-  if (reason)
-  {
-    snprintf(payload, sizeof(payload),
-             "{\"status\":\"%s\",\"statusDetails\":{\"reason\":\"%s\"}}", status, reason);
-  }
-  else
-  {
-    snprintf(payload, sizeof(payload), "{\"status\":\"%s\"}", status);
-  }
-
-  return mqtt.publish(topic, payload);
 }
 
 void Ota::reportPendingJobResult()
@@ -151,7 +130,7 @@ void Ota::reportPendingJobResult()
 
   if (rolledBack)
   {
-    updateJobStatus(jobId, "FAILED", "rollback");
+    jobsReport(jobId, "FAILED", "rollback");
     logger.printf("[OTA] ジョブ %s: FAILED（ロールバック検出）\n", jobId);
     clearPendingJobId();
     return;
@@ -164,7 +143,7 @@ void Ota::reportPendingJobResult()
       runState == ESP_OTA_IMG_PENDING_VERIFY)
     esp_ota_mark_app_valid_cancel_rollback();
 
-  if (updateJobStatus(jobId, "SUCCEEDED"))
+  if (jobsReport(jobId, "SUCCEEDED"))
   {
     logger.printf("[OTA] ジョブ %s: SUCCEEDED\n", jobId);
     clearPendingJobId();
@@ -176,89 +155,44 @@ void Ota::reportPendingJobResult()
   }
 }
 
-bool Ota::check()
+bool Ota::handleJob(const JobInfo &job)
 {
-  reportPendingJobResult();
-
-  char acceptedTopic[128], rejectedTopic[128], getTopic[128];
-  snprintf(acceptedTopic, sizeof(acceptedTopic),
-           "$aws/things/%s/jobs/$next/get/accepted", getDeviceId());
-  snprintf(rejectedTopic, sizeof(rejectedTopic),
-           "$aws/things/%s/jobs/$next/get/rejected", getDeviceId());
-  snprintf(getTopic, sizeof(getTopic),
-           "$aws/things/%s/jobs/$next/get", getDeviceId());
-
-  if (!mqtt.subscribe(acceptedTopic))
-    return false;
-  mqtt.subscribe(rejectedTopic);
-  delay(500); // SIM7080G側のsubscription確立を待つ
-
-  if (!mqtt.publish(getTopic, "{}"))
-    return false;
-
-  char recvTopic[128];
-  static char payload[1024];
-  if (!mqtt.pollMqtt(recvTopic, sizeof(recvTopic), payload, sizeof(payload), 5000))
-  {
-    logger.println("[OTA] Jobs レスポンスなし");
-    return false;
-  }
-
-  if (strstr(recvTopic, "rejected"))
-  {
-    logger.println("[OTA] Jobs リクエスト拒否");
-    return false;
-  }
-
   JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, payload);
-  if (err)
+  if (deserializeJson(doc, job.document) != DeserializationError::Ok)
   {
-    logger.printf("[OTA] JSON パース失敗: %s\n", err.c_str());
+    logger.println("[OTA] ジョブドキュメントのパース失敗");
+    jobsReport(job.id, "FAILED", "parse error");
     return false;
   }
 
-  JsonObject exec = doc["execution"];
-  if (exec.isNull())
+  const char *version = doc["version"];
+  const char *url     = doc["url"];
+
+  if (!url)
   {
-    logger.println("[OTA] 更新ジョブなし");
+    logger.println("[OTA] url が見つからない");
+    jobsReport(job.id, "FAILED", "no url");
     return false;
   }
 
-  const char *jobId = exec["jobId"];
-  const char *version = exec["jobDocument"]["version"];
-  const char *url = exec["jobDocument"]["url"];
-
-  if (!jobId || !url)
-  {
-    logger.println("[OTA] jobId または url が見つからない");
-    return false;
-  }
-
-  // 現在と同じバージョンならスキップ
+  // 同一バージョンならスキップ
   if (version && strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0)
   {
     logger.printf("[OTA] 同一バージョン (%s)、スキップ\n", version);
-    updateJobStatus(jobId, "SUCCEEDED");
+    jobsReport(job.id, "SUCCEEDED");
     return false;
   }
 
-  logger.printf("[OTA] ジョブ: %s  バージョン: %s\n", jobId, version ? version : "不明");
+  logger.printf("[OTA] ジョブ: %s  バージョン: %s\n", job.id, version ? version : "不明");
   logger.printf("[OTA] URL (先頭80文字): %.80s\n", url);
 
-  updateJobStatus(jobId, "IN_PROGRESS");
-
-  // AT+SH* スタックは MQTT（AT+SM*）と独立しているため、MQTT切断のみで OK
+  jobsReport(job.id, "IN_PROGRESS");
   lte.sendCmd("AT+SMDISC", 5000);
 
-  // url・jobId は doc のライフタイムに依存するためコピーして渡す
+  // url は doc のライフタイムに依存するためコピーして渡す
   static char urlBuf[768];
   strncpy(urlBuf, url, sizeof(urlBuf) - 1);
   urlBuf[sizeof(urlBuf) - 1] = '\0';
 
-  static char jobIdBuf[64];
-  strncpy(jobIdBuf, jobId, sizeof(jobIdBuf) - 1);
-  jobIdBuf[sizeof(jobIdBuf) - 1] = '\0';
-
-  return apply(urlBuf, jobIdBuf);
+  return apply(urlBuf, job.id);
 }
