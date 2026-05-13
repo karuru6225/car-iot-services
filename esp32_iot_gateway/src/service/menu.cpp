@@ -477,7 +477,9 @@ static MenuState tickCharging(ButtonEvent ev)
     vMain = adsReadDiff23();
     vSub  = adsReadDiff01();
     if (vSub <= vMain) {
-      oledShowMessage("Cannot charge:", "Sub <= Main");
+      char msg[24];
+      snprintf(msg, sizeof(msg), "M:%.2fV S:%.2fV", vMain, vSub);
+      oledShowMessage("Cannot charge:", msg);
       delay(2000);
       needsInit = true;
       return MenuState::MENU_NAV;
