@@ -36,12 +36,12 @@ void shadowSetup()
     logger.println("[SHADOW] delta subscribe failed");
 }
 
-bool shadowPollDelta()
+bool shadowPollDelta(uint32_t timeoutMs)
 {
   char recvTopic[128];
   static char payload[512];
 
-  if (!mqtt.pollMqtt(recvTopic, sizeof(recvTopic), payload, sizeof(payload), 0))
+  if (!mqtt.pollMqtt(recvTopic, sizeof(recvTopic), payload, sizeof(payload), timeoutMs))
     return false;
 
   char expected[128];

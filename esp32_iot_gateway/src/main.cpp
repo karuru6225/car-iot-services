@@ -101,6 +101,7 @@ void setup()
 
   shadowSetup();
   shadowPublishConfig();
+  shadowPollDelta(3000); // 起動時に pending な desired を即適用
 #endif
 
   logger.printf("[MAIN] 起動完了 mode=%s\n",
