@@ -103,7 +103,7 @@ void setRelayMode(RelayMode mode)
   nvs_close(nvs);
 }
 
-uint32_t getAhOffset()
+int32_t getAhOffset()
 {
   nvs_handle_t nvs;
   int32_t val = 0;
