@@ -43,6 +43,7 @@
     .tag-battery { color: #4f8ef7; }
     .tag-thermometer { color: #4fc87f; }
     .tag-co2meter { color: #f7d24f; }
+    .tag-shadow { color: #f7a24f; }
     a.settings-toggle { color: #888; font-size: 0.8em; cursor: pointer; text-decoration: underline; }
     #empty-msg { text-align: center; color: #555; padding: 24px; font-size: 0.9em; }
     .label-item { display:flex; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid #1e2d4a; font-size:0.85em; }
@@ -88,7 +89,8 @@
       <label>タイプ</label>
       <select id="type">
         <option value="">全て</option>
-        <option value="battery">電圧</option>
+        <option value="shadow">バッテリー計測</option>
+        <option value="battery">電圧（旧）</option>
         <option value="thermometer">温湿度</option>
         <option value="co2meter">CO2</option>
       </select>
@@ -128,6 +130,32 @@
   <div id="chart-voltage-section">
     <div class="chart-container">
       <canvas id="chart-voltage"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- グラフ（バッテリー電圧: main/sub） -->
+<div class="card" id="chart-shadow-voltage-card" style="display:none">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+    <span class="section-title" onclick="toggleChart('shadow-voltage')">▼ バッテリー電圧グラフ</span>
+    <button class="secondary" style="font-size:0.75em; padding:3px 10px" onclick="resetZoom()">ズームリセット</button>
+  </div>
+  <div id="chart-shadow-voltage-section">
+    <div class="chart-container">
+      <canvas id="chart-shadow-voltage"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- グラフ（Ah） -->
+<div class="card" id="chart-ah-card" style="display:none">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+    <span class="section-title" onclick="toggleChart('ah')">▼ Ah グラフ</span>
+    <button class="secondary" style="font-size:0.75em; padding:3px 10px" onclick="resetZoom()">ズームリセット</button>
+  </div>
+  <div id="chart-ah-section">
+    <div class="chart-container">
+      <canvas id="chart-ah"></canvas>
     </div>
   </div>
 </div>
@@ -219,6 +247,8 @@ function parseJwtPayload(token) {
 function isAdmin() { return userGroups.includes('admin'); }
 let labels = {};
 let chartVoltage          = null;
+let chartShadowVoltage    = null;
+let chartAh               = null;
 let chartTemp             = null;
 let chartHumidity         = null;
 let chartCo2              = null;
@@ -511,7 +541,7 @@ Chart.register({
 });
 
 function getActiveCharts() {
-  return [chartVoltage, chartTemp, chartHumidity, chartCo2].filter(Boolean);
+  return [chartVoltage, chartShadowVoltage, chartAh, chartTemp, chartHumidity, chartCo2].filter(Boolean);
 }
 
 function setupCrosshairSync() {
@@ -554,7 +584,7 @@ function setupCrosshairSync() {
   });
 }
 
-const CHART_LABELS = { voltage: '電圧グラフ', temp: '温度グラフ', humidity: '湿度グラフ', co2: 'CO2グラフ' };
+const CHART_LABELS = { voltage: '電圧グラフ（旧）', 'shadow-voltage': 'バッテリー電圧グラフ', ah: 'Ah グラフ', temp: '温度グラフ', humidity: '湿度グラフ', co2: 'CO2グラフ' };
 
 function toggleChart(type) {
   const section = document.getElementById(`chart-${type}-section`);
@@ -611,12 +641,15 @@ const timeScale = {
 };
 
 function renderChart(data) {
-  if (chartVoltage)  { chartVoltage.destroy();  chartVoltage  = null; }
-  if (chartTemp)     { chartTemp.destroy();      chartTemp     = null; }
-  if (chartHumidity) { chartHumidity.destroy();  chartHumidity = null; }
-  if (chartCo2)      { chartCo2.destroy();       chartCo2      = null; }
+  if (chartVoltage)       { chartVoltage.destroy();       chartVoltage       = null; }
+  if (chartShadowVoltage) { chartShadowVoltage.destroy(); chartShadowVoltage = null; }
+  if (chartAh)            { chartAh.destroy();            chartAh            = null; }
+  if (chartTemp)          { chartTemp.destroy();          chartTemp          = null; }
+  if (chartHumidity)      { chartHumidity.destroy();      chartHumidity      = null; }
+  if (chartCo2)           { chartCo2.destroy();           chartCo2           = null; }
 
   const voltageRows   = data.filter(r => r.type === 'battery');
+  const shadowRows    = data.filter(r => r.type === 'shadow');
   const switchbotRows = data.filter(r => r.type === 'thermometer' || r.type === 'co2meter');
   const co2Rows       = data.filter(r => r.type === 'co2meter');
 
@@ -663,6 +696,59 @@ function renderChart(data) {
     );
   } else {
     vCard.style.display = 'none';
+  }
+
+  // バッテリー電圧グラフ（main / sub）
+  const svCard = document.getElementById('chart-shadow-voltage-card');
+  if (shadowRows.length) {
+    svCard.style.display = '';
+    const svDatasets = [];
+    const mainColors = ['#4f8ef7', '#af4ff7', '#4fd4f7'];
+    const subColors  = ['#f7a24f', '#4fc87f', '#e74c3c'];
+    let colorIdx = 0;
+    Object.entries(groupBy(shadowRows, 'device_id')).forEach(([did, pts]) => {
+      const mc = mainColors[colorIdx % mainColors.length];
+      const sc = subColors[colorIdx % subColors.length];
+      colorIdx++;
+      svDatasets.push({
+        label: `${did} main(V)`,
+        data: pts.map(r => ({ x: new Date(r.ts), y: r.main })),
+        borderColor: mc, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+      });
+      svDatasets.push({
+        label: `${did} sub(V)`,
+        data: pts.map(r => ({ x: new Date(r.ts), y: r.sub })),
+        borderColor: sc, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+      });
+    });
+    chartShadowVoltage = new Chart(
+      document.getElementById('chart-shadow-voltage').getContext('2d'),
+      { type: 'line', data: { datasets: svDatasets }, options: makeChartOptions({ x: timeScale, y: linearScale('left') }) }
+    );
+  } else {
+    svCard.style.display = 'none';
+  }
+
+  // Ah グラフ
+  const ahCard = document.getElementById('chart-ah-card');
+  if (shadowRows.length) {
+    ahCard.style.display = '';
+    const ahDatasets = [];
+    let colorIdx2 = 0;
+    Object.entries(groupBy(shadowRows, 'device_id')).forEach(([did, pts]) => {
+      const color = COLORS[colorIdx2++ % COLORS.length];
+      ahDatasets.push({
+        label: `${did} Ah`,
+        data: pts.map(r => ({ x: new Date(r.ts), y: r.ah })),
+        borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
+      });
+    });
+    chartAh = new Chart(
+      document.getElementById('chart-ah').getContext('2d'),
+      { type: 'line', data: { datasets: ahDatasets }, options: makeChartOptions({ x: timeScale, y: linearScale('left') }) }
+    );
+  } else {
+    ahCard.style.display = 'none';
   }
 
   // 温度グラフ
@@ -756,22 +842,28 @@ function renderTable(data) {
     const isBattery     = r.type === 'battery';
     const isThermometer = r.type === 'thermometer';
     const isCo2         = r.type === 'co2meter';
+    const isShadow      = r.type === 'shadow';
     const typeLabel = isBattery
-      ? '<span class="tag-battery">電圧</span>'
+      ? '<span class="tag-battery">電圧（旧）</span>'
       : isCo2
         ? '<span class="tag-co2meter">CO2</span>'
-        : '<span class="tag-thermometer">温湿度</span>';
+        : isShadow
+          ? '<span class="tag-shadow">バッテリー計測</span>'
+          : '<span class="tag-thermometer">温湿度</span>';
     const rawKey  = r.addr || r.id || '-';
     const dispKey = rawKey !== '-' ? getLabel(rawKey) : '-';
-    const addrCell = (dispKey !== rawKey)
-      ? `${dispKey} <span style="color:#555; font-size:0.8em">(${rawKey})</span>`
-      : rawKey;
+    const addrCell = isShadow
+      ? '-'
+      : (dispKey !== rawKey)
+        ? `${dispKey} <span style="color:#555; font-size:0.8em">(${rawKey})</span>`
+        : rawKey;
     let valueStr = '-';
     if (isBattery) {
       const pct = voltageToBatteryPercent(r.voltage);
       const pctStr = pct != null ? ` <span style="color:${pct <= 15 ? '#e74c3c' : pct <= 30 ? '#f7d24f' : '#4fc87f'}">(≈${pct}%)</span>` : '';
       valueStr = `${r.voltage?.toFixed(2)} V${pctStr}`;
     }
+    if (isShadow)      valueStr = `main:${r.main?.toFixed(2)}V / sub:${r.sub?.toFixed(2)}V / ${r.current?.toFixed(2)}A / ${r.power?.toFixed(1)}W / ${r.ah?.toFixed(4)}Ah`;
     if (isThermometer) valueStr = `${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}% / RSSI:${r.rssi}`;
     if (isCo2)         valueStr = `${r.co2} ppm / ${r.temp?.toFixed(1)}°C / ${r.humidity}% / BAT:${r.battery}%`;
 
