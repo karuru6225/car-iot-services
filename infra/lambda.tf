@@ -126,7 +126,7 @@ resource "aws_lambda_function" "status" {
 
   environment {
     variables = {
-      THING_NAME   = aws_iot_thing.device.name
+      THING_NAME   = var.device_id
       IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
     }
   }

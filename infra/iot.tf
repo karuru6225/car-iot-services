@@ -39,13 +39,8 @@ resource "aws_iot_policy" "device" {
 
 # ─── Thing Group ──────────────────────────────────────────────────────────────
 
-resource "aws_iot_thing_group" "esp32_gw" {
-  name = "esp32-gw"
-}
-
-resource "aws_iot_thing_group_membership" "device" {
-  thing_name       = aws_iot_thing.device.name
-  thing_group_name = aws_iot_thing_group.esp32_gw.name
+resource "aws_iot_thing_group" "ota_target" {
+  name = "ota-target-car-iot-gw"
 }
 
 # ─── Topic Rule: sensors/+/data → Lambda ingest ───────────────────────────────
