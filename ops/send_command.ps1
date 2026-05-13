@@ -1,4 +1,4 @@
-# send_command.ps1 - AWS IoT Jobs 経由でデバイスにコマンドを送信する
+# send_command.ps1 - Send a command to the device via AWS IoT Jobs
 #
 # Usage:
 #   .\send_command.ps1 -ThingName esp32-gw-aabbccddeeff -Command charge_main_batt
@@ -24,22 +24,13 @@ if ($Profile) {
   Invoke-Expression ($credEnv -join "`n")
 }
 
-# ジョブドキュメント生成
-$doc = switch ($Command) {
-  "charge_main_batt" {
-    @{ operation = "charge_main_batt"; timeout_sec = $TimeoutSec } | ConvertTo-Json -Compress
-  }
-  "ah_reset" {
-    @{ operation = "ah_reset" } | ConvertTo-Json -Compress
-  }
-}
+$doc = if ($Command -eq "charge_main_batt") { '{"operation":"charge_main_batt","timeout_sec":' + $TimeoutSec + '}' } else { '{"operation":"ah_reset"}' }
 
-# アカウント ID 取得
 $accountId = (aws sts get-caller-identity --query Account --output text --region $Region)
 if ($LASTEXITCODE -ne 0) { Write-Error "Failed to get account ID."; exit 1 }
 
 $thingArn = "arn:aws:iot:${Region}:${accountId}:thing/${ThingName}"
-$jobId    = "${Command}-$(Get-Date -Format 'yyyyMMddHHmmss')" -replace "_", "-"
+$jobId    = ($Command -replace "_", "-") + "-" + (Get-Date -Format "yyyyMMddHHmmss")
 
 Write-Host ""
 Write-Host "==> Job ID  : $jobId"
@@ -47,11 +38,12 @@ Write-Host "==> Target  : $thingArn"
 Write-Host "==> Document: $doc"
 Write-Host ""
 
-aws iot create-job `
-  --job-id    $jobId `
-  --targets   $thingArn `
-  --document  $doc `
-  --region    $Region
+$tmpFile = [System.IO.Path]::GetTempFileName()
+$doc | Set-Content -Path $tmpFile -Encoding ascii
+
+aws iot create-job --job-id $jobId --targets $thingArn --document "file://$tmpFile" --region $Region
+
+Remove-Item $tmpFile -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -ne 0) { Write-Error "Failed to create job."; exit 1 }
 
