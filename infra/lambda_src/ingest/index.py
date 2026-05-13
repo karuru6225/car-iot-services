@@ -24,11 +24,14 @@ BUCKET = os.environ["S3_BUCKET"]
 def handler(event, context):
     device_id = event.get("device_id", "unknown")
 
-    ts_str = event.get("ts", "")
-    if ts_str:
+    ts_raw = event.get("ts", "")
+    if ts_raw:
         try:
-            dt = datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-        except ValueError:
+            if isinstance(ts_raw, (int, float)):
+                dt = datetime.fromtimestamp(int(ts_raw), tz=timezone.utc)
+            else:
+                dt = datetime.strptime(str(ts_raw), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except (ValueError, OSError):
             dt = datetime.now(timezone.utc)
     else:
         dt = datetime.now(timezone.utc)

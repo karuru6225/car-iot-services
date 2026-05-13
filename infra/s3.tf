@@ -155,6 +155,26 @@ resource "aws_glue_catalog_table" "sensor_data" {
       name = "fw"
       type = "string"
     }
+    columns {
+      name = "main"
+      type = "double"
+    }
+    columns {
+      name = "sub"
+      type = "double"
+    }
+    columns {
+      name = "current"
+      type = "double"
+    }
+    columns {
+      name = "power"
+      type = "double"
+    }
+    columns {
+      name = "ah"
+      type = "double"
+    }
   }
 
   partition_keys {

@@ -309,18 +309,14 @@ device/lte.h の定数:
 
 ## 作業中・引き継ぎ事項
 
-### TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）
+### ~~TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）~~ **実装済み**
 
-現状、バッテリー計測値（main/sub/current/power/temp/ah）は AWS IoT Shadow に最終値が残るだけで S3 に蓄積されない。
-Athena で履歴クエリするには Topic Rule の追加が必要。
-
-**方針（B案）**: Shadow は維持しつつ Topic Rule を追加して S3 にも流す
-
-- `infra/iot.tf` に新たな Topic Rule を追加
-  - SQL: `SELECT state.reported.*, topic(3) AS device_id FROM '$aws/things/+/shadow/update/accepted'`
-  - アクション: 既存の `aws_lambda_function.ingest` を呼ぶ（または専用 Lambda）
-- Shadow の accepted トピックは `{"state":{"reported":{...},"desired":null},...}` のラッパー付き → `SELECT state.reported.*` でフラット化して渡す
-- Lambda ingest 側で `type` フィールドがないケースを許容するか、SQL で `"shadow"` を固定値として付与する
+- `infra/iot.tf`: Topic Rule `shadow_ingest` を追加
+  - SQL: `SELECT state.reported.*, 'shadow' AS type, topic(3) AS device_id FROM '$aws/things/+/shadow/update/accepted'`
+  - アクション: 既存の `aws_lambda_function.ingest` を呼ぶ
+- `infra/lambda_src/ingest/index.py`: `ts` フィールドが整数（Unix 秒）の場合に対応
+- `infra/lambda_src/query/index.py`: `"shadow"` 型のクエリサポートを追加
+- `infra/s3.tf`: Glue テーブルに `main/sub/current/power/ah` カラムを追加
 
 ### TODO: OTA ファームウェアの gzip 圧縮（任意・高速化）
 
