@@ -1,4 +1,5 @@
 #include "menu.h"
+#include "menu_util.h"
 #include <esp_system.h>
 #include "../device/button.h"
 #include "../device/oled.h"
@@ -85,8 +86,7 @@ static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
 
 // ---- ナビゲーション状態 ----
 
-static char s_currentPath[64] = "/";
-static int  s_index = 0;
+static int s_index = 0;
 
 // ---- BLE スキャン結果（tickBleScan / tickBleScanResult で共有） ----
 
@@ -103,36 +103,6 @@ static int s_bleRemoveTarget = 0;
 
 static ConfirmDef s_confirm;
 
-// ---- パスユーティリティ ----
-
-static void pathPush(const char *label)
-{
-  if (strcmp(s_currentPath, "/") == 0)
-    snprintf(s_currentPath, sizeof(s_currentPath), "/%s", label);
-  else {
-    size_t len = strlen(s_currentPath);
-    snprintf(s_currentPath + len, sizeof(s_currentPath) - len, "/%s", label);
-  }
-}
-
-static void pathPop()
-{
-  char *last = strrchr(s_currentPath, '/');
-  if (last == nullptr || last == s_currentPath)
-    strcpy(s_currentPath, "/");
-  else {
-    *last = '\0';
-    if (s_currentPath[0] == '\0') strcpy(s_currentPath, "/");
-  }
-}
-
-static const char *pathTitle()
-{
-  if (strcmp(s_currentPath, "/") == 0) return "Menu";
-  const char *last = strrchr(s_currentPath, '/');
-  return last ? last + 1 : s_currentPath;
-}
-
 // ---- tick 関数 ----
 
 static MenuState tickMenuNav(ButtonEvent ev)
@@ -143,7 +113,7 @@ static MenuState tickMenuNav(ButtonEvent ev)
   int count = 0;
   for (int i = 0; i < ITEM_COUNT; i++)
   {
-    if (strcmp(ITEMS[i].path, s_currentPath) == 0)
+    if (strcmp(ITEMS[i].path, pathGet()) == 0)
     {
       if (ITEMS[i].targetState == MenuState::MENU_NAV)
         snprintf(labelBufs[count], sizeof(labelBufs[count]), "%s/", ITEMS[i].label);
@@ -184,7 +154,7 @@ static MenuState tickMenuNav(ButtonEvent ev)
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
-    if (strcmp(s_currentPath, "/") != 0)
+    if (!pathIsRoot())
     {
       pathPop();
       s_index = 0;
@@ -458,7 +428,7 @@ OperationMode enterMenuMode()
   bleTargets.load();
 
   MenuState state = MenuState::MENU_NAV;
-  strcpy(s_currentPath, "/");
+  pathReset();
   s_index = 0;
 
   while (true)
