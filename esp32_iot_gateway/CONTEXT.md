@@ -17,8 +17,8 @@ SIM7080G（SORACOM Cat-M）経由で AWS IoT Core に MQTT over TLS で送信す
 | ディスプレイ | なし |
 | ボタン | GPIO26（Btn0）/ GPIO33（Btn1）（Active-LOW、外部プルアップ） |
 | ADC | ADS1115（I2C: SDA=GPIO17, SCL=GPIO18, ADDR=0x48） |
-| 電圧測定回路 ch0 | 差動入力（AIN0-AIN1）、分圧回路 R_upper=680kΩ / R_lower=22kΩ、GAIN_EIGHT(±0.512V)、**サブバッテリー** |
-| 電圧測定回路 ch1 | 差動入力（AIN2-AIN3）、分圧回路 R_upper=680kΩ / R_lower=22kΩ、GAIN_EIGHT(±0.512V)、**メインバッテリー** |
+| 電圧測定回路 ch0 | 差動入力（AIN0-AIN1）、分圧回路 R_upper=680kΩ / R_lower=22kΩ、GAIN_EIGHT(±0.512V)、**メインバッテリー** |
+| 電圧測定回路 ch1 | 差動入力（AIN2-AIN3）、分圧回路 R_upper=680kΩ / R_lower=22kΩ、GAIN_EIGHT(±0.512V)、**サブバッテリー** |
 | ADC_READY | GPIO16（ADS1115 ALERT/RDY、変換完了割り込み） |
 | 電流計 | INA228（I2C: SDA=GPIO17, SCL=GPIO18, ADDR=0x40、A0/A1=GND） |
 | 電流計対象 | サブバッテリー電流・電力・積算電力量・温度 |
@@ -131,16 +131,17 @@ ESP32-S3-MINI-1
 トピック: `$aws/things/{device_id}/shadow/update`
 
 ```json
-{"state":{"reported":{"v1":12.34,"v2":12.10,"current":5.2100,"power":62.500,"temp":28.5,"ts":1746143400}}}
+{"state":{"reported":{"main":12.34,"sub":12.10,"current":5.2100,"power":62.500,"temp":28.5,"ah":0.001234,"ts":1746143400}}}
 ```
 
 | フィールド | 型 | 内容 |
 | --- | --- | --- |
-| `v1` | float | サブバッテリー電圧（V）、ADS1115 ch0（AIN0-AIN1 差動） |
-| `v2` | float | メインバッテリー電圧（V）、ADS1115 ch1（AIN2-AIN3 差動） |
+| `main` | float | メインバッテリー電圧（V）、ADS1115 ch0（AIN0-AIN1 差動） |
+| `sub` | float | サブバッテリー電圧（V）、ADS1115 ch1（AIN2-AIN3 差動） |
 | `current` | float | サブバッテリー電流（A）、INA228 |
 | `power` | float | サブバッテリー電力（W）、INA228 |
 | `temp` | float | INA228 内蔵温度センサー（°C） |
+| `ah` | float | サブバッテリー積算電荷量（Ah）、INA228 |
 | `ts` | int | UNIX タイムスタンプ（秒） |
 
 ### OTA / Jobs トピック（service/ota が使用）
@@ -170,8 +171,8 @@ ESP32-S3-MINI-1
 | 型 | 役割 |
 | --- | --- |
 | `VoltageReading` | 電圧計測値（`float voltage`） |
-| `PowerReading` | 電力計測値（`float current, power, temp`） |
-| `SensorReading` | アナログ計測値まとめ（`VoltageReading v1, v2` + `PowerReading pwr` + `time_t ts`） |
+| `PowerReading` | 電力計測値（`float current, power, temp, ah`） |
+| `SensorReading` | アナログ計測値まとめ（`VoltageReading main, sub` + `PowerReading pwr` + `time_t ts`） |
 | `MeasureResult` | 1サイクルの全計測結果（`SensorReading reading` + `SensorVariant ble[QUEUE_SIZE]` + `int bleCount`） |
 | `ThermometerData` | SwitchBot 温湿度計データ（SensorBase + temp/humidity/battery） |
 | `Co2MeterData` | SwitchBot CO2センサーデータ（ThermometerData + co2） |
@@ -227,7 +228,7 @@ ADCRANGE=1 → ±40.96mV、フルスケール電流 ±109A (I = V/R_shunt = 40.9
 | --- | --- |
 | `oledInit()` | I2C 初期化・画面クリア |
 | `oledPrint(text)` | 1行テキスト表示 |
-| `oledShowSensorData(SensorReading&)` | 計測値全表示（v1/v2/電流/電力/温度） |
+| `oledShowSensorData(SensorReading&)` | 計測値全表示（main/sub/電流/電力/温度） |
 | `oledUpdateCountdown(remainSec)` | 計測値画面下部のカウントダウン行のみ部分更新（CONTINUOUS モード用） |
 | `oledShowMessage(line1, line2)` | 2行メッセージ表示 |
 | `oledShowMenu(title, items, count, cursor)` | スクロール付きメニュー表示 |
@@ -307,6 +308,19 @@ device/lte.h の定数:
 | 主要ライブラリ | TinyGSM, ArduinoJson, Adafruit SSD1306, Adafruit GFX, Adafruit ADS1X15 |
 
 ## 作業中・引き継ぎ事項
+
+### TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）
+
+現状、バッテリー計測値（main/sub/current/power/temp/ah）は AWS IoT Shadow に最終値が残るだけで S3 に蓄積されない。
+Athena で履歴クエリするには Topic Rule の追加が必要。
+
+**方針（B案）**: Shadow は維持しつつ Topic Rule を追加して S3 にも流す
+
+- `infra/iot.tf` に新たな Topic Rule を追加
+  - SQL: `SELECT state.reported.*, topic(3) AS device_id FROM '$aws/things/+/shadow/update/accepted'`
+  - アクション: 既存の `aws_lambda_function.ingest` を呼ぶ（または専用 Lambda）
+- Shadow の accepted トピックは `{"state":{"reported":{...},"desired":null},...}` のラッパー付き → `SELECT state.reported.*` でフラット化して渡す
+- Lambda ingest 側で `type` フィールドがないケースを許容するか、SQL で `"shadow"` を固定値として付与する
 
 ### TODO: OTA ファームウェアの gzip 圧縮（任意・高速化）
 

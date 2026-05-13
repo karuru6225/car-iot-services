@@ -38,16 +38,17 @@ Web 管理画面
 トピック: `$aws/things/{device_id}/shadow/update`
 
 ```json
-{"state":{"reported":{"v1":12.34,"v2":12.10,"current":5.2100,"power":62.500,"temp":28.5,"ts":1746143400}}}
+{"state":{"reported":{"main":12.34,"sub":12.10,"current":5.2100,"power":62.500,"temp":28.5,"ah":0.001234,"ts":1746143400}}}
 ```
 
 | フィールド | 型 | 内容 |
 | --- | --- | --- |
-| `v1` | float | サブバッテリー電圧（V） |
-| `v2` | float | メインバッテリー電圧（V） |
+| `main` | float | メインバッテリー電圧（V） |
+| `sub` | float | サブバッテリー電圧（V） |
 | `current` | float | サブバッテリー電流（A） |
 | `power` | float | サブバッテリー電力（W） |
 | `temp` | float | INA228 内蔵温度センサー（°C） |
+| `ah` | float | サブバッテリー積算電荷量（Ah） |
 | `ts` | int | UNIX タイムスタンプ（秒） |
 
 ### 旧形式（m5atom_iot_gateway、段階的廃止予定）
