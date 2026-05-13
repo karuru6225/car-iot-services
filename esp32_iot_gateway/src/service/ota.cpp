@@ -69,6 +69,7 @@ bool Ota::apply(const char *url, const char *jobId)
   {
     esp_ota_abort(handle);
     logger.println("[OTA] ファイル読み取り失敗");
+    oledPrint("OTA read failed");
     return false;
   }
 
@@ -76,6 +77,7 @@ bool Ota::apply(const char *url, const char *jobId)
   if (err != ESP_OK)
   {
     logger.printf("[OTA] 検証失敗: 0x%x\n", err);
+    oledPrint("OTA verify failed");
     return false;
   }
 
@@ -83,6 +85,7 @@ bool Ota::apply(const char *url, const char *jobId)
   if (err != ESP_OK)
   {
     logger.printf("[OTA] boot partition 設定失敗: 0x%x\n", err);
+    oledPrint("OTA boot set fail");
     return false;
   }
 
