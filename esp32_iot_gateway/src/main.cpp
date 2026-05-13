@@ -191,23 +191,19 @@ void loop()
 
     if (getChargeRemainingSec() > 0)
     {
-      // 充電 sleep: 残り時間を 1 サイクル分消費して寝る
-      uint32_t remaining = getChargeRemainingSec();
-      uint32_t sleepSec  = (remaining >= SLEEP_INTERVAL_SEC)
-                             ? SLEEP_INTERVAL_SEC : remaining;
-      setChargeRemainingSec(remaining - sleepSec);
-      logger.printf("[MAIN] 充電 DeepSleep: %u sec (remaining after: %u)\n",
-                    sleepSec, remaining - sleepSec);
+      uint32_t r = getChargeRemainingSec();
+      setChargeRemainingSec(r >= SLEEP_INTERVAL_SEC ? r - SLEEP_INTERVAL_SEC : 0);
+      logger.printf("[MAIN] 充電 DeepSleep (remaining after: %u sec)\n",
+                    getChargeRemainingSec());
       digitalWrite(CHG_ON_PIN, HIGH);
       gpio_hold_en((gpio_num_t)CHG_ON_PIN);
       setChargingSleep(true);
-      esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
     }
     else
     {
       logger.println("[MAIN] DeepSleep へ移行");
-      esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
     }
+    esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
     esp_deep_sleep_start();
   }
 
