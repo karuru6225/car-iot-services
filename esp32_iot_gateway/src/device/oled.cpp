@@ -168,6 +168,22 @@ void oledShowSensorData(const SensorReading &r)
   display.display();
 }
 
+void oledShowCharging(float vMain, float vSub, int remainSec)
+{
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print("Charging...");
+  display.setCursor(0, 16);
+  display.printf("M:%.2fV  S:%.2fV", vMain, vSub);
+  display.setCursor(0, 32);
+  display.printf("Time: %02d:%02d", remainSec / 60, remainSec % 60);
+  display.setCursor(0, 56);
+  display.print("BTN: stop");
+  display.display();
+}
+
 void oledUpdateCountdown(int remainSec)
 {
   // y=44: カウントダウン行（"Next: Xs"）

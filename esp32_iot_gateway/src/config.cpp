@@ -123,6 +123,26 @@ void setAhOffset(int32_t ah)
   nvs_close(nvs);
 }
 
+uint32_t getChgTimeoutMin()
+{
+  nvs_handle_t nvs;
+  uint32_t val = 20;
+  if (nvs_open(NVS_NS_BATTERY, NVS_READONLY, &nvs) == ESP_OK) {
+    nvs_get_u32(nvs, "chg_timeout", &val);
+    nvs_close(nvs);
+  }
+  return val;
+}
+
+void setChgTimeoutMin(uint32_t minutes)
+{
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NS_BATTERY, NVS_READWRITE, &nvs) != ESP_OK) return;
+  nvs_set_u32(nvs, "chg_timeout", minutes);
+  nvs_commit(nvs);
+  nvs_close(nvs);
+}
+
 static void eraseNvsNamespace(const char *ns)
 {
   nvs_handle_t h;

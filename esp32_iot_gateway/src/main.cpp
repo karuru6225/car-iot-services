@@ -38,7 +38,6 @@
 #define RELAY_1_PIN 13
 #define RELAY_2_PIN 15
 #define UNITX_EN_PIN 9
-#define CHG_ON_PIN 21
 
 // #define DEBUG_SKIP_NETWORK
 

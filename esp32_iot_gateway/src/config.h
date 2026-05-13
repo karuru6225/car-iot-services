@@ -59,5 +59,12 @@ void setRelayMode(RelayMode mode);
 int32_t getAhOffset();
 void setAhOffset(int32_t ah);
 
+// 充電タイムアウトの取得・保存（battery 用、デフォルト: 20 分）
+uint32_t getChgTimeoutMin();
+void setChgTimeoutMin(uint32_t minutes);
+
+// 充電制御ピン
+#define CHG_ON_PIN 21
+
 // メニュー操作で消去するデータを一括クリア（"device" ネームスペースは保持）
 void clearMenuData();

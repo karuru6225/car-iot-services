@@ -25,6 +25,8 @@ enum class MenuState
   RELAY_MODE,
   CONFIRM,     // 汎用確認ダイアログ
   AH_OFFSET,
+  CHG_TIMEOUT,
+  CHARGING,
   RESTART,
   DONE_CONTINUOUS,
 };
@@ -77,6 +79,8 @@ static const MenuItem ITEMS[] = {
     // path="/Battery"
     {"Ah Offset",    "/Battery",      MenuState::AH_OFFSET,       {}},
     {"Ah Reset",     "/Battery",      MenuState::CONFIRM,         {"Ah Reset?", "Reset charge counter", doAhReset}},
+    {"Chg Timeout",  "/Battery",      MenuState::CHG_TIMEOUT,     {}},
+    {"Start Charge", "/Battery",      MenuState::CHARGING,        {}},
     // path="/System"
     {"Info",         "/System",       MenuState::SYS_INFO,        {}},
     {"Relay Mode",   "/System",       MenuState::RELAY_MODE,      {}},
@@ -421,6 +425,101 @@ static MenuState tickAhOffset(ButtonEvent ev)
   return MenuState::AH_OFFSET;
 }
 
+static const uint32_t CHG_TIMEOUT_OPTS[] = {10, 20, 30, 60};
+static const int CHG_TIMEOUT_COUNT = 4;
+
+static MenuState tickChgTimeout(ButtonEvent ev)
+{
+  static int editIdx = 0;
+  static bool needsInit = true;
+  if (needsInit) {
+    uint32_t cur = getChgTimeoutMin();
+    editIdx = 0;
+    for (int i = 0; i < CHG_TIMEOUT_COUNT; i++) {
+      if (CHG_TIMEOUT_OPTS[i] == cur) { editIdx = i; break; }
+    }
+    needsInit = false;
+  }
+
+  char valStr[20];
+  snprintf(valStr, sizeof(valStr), "%u min", CHG_TIMEOUT_OPTS[editIdx]);
+  oledShowMessage("Chg Timeout", valStr);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    editIdx = (editIdx + 1) % CHG_TIMEOUT_COUNT;
+  }
+  else if (ev == ButtonEvent::BTN1_SHORT)
+  {
+    setChgTimeoutMin(CHG_TIMEOUT_OPTS[editIdx]);
+    oledShowMessage("Chg Timeout", "Saved");
+    delay(1000);
+    needsInit = true;
+    return MenuState::MENU_NAV;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    needsInit = true;
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::CHG_TIMEOUT;
+}
+
+static MenuState tickCharging(ButtonEvent ev)
+{
+  static bool needsInit = true;
+  static unsigned long startMs = 0;
+  static unsigned long lastReadMs = 0;
+  static uint32_t timeoutMs = 0;
+  static float vMain = 0.0f, vSub = 0.0f;
+
+  if (needsInit) {
+    vMain = adsReadDiff23();
+    vSub  = adsReadDiff01();
+    if (vSub <= vMain) {
+      oledShowMessage("Cannot charge:", "Sub <= Main");
+      delay(2000);
+      needsInit = true;
+      return MenuState::MENU_NAV;
+    }
+    digitalWrite(CHG_ON_PIN, HIGH);
+    timeoutMs  = getChgTimeoutMin() * 60UL * 1000UL;
+    startMs    = millis();
+    lastReadMs = 0;
+    needsInit  = false;
+  }
+
+  unsigned long elapsed = millis() - startMs;
+
+  // タイムアウト
+  if (elapsed >= timeoutMs) {
+    digitalWrite(CHG_ON_PIN, LOW);
+    oledShowMessage("Charge done", "");
+    delay(1500);
+    needsInit = true;
+    return MenuState::MENU_NAV;
+  }
+
+  // 2秒ごとに電圧を更新
+  if (millis() - lastReadMs >= 2000) {
+    vMain = adsReadDiff23();
+    vSub  = adsReadDiff01();
+    lastReadMs = millis();
+  }
+
+  oledShowCharging(vMain, vSub, (int)((timeoutMs - elapsed) / 1000));
+
+  // どのボタンでも終了
+  if (ev != ButtonEvent::NONE) {
+    digitalWrite(CHG_ON_PIN, LOW);
+    oledShowMessage("Charge stopped", "");
+    delay(1000);
+    needsInit = true;
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::CHARGING;
+}
+
 // ---- エントリポイント ----
 
 OperationMode enterMenuMode()
@@ -448,6 +547,8 @@ OperationMode enterMenuMode()
     case MenuState::RELAY_MODE:         next = tickRelayMode(ev);        break;
     case MenuState::CONFIRM:            next = tickConfirm(ev);          break;
     case MenuState::AH_OFFSET:          next = tickAhOffset(ev);         break;
+    case MenuState::CHG_TIMEOUT:        next = tickChgTimeout(ev);       break;
+    case MenuState::CHARGING:           next = tickCharging(ev);         break;
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;
     }
