@@ -33,6 +33,7 @@
 #include "service/pubqueue.h"
 
 #include <esp_sleep.h>
+#include <driver/gpio.h>
 
 #define RELAY_0_PIN 11
 #define RELAY_1_PIN 13
@@ -53,6 +54,14 @@ static MeasureResult g_lastResult = {};
 void setup()
 {
   g_wakeupCause = esp_sleep_get_wakeup_cause();
+
+  // 充電 sleep から復帰した場合は最優先で CHG_ON を落とす
+  if (isChargingSleep()) {
+    gpio_hold_dis((gpio_num_t)CHG_ON_PIN);
+    pinMode(CHG_ON_PIN, OUTPUT);
+    digitalWrite(CHG_ON_PIN, LOW);
+    setChargingSleep(false);
+  }
 
   logger.init();
   delay(1000);
@@ -89,6 +98,12 @@ void setup()
 
   queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
   queue.flush(); // 前回バッファ分を即送信
+
+  // 充電完了（remaining == 0 かつ jobId あり）なら SUCCEEDED 報告
+  if (getChargeRemainingSec() == 0 && getChargeJobId()[0] != '\0') {
+    jobsReport(getChargeJobId(), "SUCCEEDED");
+    clearCharge();
+  }
 
   ota.reportPendingJobResult();
 
@@ -167,14 +182,32 @@ void loop()
   if (g_mode == OperationMode::DEEP_SLEEP)
   {
     delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
-    logger.println("[MAIN] DeepSleep へ移行");
 #ifndef DEBUG_SKIP_NETWORK
     queue.save();
     lte.disconnect();
     lte.radioOff(); // LTE_EN LOW
 #endif
     oledClear();
-    esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
+
+    if (getChargeRemainingSec() > 0)
+    {
+      // 充電 sleep: 残り時間を 1 サイクル分消費して寝る
+      uint32_t remaining = getChargeRemainingSec();
+      uint32_t sleepSec  = (remaining >= SLEEP_INTERVAL_SEC)
+                             ? SLEEP_INTERVAL_SEC : remaining;
+      setChargeRemainingSec(remaining - sleepSec);
+      logger.printf("[MAIN] 充電 DeepSleep: %u sec (remaining after: %u)\n",
+                    sleepSec, remaining - sleepSec);
+      digitalWrite(CHG_ON_PIN, HIGH);
+      gpio_hold_en((gpio_num_t)CHG_ON_PIN);
+      setChargingSleep(true);
+      esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
+    }
+    else
+    {
+      logger.println("[MAIN] DeepSleep へ移行");
+      esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
+    }
     esp_deep_sleep_start();
   }
 

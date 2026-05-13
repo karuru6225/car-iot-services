@@ -63,6 +63,18 @@ void setAhOffset(int32_t ah);
 uint32_t getChgTimeoutMin();
 void setChgTimeoutMin(uint32_t minutes);
 
+// 充電状態（RTC メモリ。全 sleep サイクルを通じて保持）
+// initCharge() でセット、充電完了後に clearCharge() でクリア
+void        initCharge(uint32_t totalSec, const char *jobId);
+uint32_t    getChargeRemainingSec();
+void        setChargeRemainingSec(uint32_t sec);
+const char *getChargeJobId();   // 空でない = 充電中 or 完了直後
+void        clearCharge();
+
+// 充電 sleep から復帰したかどうか（loop → 次回 setup で使用）
+bool isChargingSleep();
+void setChargingSleep(bool v);
+
 // 充電制御ピン
 #define CHG_ON_PIN 21
 
