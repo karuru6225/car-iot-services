@@ -2,7 +2,8 @@
 #include <stdint.h>
 
 // Shadow reported に現在の設定値を publish する
-void shadowPublishConfig();
+// clearDesired=true のとき desired:null も付加して desired をクリアする
+void shadowPublishConfig(bool clearDesired = false);
 
 // Shadow delta トピックを subscribe する（setup 時に 1 回呼ぶ）
 void shadowSetup();

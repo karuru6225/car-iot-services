@@ -11,13 +11,13 @@ static void deltaTopic(char *buf, size_t len)
   snprintf(buf, len, "$aws/things/%s/shadow/update/delta", getDeviceId());
 }
 
-void shadowPublishConfig()
+void shadowPublishConfig(bool clearDesired)
 {
   char topic[128];
   snprintf(topic, sizeof(topic), "$aws/things/%s/shadow/update", getDeviceId());
 
   char payload[256];
-  buildConfigPayload(payload, sizeof(payload));
+  buildConfigPayload(payload, sizeof(payload), clearDesired);
 
   if (mqtt.publish(topic, payload))
     logger.println("[SHADOW] config published");
@@ -76,7 +76,7 @@ bool shadowPollDelta(uint32_t timeoutMs)
   }
 
   if (changed)
-    shadowPublishConfig(); // reported を更新して delta をクリア
+    shadowPublishConfig(true); // reported を更新して desired をクリア
 
   return changed;
 }

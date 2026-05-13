@@ -13,7 +13,8 @@ int buildBatteryPayload(char *buf, size_t size,
                         time_t ts);
 
 // Shadow reported 向けデバイス設定ペイロードを組み立てる
-int buildConfigPayload(char *buf, size_t size);
+// clearDesired=true のとき "desired":null を付加して desired をクリアする
+int buildConfigPayload(char *buf, size_t size, bool clearDesired = false);
 
 // BLE センサーペイロードを buf に書き込む（tsField は ",\"ts\":\"...\"" 形式または空文字列）
 int buildThermometerPayload(char *buf, size_t size,

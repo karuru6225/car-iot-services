@@ -22,10 +22,19 @@ int buildBatteryPayload(char *buf, size_t size,
                   (long long)ts);
 }
 
-int buildConfigPayload(char *buf, size_t size)
+int buildConfigPayload(char *buf, size_t size, bool clearDesired)
 {
   const char *relayStr = (getRelayMode() == RelayMode::SLEEP_INDICATOR)
                            ? "sleep_indicator" : "off";
+  if (clearDesired)
+    return snprintf(buf, size,
+                    "{\"state\":{"
+                    "\"reported\":{"
+                    "\"ah_offset\":%d,"
+                    "\"relay_mode\":\"%s\","
+                    "\"fw_version\":\"" FIRMWARE_VERSION "\""
+                    "},\"desired\":null}}",
+                    getAhOffset(), relayStr);
   return snprintf(buf, size,
                   "{\"state\":{\"reported\":{"
                   "\"ah_offset\":%d,"
