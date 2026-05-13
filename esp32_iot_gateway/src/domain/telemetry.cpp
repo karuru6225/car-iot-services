@@ -2,25 +2,37 @@
 #include <stdio.h>
 #include "../config.h"
 
-int buildShadowPayload(char *buf, size_t size,
-                       const VoltageReading &main,
-                       const VoltageReading &sub,
-                       const PowerReading &pwr,
-                       time_t ts)
+int buildBatteryPayload(char *buf, size_t size,
+                        const VoltageReading &main,
+                        const VoltageReading &sub,
+                        const PowerReading &pwr,
+                        time_t ts)
 {
   return snprintf(buf, size,
-                  "{\"state\":{\"reported\":{"
+                  "{\"type\":\"battery\","
                   "\"main\":%.2f,"
                   "\"sub\":%.2f,"
                   "\"current\":%.4f,"
                   "\"power\":%.3f,"
                   "\"temp\":%.1f,"
                   "\"ah\":%.6f,"
-                  "\"ts\":%lld"
-                  "}}}",
+                  "\"ts\":%lld}",
                   main.voltage, sub.voltage,
                   pwr.current, pwr.power, pwr.temp, pwr.ah,
                   (long long)ts);
+}
+
+int buildConfigPayload(char *buf, size_t size)
+{
+  const char *relayStr = (getRelayMode() == RelayMode::SLEEP_INDICATOR)
+                           ? "sleep_indicator" : "off";
+  return snprintf(buf, size,
+                  "{\"state\":{\"reported\":{"
+                  "\"ah_offset\":%d,"
+                  "\"relay_mode\":\"%s\","
+                  "\"fw_version\":\"" FIRMWARE_VERSION "\""
+                  "}}}",
+                  getAhOffset(), relayStr);
 }
 
 int buildThermometerPayload(char *buf, size_t size,

@@ -55,7 +55,7 @@ def _partition_filters_range(start_dt: datetime, end_dt: datetime) -> list[str]:
 
 _VALID_ADDR      = re.compile(r'^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$')
 _VALID_DEVICE_ID = re.compile(r'^[\w\-]{1,64}$')
-_VALID_TYPES     = {"battery", "thermometer", "co2meter", "shadow"}
+_VALID_TYPES     = {"battery", "thermometer", "co2meter"}
 _ISO8601         = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
 
 # 全カラムの順序（UNION ALL の列順を統一するために使う）
@@ -64,10 +64,9 @@ _ALL_EXTRA_COLS = ["id", "voltage", "addr", "temp", "humidity", "battery", "rssi
 
 # センサタイプごとの実カラム集合
 _TYPE_OWN_COLS: dict[str, set[str]] = {
-    "battery":     {"id", "voltage"},
+    "battery":     {"main", "sub", "current", "power", "temp", "ah"},
     "thermometer": {"addr", "temp", "humidity", "battery", "rssi"},
     "co2meter":    {"addr", "temp", "humidity", "battery", "rssi", "co2"},
-    "shadow":      {"main", "sub", "current", "power", "temp", "ah"},
 }
 
 # addr フィルタを受け付けるタイプ

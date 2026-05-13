@@ -5,13 +5,15 @@
 #include "thermometer.h"
 #include "co2meter.h"
 
-// AWS IoT Shadow の reported ペイロードを buf に書き込む
-// 戻り値: 書き込んだバイト数（snprintf と同じ）
-int buildShadowPayload(char *buf, size_t size,
-                       const VoltageReading &main,
-                       const VoltageReading &sub,
-                       const PowerReading &pwr,
-                       time_t ts);
+// バッテリーテレメトリを sensors/{id}/data 向けに組み立てる
+int buildBatteryPayload(char *buf, size_t size,
+                        const VoltageReading &main,
+                        const VoltageReading &sub,
+                        const PowerReading &pwr,
+                        time_t ts);
+
+// Shadow reported 向けデバイス設定ペイロードを組み立てる
+int buildConfigPayload(char *buf, size_t size);
 
 // BLE センサーペイロードを buf に書き込む（tsField は ",\"ts\":\"...\"" 形式または空文字列）
 int buildThermometerPayload(char *buf, size_t size,

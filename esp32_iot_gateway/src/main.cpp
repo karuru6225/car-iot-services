@@ -17,6 +17,7 @@
 #include "service/ota.h"
 #include "service/mqtt.h"
 #include "service/monitor.h"
+#include "service/shadow.h"
 
 #include "device/speaker.h"
 #include "device/oled.h"
@@ -97,6 +98,9 @@ void setup()
   // Jobs 経由で SUCCEEDED を報告済みの場合は confirmBoot() は no-op になる
   if (mqtt.isConnected())
     ota.confirmBoot();
+
+  shadowSetup();
+  shadowPublishConfig();
 #endif
 
   logger.printf("[MAIN] 起動完了 mode=%s\n",
@@ -147,6 +151,7 @@ void loop()
   g_lastResult = measure();
   publish(g_lastResult);
   queue.flush();
+  shadowPollDelta();
   oledShowSensorData(g_lastResult.reading);
 #endif
 

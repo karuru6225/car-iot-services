@@ -4,9 +4,9 @@
 #include "../domain/thermometer.h"
 #include "../domain/co2meter.h"
 
-enum class EntryType : uint8_t { Shadow = 0, Thermometer = 1, Co2 = 2 };
+enum class EntryType : uint8_t { Battery = 0, Thermometer = 1, Co2 = 2 };
 
-struct ShadowEntry {
+struct BatteryEntry {
   float    main, sub, current, power, temp, ah;
   uint32_t ts;
 };
@@ -31,7 +31,7 @@ struct Co2Entry {
 struct QueueEntry {
   EntryType type;
   union {
-    ShadowEntry      shadow;
+    BatteryEntry     battery;
     ThermometerEntry thermo;
     Co2Entry         co2;
   };
@@ -42,7 +42,7 @@ public:
   explicit PubQueue(bool useSpiffs = true);
 
   // 計測値をキューに積む
-  void pushShadow(const SensorReading &r);
+  void pushBattery(const SensorReading &r);
   void pushThermometer(const ThermometerData &d);
   void pushCo2(const Co2MeterData &d);
 

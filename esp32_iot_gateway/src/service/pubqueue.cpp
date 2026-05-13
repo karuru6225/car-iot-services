@@ -46,9 +46,7 @@ static void buildTopic(const QueueEntry &e, char *buf, size_t len)
   const char *id = getDeviceId();
   switch (e.type)
   {
-  case EntryType::Shadow:
-    snprintf(buf, len, "$aws/things/%s/shadow/update", id);
-    break;
+  case EntryType::Battery:
   case EntryType::Thermometer:
   case EntryType::Co2:
     snprintf(buf, len, "sensors/%s/data", id);
@@ -60,12 +58,12 @@ static void buildPayload(const QueueEntry &e, char *buf, size_t len)
 {
   switch (e.type)
   {
-  case EntryType::Shadow:
+  case EntryType::Battery:
   {
-    VoltageReading main = {e.shadow.main};
-    VoltageReading sub = {e.shadow.sub};
-    PowerReading pwr = {e.shadow.current, e.shadow.power, e.shadow.temp, e.shadow.ah};
-    buildShadowPayload(buf, len, main, sub, pwr, (time_t)e.shadow.ts);
+    VoltageReading main = {e.battery.main};
+    VoltageReading sub  = {e.battery.sub};
+    PowerReading pwr    = {e.battery.current, e.battery.power, e.battery.temp, e.battery.ah};
+    buildBatteryPayload(buf, len, main, sub, pwr, (time_t)e.battery.ts);
     break;
   }
   case EntryType::Thermometer:
@@ -111,17 +109,17 @@ void PubQueue::push(const QueueEntry &e)
   g_count++;
 }
 
-void PubQueue::pushShadow(const SensorReading &r)
+void PubQueue::pushBattery(const SensorReading &r)
 {
   QueueEntry e;
-  e.type = EntryType::Shadow;
-  e.shadow.main = r.main.voltage;
-  e.shadow.sub = r.sub.voltage;
-  e.shadow.current = r.pwr.current;
-  e.shadow.power = r.pwr.power;
-  e.shadow.temp = r.pwr.temp;
-  e.shadow.ah = r.pwr.ah;
-  e.shadow.ts = (uint32_t)r.ts;
+  e.type = EntryType::Battery;
+  e.battery.main    = r.main.voltage;
+  e.battery.sub     = r.sub.voltage;
+  e.battery.current = r.pwr.current;
+  e.battery.power   = r.pwr.power;
+  e.battery.temp    = r.pwr.temp;
+  e.battery.ah      = r.pwr.ah;
+  e.battery.ts      = (uint32_t)r.ts;
   push(e);
 }
 

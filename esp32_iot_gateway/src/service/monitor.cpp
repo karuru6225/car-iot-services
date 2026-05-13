@@ -49,7 +49,7 @@ void publish(const MeasureResult &result)
                 r.main.voltage, r.sub.voltage, r.pwr.current, r.pwr.power, r.pwr.temp, r.pwr.ah,
                 (long long)r.ts, result.bleCount);
 
-  queue.pushShadow(r);
+  queue.pushBattery(r);
 
   for (int i = 0; i < result.bleCount; i++)
   {
