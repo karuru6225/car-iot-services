@@ -474,8 +474,8 @@ static MenuState tickCharging(ButtonEvent ev)
   static float vMain = 0.0f, vSub = 0.0f;
 
   if (needsInit) {
-    vMain = adsReadDiff23();
-    vSub  = adsReadDiff01();
+    vMain = adsReadDiff01();
+    vSub  = adsReadDiff23();
     if (vSub <= vMain) {
       char msg[24];
       snprintf(msg, sizeof(msg), "M:%.2fV S:%.2fV", vMain, vSub);
@@ -504,8 +504,8 @@ static MenuState tickCharging(ButtonEvent ev)
 
   // 2秒ごとに電圧を更新
   if (millis() - lastReadMs >= 2000) {
-    vMain = adsReadDiff23();
-    vSub  = adsReadDiff01();
+    vMain = adsReadDiff01();
+    vSub  = adsReadDiff23();
     lastReadMs = millis();
   }
 
