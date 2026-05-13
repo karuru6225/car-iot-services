@@ -23,6 +23,7 @@ enum class MenuState
   SYS_INFO,
   RELAY_MODE,
   NVS_CLEAR_CONFIRM,
+  AH_OFFSET,
   AH_RESET_CONFIRM,
   RESTART,
   DONE_CONTINUOUS,
@@ -49,6 +50,7 @@ static const MenuItem ITEMS[] = {
     {"Register",     "/BLE Settings", MenuState::BLE_SCAN        },
     {"Remove",       "/BLE Settings", MenuState::BLE_REMOVE      },
     // path="/Battery"
+    {"Ah Offset",    "/Battery",      MenuState::AH_OFFSET       },
     {"Ah Reset",     "/Battery",      MenuState::AH_RESET_CONFIRM},
     // path="/System"
     {"Info",         "/System",       MenuState::SYS_INFO        },
@@ -78,6 +80,7 @@ static int s_confirmCursor = 1; // 0=Yes, 1=No
 static int s_removeTarget = 0;
 static int s_savedCursor = 0;   // CONFIRM から BLE_REMOVE に戻るときのカーソル復元用
 static RelayMode s_relayModeEdit = RelayMode::SLEEP_INDICATOR; // RELAY_MODE 編集中の値
+static uint32_t  s_ahOffsetEdit  = 0;                          // AH_OFFSET 編集中の値
 
 // ---- パスユーティリティ ----
 
@@ -393,6 +396,30 @@ static MenuState tickNvsClearConfirm(ButtonEvent ev)
   return MenuState::NVS_CLEAR_CONFIRM;
 }
 
+static MenuState tickAhOffset(ButtonEvent ev)
+{
+  char valStr[20];
+  snprintf(valStr, sizeof(valStr), "%u Ah  (BTN1:save)", s_ahOffsetEdit);
+  oledShowMessage("Ah Offset", valStr);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_ahOffsetEdit = (s_ahOffsetEdit + 5 <= 300) ? s_ahOffsetEdit + 5 : 0;
+  }
+  else if (ev == ButtonEvent::BTN1_SHORT)
+  {
+    setAhOffset(s_ahOffsetEdit);
+    oledShowMessage("Ah Offset", "Saved");
+    delay(1000);
+    return MenuState::MENU_NAV;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::AH_OFFSET;
+}
+
 static MenuState tickAhResetConfirm(ButtonEvent ev)
 {
   oledShowConfirm("Ah Reset?", "Reset charge counter", s_confirmCursor);
@@ -443,6 +470,7 @@ OperationMode enterMenuMode()
     case MenuState::SENSOR:             next = tickSensor(ev);           break;
     case MenuState::SYS_INFO:           next = tickSysInfo(ev);          break;
     case MenuState::RELAY_MODE:         next = tickRelayMode(ev);        break;
+    case MenuState::AH_OFFSET:          next = tickAhOffset(ev);          break;
     case MenuState::AH_RESET_CONFIRM:   next = tickAhResetConfirm(ev);   break;
     case MenuState::NVS_CLEAR_CONFIRM:  next = tickNvsClearConfirm(ev);  break;
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
@@ -472,6 +500,8 @@ OperationMode enterMenuMode()
         s_cursor = 0;
         if (next == MenuState::RELAY_MODE)
           s_relayModeEdit = getRelayMode();
+        else if (next == MenuState::AH_OFFSET)
+          s_ahOffsetEdit = getAhOffset();
         else if (next == MenuState::NVS_CLEAR_CONFIRM || next == MenuState::AH_RESET_CONFIRM)
           s_confirmCursor = 1;
       }

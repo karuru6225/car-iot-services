@@ -55,5 +55,9 @@ void clearPendingJobId();
 RelayMode getRelayMode();
 void setRelayMode(RelayMode mode);
 
+// Ah オフセットの取得・保存（battery 用、デフォルト: 0）
+uint32_t getAhOffset();
+void setAhOffset(uint32_t ah);
+
 // メニュー操作で消去するデータを一括クリア（"device" ネームスペースは保持）
 void clearMenuData();
