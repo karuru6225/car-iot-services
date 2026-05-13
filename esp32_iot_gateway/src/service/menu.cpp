@@ -80,7 +80,7 @@ static int s_confirmCursor = 1; // 0=Yes, 1=No
 static int s_removeTarget = 0;
 static int s_savedCursor = 0;   // CONFIRM から BLE_REMOVE に戻るときのカーソル復元用
 static RelayMode s_relayModeEdit = RelayMode::SLEEP_INDICATOR; // RELAY_MODE 編集中の値
-static uint32_t  s_ahOffsetEdit  = 0;                          // AH_OFFSET 編集中の値
+static int32_t   s_ahOffsetEdit  = 0;                          // AH_OFFSET 編集中の値
 
 // ---- パスユーティリティ ----
 
@@ -404,11 +404,11 @@ static MenuState tickAhOffset(ButtonEvent ev)
 
   if (ev == ButtonEvent::BTN0_SHORT)
   {
-    if (s_ahOffsetEdit + 50 <= 300) s_ahOffsetEdit += 50;
+    s_ahOffsetEdit = std::min(s_ahOffsetEdit + 50, 300);
   }
   else if (ev == ButtonEvent::BTN0_LONG)
   {
-    if (s_ahOffsetEdit >= 50) s_ahOffsetEdit -= 50;
+    s_ahOffsetEdit = std::max(s_ahOffsetEdit - 50, 0);
   }
   else if (ev == ButtonEvent::BTN1_SHORT)
   {

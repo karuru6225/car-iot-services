@@ -106,19 +106,19 @@ void setRelayMode(RelayMode mode)
 uint32_t getAhOffset()
 {
   nvs_handle_t nvs;
-  uint32_t val = 0;
+  int32_t val = 0;
   if (nvs_open(NVS_NS_BATTERY, NVS_READONLY, &nvs) == ESP_OK) {
-    nvs_get_u32(nvs, "ah_offset", &val);
+    nvs_get_i32(nvs, "ah_offset", &val);
     nvs_close(nvs);
   }
   return val;
 }
 
-void setAhOffset(uint32_t ah)
+void setAhOffset(int32_t ah)
 {
   nvs_handle_t nvs;
   if (nvs_open(NVS_NS_BATTERY, NVS_READWRITE, &nvs) != ESP_OK) return;
-  nvs_set_u32(nvs, "ah_offset", ah);
+  nvs_set_i32(nvs, "ah_offset", ah);
   nvs_commit(nvs);
   nvs_close(nvs);
 }
