@@ -22,9 +22,10 @@ Terraform で管理。主要リソース：
 
 | リソース | 役割 |
 | --- | --- |
-| AWS IoT Core Thing + 証明書 + Policy | デバイス認証・MQTT エンドポイント（ポリシーはデバイス共通・ワイルドカード） |
+| AWS IoT Core Thing + Policy | デバイス認証・MQTT エンドポイント（Thing はプロビジョニングスクリプトで作成、証明書は Terraform 管理外） |
+| IoT Thing Group `ota-target-car-iot-gw` | OTA 配信対象デバイスを管理（Console で手動追加） |
 | IoT Topic Rule | MQTT メッセージを Lambda ingest に転送 |
-| AWS IoT Jobs | OTA 更新ジョブのキュー管理・状態追跡（QUEUED→IN_PROGRESS→SUCCEEDED/FAILED） |
+| AWS IoT Jobs | OTA・コマンド（ah_reset 等）のジョブキュー管理・状態追跡（QUEUED→IN_PROGRESS→SUCCEEDED/FAILED） |
 | Lambda `ingest` | JSON を S3 に保存（パーティション付き） |
 | S3 バケット（データ用） | `raw/year=/month=/day=/hour=/` 階層構造（非公開） |
 | S3 バケット（ファームウェア配布用） | OTA firmware.bin 配置（証明書をファームに含まないため公開可） |
@@ -44,7 +45,7 @@ Terraform で管理。主要リソース：
 - Chart.js 4 で電圧・温度・湿度・CO2 を独立したグラフで表示（アコーディオン切り替え）
 - グラフ間でホバー縦線を同期（カスタム Chart.js プラグイン + AbortController）
 - API エンドポイント・Cognito 設定は Terraform デプロイ時に HTML へ直接埋め込み（プレースホルダー置換）
-- ラベル設定（addr/id の表示名）は `localStorage` に保存
+- ラベル設定（addr/id の表示名）は S3 に保存（`GET/PUT /labels`）
 - 認証トークン（id_token）は `sessionStorage` に保存、未ログイン時は Cognito Hosted UI にリダイレクト
 
 ## デバイス側アーキテクチャ

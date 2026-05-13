@@ -113,44 +113,61 @@ esp32_iot_gateway/
 
 ## データフロー
 
-m5atom_iot_gateway と共通（AWS IoT Core → S3 → Athena）。
-
 ```text
 ESP32-S3-MINI-1
   → MQTT over TLS（SIM7080G）
-  → AWS IoT Core  topic: sensors/{device_id}/data
-  → Topic Rule SQL: SELECT *, topic(2) AS device_id FROM 'sensors/+/data'
-  → Lambda ingest
-  → S3: raw/year=YYYY/month=MM/day=DD/hour=HH/{device_id}-{uuid8}.json
+  → AWS IoT Core  topic①: sensors/{device_id}/data  （バッテリーテレメトリ + BLE センサー）
+                  topic②: $aws/things/{device_id}/shadow/update  （設定値 reported）
+  → Topic Rule: SELECT *, topic(2) AS device_id FROM 'sensors/+/data'
+    → Lambda ingest → S3: raw/year=YYYY/month=MM/day=DD/hour=HH/{device_id}-{uuid8}.json
+
+クラウド → デバイス
+  Shadow desired 更新 → $aws/things/{device_id}/shadow/update/delta → 設定値を NVS に適用
+  IoT Jobs → ota.handleJob() / commandHandleJob()
 ```
 
 ## MQTT ペイロード形式
 
-### デバイスシャドウ更新
-
-トピック: `$aws/things/{device_id}/shadow/update`
+### バッテリーテレメトリ（sensors/{device_id}/data）
 
 ```json
-{"state":{"reported":{"main":12.34,"sub":12.10,"current":5.2100,"power":62.500,"temp":28.5,"ah":0.001234,"ts":1746143400}}}
+{"type":"battery","main":12.34,"sub":12.10,"current":5.2100,"power":62.500,"temp":28.5,"ah":200.001234,"ts":1746143400}
 ```
 
 | フィールド | 型 | 内容 |
 | --- | --- | --- |
+| `type` | string | `"battery"` 固定 |
 | `main` | float | メインバッテリー電圧（V）、ADS1115 ch0（AIN0-AIN1 差動） |
 | `sub` | float | サブバッテリー電圧（V）、ADS1115 ch1（AIN2-AIN3 差動） |
 | `current` | float | サブバッテリー電流（A）、INA228 |
 | `power` | float | サブバッテリー電力（W）、INA228 |
 | `temp` | float | INA228 内蔵温度センサー（°C） |
-| `ah` | float | サブバッテリー積算電荷量（Ah）、INA228 |
+| `ah` | float | 積算電荷量（Ah）= INA228 積算値 + Ah オフセット（NVS） |
 | `ts` | int | UNIX タイムスタンプ（秒） |
 
-### OTA / Jobs トピック（service/ota が使用）
+### Shadow 設定値（reported / desired）
+
+`$aws/things/{device_id}/shadow/update` に reported として publish する。
+
+```json
+{"state":{"reported":{"ah_offset":200,"relay_mode":"sleep_indicator","fw_version":"1.6.1+fd8bb3e0"}}}
+```
+
+クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
+
+```json
+{"state":{"desired":{"ah_offset":200}}}
+{"state":{"desired":{"relay_mode":"off"}}}
+```
+
+### Jobs / OTA トピック（service/jobs が使用）
 
 | トピック | 方向 | 用途 |
 | --- | --- | --- |
 | `$aws/things/{id}/jobs/$next/get` | publish | 次ジョブ取得リクエスト |
 | `$aws/things/{id}/jobs/$next/get/accepted` | subscribe | ジョブ取得レスポンス |
 | `$aws/things/{id}/jobs/{jobId}/update` | publish | ジョブ状態更新（IN_PROGRESS / SUCCEEDED / FAILED） |
+| `$aws/things/{id}/shadow/update/delta` | subscribe | Shadow desired 変更の受信 |
 
 ## 主要クラスとインスタンス
 
@@ -270,7 +287,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.3.0+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `"1.6.1+" GIT_HASH` | ファームウェアバージョン |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS`（動作モード） |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔 / CONTINUOUS モード待機間隔（秒） |
@@ -309,14 +326,11 @@ device/lte.h の定数:
 
 ## 作業中・引き継ぎ事項
 
-### ~~TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）~~ **実装済み**
+### ~~TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）~~ **設計変更により対応済み**
 
-- `infra/iot.tf`: Topic Rule `shadow_ingest` を追加
-  - SQL: `SELECT state.reported.*, 'shadow' AS type, topic(3) AS device_id FROM '$aws/things/+/shadow/update/accepted'`
-  - アクション: 既存の `aws_lambda_function.ingest` を呼ぶ
-- `infra/lambda_src/ingest/index.py`: `ts` フィールドが整数（Unix 秒）の場合に対応
-- `infra/lambda_src/query/index.py`: `"shadow"` 型のクエリサポートを追加
-- `infra/s3.tf`: Glue テーブルに `main/sub/current/power/ah` カラムを追加
+Shadow はテレメトリではなく設定値（ah_offset / relay_mode / fw_version）を管理するよう刷新。
+バッテリーテレメトリは `sensors/{device_id}/data`（type=`"battery"`）として送信し既存の ingest パイプラインで S3 に蓄積。
+Shadow の desired / delta による双方向リモート設定変更も実装済み。
 
 ### TODO: OTA ファームウェアの gzip 圧縮（任意・高速化）
 
@@ -332,12 +346,13 @@ device/lte.h の定数:
 
 **期待効果**: gzip 50% 圧縮で Phase1 ~35秒・Phase2 ~60秒 → 合計 ~97秒（現状 198秒）
 
-### フェーズ 2: AWS IoT からのコマンド受信（未着手）
+### ~~フェーズ 2: AWS IoT からのコマンド受信~~ **AWS IoT Jobs で実装済み**
 
-| 機能 | 概要 |
-| ---- | ---- |
-| Subscribe トピック | `sensors/{device_id}/command` |
-| 想定コマンド | リレー制御、設定変更、即時送信トリガー等 |
+- `service/jobs.h/.cpp`: Jobs プロトコル層（subscribe / get-next / report）
+- `service/command.h/.cpp`: コマンドディスパッチ（`operation` フィールドで振り分け）
+- 実装済みコマンド: `ah_reset`
+- 未実装コマンド: `relay_on` / `relay_off`（リレーピン定数の整理が必要）
+- 設定変更は Jobs ではなく Shadow desired/delta で行う（`ah_offset`、`relay_mode`）
 
 ### ~~フェーズ 4: 操作ボタン UI~~ **実装済み**
 
@@ -361,7 +376,7 @@ INA228 ドライバを `Ina228` クラスに移行済み（`device/ina228.h/.cpp
 - SHUNT_CAL の手動調整（シャント抵抗値の校正）
 - 平均化サンプル数の変更（AVG: 1/4/16/64/128/256/512/1024）
 - 変換時間の変更（VBUSCT / VSHCT）
-- 積算電荷量のリセット（`ina228.resetCharge()` は現状 `setup()` で自動実行）
+- 積算電荷量のリセット（メニューの `Battery/Ah Reset` から手動実行可能）
 
 **実装方針**:
 

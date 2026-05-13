@@ -42,7 +42,7 @@ device / service を include してはいけない。標準ライブラリのみ
 | ファイル            | 役割                                                           |
 |---------------------|----------------------------------------------------------------|
 | `measurement.h`     | 計測値の構造体（VoltageReading, PowerReading）                 |
-| `telemetry.h/.cpp`  | JSON シリアライズ（buildShadowPayload / buildThermometerPayload / buildCo2Payload）|
+| `telemetry.h/.cpp`  | JSON シリアライズ（buildBatteryPayload / buildConfigPayload / buildThermometerPayload / buildCo2Payload）|
 | `sensor.h`          | BLE センサー共通構造体（SensorBase）                          |
 | `thermometer.h/.cpp`| SwitchBot 温湿度計パーサー（ThermometerData / ThermometerParser）|
 | `co2meter.h/.cpp`   | SwitchBot CO2センサーパーサー（Co2MeterData / Co2MeterParser）|
@@ -58,9 +58,14 @@ device / service を include してはいけない。標準ライブラリのみ
 |----------|------|
 | `mqtt.h/.cpp` | MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用） |
 | `https.h/.cpp` | HTTPS GET（AT+SH* ストリーミング）/ ファイルダウンロード（AT+HTTPTOFS → SIM FS） |
-| `ota.h/.cpp` | AWS IoT Jobs 確認・ファームウェア適用・ロールバック管理 |
+| `jobs.h/.cpp` | AWS IoT Jobs プロトコル層（subscribe / get-next / report）。OTA・コマンド共通 |
+| `ota.h/.cpp` | OTA 固有ロジック（ファームウェア適用・ロールバック管理・前回結果報告）。Jobs プロトコルは jobs.h に委譲 |
+| `command.h/.cpp` | Jobs コマンドのディスパッチと実行（`ah_reset` 等） |
+| `shadow.h/.cpp` | Shadow config publish・delta subscribe・設定変更の適用 |
 | `monitor.h/.cpp` | 計測サイクル（`measure()` / `publish()`）・`MeasureResult` 定義 |
 | `menu.h/.cpp` | OLED + 2ボタン設定メニュー、`enterMenuMode()` → `OperationMode` を返す |
+| `menu_util.h/.cpp` | メニュー用パスユーティリティ（pathPush / pathPop / pathTitle 等） |
+| `pubqueue.h/.cpp` | オフラインバッファ（RTC メモリ + SPIFFS）・MQTT publish キュー管理 |
 | `logger.h/.cpp` | シリアルデバッグ出力（横断的関心事） |
 
 ---
