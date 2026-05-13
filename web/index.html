@@ -308,7 +308,7 @@ async function saveLabels() {
 }
 
 function getLabel(key) {
-  return labels[key] || key;
+  return labels[key.toLowerCase()] || key;
 }
 
 function toggleLabels() {
@@ -320,7 +320,7 @@ function toggleLabels() {
 }
 
 async function addLabel() {
-  const key  = document.getElementById('label-key').value.trim();
+  const key  = document.getElementById('label-key').value.trim().toLowerCase();
   const name = document.getElementById('label-name').value.trim();
   if (!key || !name) return;
   labels[key] = name;
@@ -635,7 +635,7 @@ function renderChart(data) {
     Object.entries(groupBy(voltageRows, 'device_id')).forEach(([did, pts]) => {
       const color = COLORS[colorIdx++ % COLORS.length];
       const idKey = pts[0]?.id || did;
-      const unlabeled = !labels[idKey];
+      const unlabeled = !labels[idKey.toLowerCase()];
       // 電圧（左Y軸）
       vDatasets.push({
         label: `${getLabel(idKey)} 電圧(V)`,
@@ -677,7 +677,7 @@ function renderChart(data) {
         label: `${getLabel(addr)} 温度(°C)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: r.temp })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
-        hidden: !labels[addr],
+        hidden: !labels[addr.toLowerCase()],
       });
     });
     chartTemp = new Chart(
@@ -700,7 +700,7 @@ function renderChart(data) {
         label: `${getLabel(addr)} 湿度(%)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: r.humidity })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
-        hidden: !labels[addr],
+        hidden: !labels[addr.toLowerCase()],
       });
     });
     chartHumidity = new Chart(
@@ -723,7 +723,7 @@ function renderChart(data) {
         label: `${getLabel(addr)} CO2(ppm)`,
         data: pts.map(r => ({ x: new Date(r.ts), y: r.co2 })),
         borderColor: color, backgroundColor: 'transparent', tension: 0.2, pointRadius: 0,
-        hidden: !labels[addr],
+        hidden: !labels[addr.toLowerCase()],
       });
     });
     chartCo2 = new Chart(
