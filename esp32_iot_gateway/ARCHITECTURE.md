@@ -28,11 +28,11 @@ src/
 |----------|------|
 | `lte.h/.cpp` | SIM7080G ATコマンド制御（GPRS接続, 証明書アップロード, 電源管理, ファイル読み取り・削除） |
 | `ble_scan.h/.cpp` | BLE スキャナー（SwitchBot Manufacturer Data 受信、FreeRTOS キュー経由で domain に渡す） |
-| `ads.h/.cpp` | ADS1115 I2Cドライバ（差動電圧読み取り） |
+| `ads.h/.cpp` | ADS1115 I2Cドライバ（`adsReadDiffMain()` = AIN0/AIN1 = メイン、`adsReadDiffSub()` = AIN2/AIN3 = サブ） |
 | `ina228.h/.cpp` | `Ina228` クラス。INA228 I2Cドライバ（電流・電力・温度・積算電荷量の読み取り、電荷リセット） |
 | `oled.h/.cpp` | SSD1306 OLEDドライバ（表示制御） |
 | `speaker.h/.cpp` | ブザー / スピーカードライバ（tone PWM制御） |
-| `button.h/.cpp` | デバウンス・長押し検出（`ButtonEvent`、ピン定数内包） |
+| `button.h/.cpp` | デバウンス・長押し検出（`ButtonEvent`: BTN0_SHORT / BTN0_LONG / BTN1_SHORT / BTN1_LONG）、ピン定数内包 |
 
 ### domain/
 
@@ -60,7 +60,7 @@ device / service を include してはいけない。標準ライブラリのみ
 | `https.h/.cpp` | HTTPS GET（AT+SH* ストリーミング）/ ファイルダウンロード（AT+HTTPTOFS → SIM FS） |
 | `jobs.h/.cpp` | AWS IoT Jobs プロトコル層（subscribe / get-next / report）。OTA・コマンド共通 |
 | `ota.h/.cpp` | OTA 固有ロジック（ファームウェア適用・ロールバック管理・前回結果報告）。Jobs プロトコルは jobs.h に委譲 |
-| `command.h/.cpp` | Jobs コマンドのディスパッチと実行（`ah_reset` 等） |
+| `command.h/.cpp` | Jobs コマンドのディスパッチと実行（`ah_reset`、`charge_main_batt`） |
 | `shadow.h/.cpp` | Shadow config publish・delta subscribe・設定変更の適用 |
 | `monitor.h/.cpp` | 計測サイクル（`measure()` / `publish()`）・`MeasureResult` 定義 |
 | `menu.h/.cpp` | OLED + 2ボタン設定メニュー、`enterMenuMode()` → `OperationMode` を返す |
