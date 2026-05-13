@@ -399,12 +399,16 @@ static MenuState tickNvsClearConfirm(ButtonEvent ev)
 static MenuState tickAhOffset(ButtonEvent ev)
 {
   char valStr[20];
-  snprintf(valStr, sizeof(valStr), "%u Ah  (BTN1:save)", s_ahOffsetEdit);
+  snprintf(valStr, sizeof(valStr), "%u Ah", s_ahOffsetEdit);
   oledShowMessage("Ah Offset", valStr);
 
   if (ev == ButtonEvent::BTN0_SHORT)
   {
-    s_ahOffsetEdit = (s_ahOffsetEdit + 5 <= 300) ? s_ahOffsetEdit + 5 : 0;
+    if (s_ahOffsetEdit + 50 <= 300) s_ahOffsetEdit += 50;
+  }
+  else if (ev == ButtonEvent::BTN0_LONG)
+  {
+    if (s_ahOffsetEdit >= 50) s_ahOffsetEdit -= 50;
   }
   else if (ev == ButtonEvent::BTN1_SHORT)
   {

@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-enum class ButtonEvent { NONE, BTN0_SHORT, BTN1_SHORT, BTN1_LONG };
+enum class ButtonEvent { NONE, BTN0_SHORT, BTN0_LONG, BTN1_SHORT, BTN1_LONG };
 
 class Button {
 public:
@@ -15,6 +15,8 @@ private:
   static const uint32_t LONG_PRESS_MS = 1000;
 
   bool _btn0Prev = false;
+  unsigned long _btn0PressTime = 0;
+  bool _btn0LongFired = false;
   bool _btn1Prev = false;
   unsigned long _btn1PressTime = 0;
   bool _btn1LongFired = false;

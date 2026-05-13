@@ -18,12 +18,19 @@ ButtonEvent Button::read() {
   unsigned long now = millis();
   ButtonEvent ev = ButtonEvent::NONE;
 
-  // BTN0: 押し込み瞬間にクリック音、リリース時に SHORT を発火
+  // BTN0: 押し込み瞬間にクリック音、LONG_PRESS_MS 到達で LONG 音＋イベント、リリース時に SHORT
   if (btn0 && !_btn0Prev) {
     playTone(1200, 15);
+    _btn0PressTime = now;
+    _btn0LongFired = false;
   }
-  if (!btn0 && _btn0Prev) {
-    ev = ButtonEvent::BTN0_SHORT;
+  if (btn0 && !_btn0LongFired && (now - _btn0PressTime) >= LONG_PRESS_MS) {
+    _btn0LongFired = true;
+    playTone(600, 40);
+    if (ev == ButtonEvent::NONE) ev = ButtonEvent::BTN0_LONG;
+  }
+  if (!btn0 && _btn0Prev && !_btn0LongFired) {
+    if (ev == ButtonEvent::NONE) ev = ButtonEvent::BTN0_SHORT;
   }
   _btn0Prev = btn0;
 
