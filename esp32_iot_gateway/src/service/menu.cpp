@@ -40,6 +40,7 @@ struct MenuItem
 static const MenuItem ITEMS[] = {
     // path="/"
     {"BLE Settings", "/",             MenuState::MENU_NAV        },
+    {"Battery",      "/",             MenuState::MENU_NAV        },
     {"Sensor View",  "/",             MenuState::SENSOR          },
     {"System",       "/",             MenuState::MENU_NAV        },
     {"Continuous",   "/",             MenuState::DONE_CONTINUOUS },
@@ -47,10 +48,11 @@ static const MenuItem ITEMS[] = {
     // path="/BLE Settings"
     {"Register",     "/BLE Settings", MenuState::BLE_SCAN        },
     {"Remove",       "/BLE Settings", MenuState::BLE_REMOVE      },
+    // path="/Battery"
+    {"Ah Reset",     "/Battery",      MenuState::AH_RESET_CONFIRM},
     // path="/System"
     {"Info",         "/System",       MenuState::SYS_INFO        },
     {"Relay Mode",   "/System",       MenuState::RELAY_MODE      },
-    {"Ah Reset",     "/System",       MenuState::AH_RESET_CONFIRM},
     {"NVS Clear",    "/System",       MenuState::NVS_CLEAR_CONFIRM},
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
