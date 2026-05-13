@@ -91,13 +91,17 @@ def _parse_iso(s: str) -> datetime:
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
-def _validate_inputs(sensor_type, device_id, start_dt: datetime, end_dt: datetime, addr):
+_VALID_ID = re.compile(r'^[\w\-]{1,64}$')
+
+def _validate_inputs(sensor_type, device_id, start_dt: datetime, end_dt: datetime, addr, id_filter):
     if sensor_type and sensor_type not in _VALID_TYPES:
         raise ValueError(f"Invalid type: {sensor_type!r}")
     if device_id and not _VALID_DEVICE_ID.match(device_id):
         raise ValueError("Invalid device_id format")
     if addr and not _VALID_ADDR.match(addr):
         raise ValueError("Invalid addr format")
+    if id_filter and not _VALID_ID.match(id_filter):
+        raise ValueError("Invalid id format")
     if end_dt <= start_dt:
         raise ValueError("end_time must be after start_time")
     span_hours = (end_dt - start_dt).total_seconds() / 3600
@@ -116,7 +120,8 @@ def _select_list(sensor_type: str) -> str:
 
 
 def _build_query(sensor_type: str | None, device_id: str | None,
-                 start_dt: datetime, end_dt: datetime, addr: str | None) -> str:
+                 start_dt: datetime, end_dt: datetime,
+                 addr: str | None, id_filter: str | None) -> str:
     start_iso = start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     end_iso   = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     base_filters = (
@@ -131,7 +136,9 @@ def _build_query(sensor_type: str | None, device_id: str | None,
     for t in types:
         filters = list(base_filters)
         if addr and t in _ADDR_FILTER_TYPES:
-            filters.append(f"addr = '{addr}'")
+            filters.append(f"LOWER(addr) = LOWER('{addr}')")
+        if id_filter and t == "battery":
+            filters.append(f"LOWER(id) = LOWER('{id_filter}')")
         where = " AND ".join(filters + [f"type = '{t}'"])
         subqueries.append(f"SELECT {_select_list(t)} FROM sensor_data WHERE {where}")
 
@@ -352,14 +359,15 @@ def handler(event, context):
     sensor_type = params.get("type")
     device_id   = params.get("device_id")
     addr        = params.get("addr")
+    id_filter   = params.get("id")
 
     try:
-        _validate_inputs(sensor_type, device_id, start_dt, end_dt, addr)
+        _validate_inputs(sensor_type, device_id, start_dt, end_dt, addr, id_filter)
     except ValueError as e:
         return {"statusCode": 400, "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": str(e)})}
 
-    query = _build_query(sensor_type, device_id, start_dt, end_dt, addr)
+    query = _build_query(sensor_type, device_id, start_dt, end_dt, addr, id_filter)
 
     try:
         resp = athena.start_query_execution(
