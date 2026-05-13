@@ -71,30 +71,17 @@ jobs:
           VERSION=${{ steps.ver.outputs.version }}
           JOB_ID="ota-v$(echo "$VERSION" | tr '.' '_')-$(date +%Y%m%d%H%M%S)"
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-          mapfile -t THING_NAMES < <(
-            aws iot list-things \
-              --query 'things[].thingName' \
-              --output text | tr '\t' '\n' | grep '^esp32-gw-'
-          )
-          if [ ${#THING_NAMES[@]} -eq 0 ]; then
-            echo "ERROR: esp32-gw-* の Thing が見つかりません" && exit 1
-          fi
-
-          TARGETS=()
-          for name in "${THING_NAMES[@]}"; do
-            TARGETS+=("arn:aws:iot:${{ env.AWS_REGION }}:${ACCOUNT_ID}:thing/${name}")
-          done
+          GROUP_ARN="arn:aws:iot:${{ env.AWS_REGION }}:${ACCOUNT_ID}:thinggroup/esp32-gw"
 
           DOC_URL="https://s3.${{ env.AWS_REGION }}.amazonaws.com/${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
           aws iot create-job \
             --job-id "$JOB_ID" \
-            --targets "${TARGETS[@]}" \
+            --targets "$GROUP_ARN" \
             --document-source "$DOC_URL" \
             --timeout-config inProgressTimeoutInMinutes=90
 
           echo "Job: $JOB_ID"
-          echo "Targets: ${TARGETS[*]}"
+          echo "Target group: $GROUP_ARN"
 
       - name: GitHub Release を作成
         uses: softprops/action-gh-release@v2

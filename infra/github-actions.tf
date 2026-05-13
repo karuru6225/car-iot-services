@@ -48,7 +48,6 @@ resource "aws_iam_role_policy" "github_actions_firmware" {
       {
         Effect = "Allow"
         Action = [
-          "iot:ListThings",
           "iot:CreateJob",
           "iot:ListJobs",
           "iot:CancelJob",
