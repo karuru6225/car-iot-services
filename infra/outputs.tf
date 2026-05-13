@@ -18,11 +18,6 @@ output "s3_bucket" {
   value       = aws_s3_bucket.main.bucket
 }
 
-output "secrets_manager_arn" {
-  description = "デバイス証明書の Secrets Manager ARN（ここから証明書を取得してデバイスに書き込む）"
-  value       = aws_secretsmanager_secret.device_cert.arn
-}
-
 output "web_url" {
   description = "管理Web ページの URL"
   value       = "https://${local.web_domain}"

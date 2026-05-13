@@ -4,26 +4,6 @@ resource "aws_iot_thing" "device" {
   name = var.device_id
 }
 
-# ─── X.509 証明書 ─────────────────────────────────────────────────────────────
-
-resource "aws_iot_certificate" "device" {
-  active = true
-}
-
-# 証明書・秘密鍵を Secrets Manager に保存（apply 後ここから取得してデバイスに書き込む）
-resource "aws_secretsmanager_secret" "device_cert" {
-  name                    = "${var.project}/${var.device_id}/cert"
-  recovery_window_in_days = 0
-}
-
-resource "aws_secretsmanager_secret_version" "device_cert" {
-  secret_id = aws_secretsmanager_secret.device_cert.id
-  secret_string = jsonencode({
-    certificate_pem = aws_iot_certificate.device.certificate_pem
-    private_key     = aws_iot_certificate.device.private_key
-  })
-}
-
 # ─── IoT Policy ───────────────────────────────────────────────────────────────
 
 resource "aws_iot_policy" "device" {
@@ -59,18 +39,6 @@ resource "aws_iot_policy" "device" {
       },
     ]
   })
-}
-
-# ─── Thing / 証明書 / Policy のアタッチ ──────────────────────────────────────
-
-resource "aws_iot_thing_principal_attachment" "device" {
-  thing     = aws_iot_thing.device.name
-  principal = aws_iot_certificate.device.arn
-}
-
-resource "aws_iot_policy_attachment" "device" {
-  policy = aws_iot_policy.device.name
-  target = aws_iot_certificate.device.arn
 }
 
 # ─── Topic Rule: sensors/+/data → Lambda ingest ───────────────────────────────
