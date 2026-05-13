@@ -25,8 +25,8 @@ MeasureResult measure()
 
   // アナログ計測
   result.reading = {
-      {adsReadDiff01()},
-      {adsReadDiff23()},
+      {adsReadDiffMain()},
+      {adsReadDiffSub()},
       {ina228.readCurrent(), ina228.readPower(), ina228.readTemp(), ina228.readCharge() + (float)getAhOffset()},
       time(nullptr)};
 

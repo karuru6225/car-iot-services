@@ -317,8 +317,8 @@ static MenuState tickSensor(ButtonEvent ev)
 {
   static unsigned long lastUpdate = 0;
   SensorReading r{
-      {adsReadDiff01()},
-      {adsReadDiff23()},
+      {adsReadDiffMain()},
+      {adsReadDiffSub()},
       {ina228.readCurrent(), ina228.readPower(), ina228.readTemp()},
       0};
   oledShowSensorData(r);
@@ -474,8 +474,8 @@ static MenuState tickCharging(ButtonEvent ev)
   static float vMain = 0.0f, vSub = 0.0f;
 
   if (needsInit) {
-    vMain = adsReadDiff01();
-    vSub  = adsReadDiff23();
+    vMain = adsReadDiffMain();
+    vSub  = adsReadDiffSub();
     if (vSub <= vMain) {
       char msg[24];
       snprintf(msg, sizeof(msg), "M:%.2fV S:%.2fV", vMain, vSub);
@@ -504,8 +504,8 @@ static MenuState tickCharging(ButtonEvent ev)
 
   // 2秒ごとに電圧を更新
   if (millis() - lastReadMs >= 2000) {
-    vMain = adsReadDiff01();
-    vSub  = adsReadDiff23();
+    vMain = adsReadDiffMain();
+    vSub  = adsReadDiffSub();
     lastReadMs = millis();
   }
 

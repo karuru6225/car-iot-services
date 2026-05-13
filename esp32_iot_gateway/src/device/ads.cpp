@@ -19,13 +19,13 @@ bool adsInit()
 }
 
 // 戻り値：分圧前の実際の電圧（V）
-float adsReadDiff01()
+float adsReadDiffMain()
 {
   int16_t raw = ads.readADC_Differential_0_1();
   return ads.computeVolts(raw) * DIVIDER_RATIO;
 }
 
-float adsReadDiff23()
+float adsReadDiffSub()
 {
   int16_t raw = ads.readADC_Differential_2_3();
   return ads.computeVolts(raw) * DIVIDER_RATIO;
