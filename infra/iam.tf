@@ -261,3 +261,47 @@ resource "aws_iam_role_policy" "lambda_delete" {
     ]
   })
 }
+
+# ─── Lambda admin 実行ロール（IoT デバイス管理） ──────────────────────────────
+
+resource "aws_iam_role" "lambda_admin" {
+  name               = "${var.project}-lambda-admin"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "lambda_admin" {
+  role = aws_iam_role.lambda_admin.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = ["iot:ListThings", "iot:ListThingGroups", "iot:ListThingGroupsForThing"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["iot:GetThingShadow", "iot:UpdateThingShadow"]
+        Resource = "arn:aws:iot:${var.aws_region}:*:thing/*"
+      },
+      {
+        Effect = "Allow"
+        Action = "iot:CreateJob"
+        Resource = [
+          "arn:aws:iot:${var.aws_region}:*:job/*",
+          "arn:aws:iot:${var.aws_region}:*:thing/*",
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["iot:AddThingToThingGroup", "iot:RemoveThingFromThingGroup"]
+        Resource = "*"
+      },
+    ]
+  })
+}

@@ -29,6 +29,24 @@ locals {
     "__TMPL_WEB_URL__",
     "https://${local.web_domain}"
   )
+
+  admin_html_rendered = replace(
+    replace(
+      replace(
+        replace(
+          file("${path.module}/../web/admin.html"),
+          "__TMPL_API_ENDPOINT__",
+          aws_apigatewayv2_stage.main.invoke_url
+        ),
+        "__TMPL_COGNITO_DOMAIN__",
+        local.cognito_domain_base
+      ),
+      "__TMPL_COGNITO_CLIENT_ID__",
+      aws_cognito_user_pool_client.web.id
+    ),
+    "__TMPL_WEB_ADMIN_URL__",
+    "https://${local.web_domain}/admin.html"
+  )
 }
 
 # ─── ACM 証明書（CloudFront は us-east-1 必須） ───────────────────────────────
@@ -165,6 +183,16 @@ resource "aws_s3_object" "index_html" {
   content      = local.index_html_rendered
   content_type = "text/html"
   etag         = md5(local.index_html_rendered)
+}
+
+# ─── admin.html アップロード ──────────────────────────────────────────────────
+
+resource "aws_s3_object" "admin_html" {
+  bucket       = aws_s3_bucket.web.id
+  key          = "admin.html"
+  content      = local.admin_html_rendered
+  content_type = "text/html"
+  etag         = md5(local.admin_html_rendered)
 }
 
 # ─── Bucket Policy: CloudFront OAC のみ許可 ──────────────────────────────────

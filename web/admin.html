@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IoT 管理コンソール</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 16px; }
+    h1 { color: #4f8ef7; font-size: 1.3em; }
+    h2 { color: #aac0e0; font-size: 1em; margin-bottom: 12px; }
+    .card {
+      background: #16213e; border-radius: 8px; padding: 16px; margin-bottom: 16px;
+      border: 1px solid #1e2d4a;
+    }
+    .card.device { border-left: 3px solid #4f8ef7; }
+    label { font-size: 0.8em; color: #888; display: block; margin-bottom: 4px; }
+    input, select {
+      background: #0f3460; color: #e0e0e0; border: 1px solid #3a5a8a;
+      border-radius: 4px; padding: 6px 10px; font-size: 0.9em; width: 100%;
+    }
+    input:focus, select:focus { outline: none; border-color: #4f8ef7; }
+    button {
+      background: #4f8ef7; color: white; border: none;
+      border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 0.85em;
+    }
+    button:hover { background: #3a7de4; }
+    button.danger { background: #c0392b; }
+    button.danger:hover { background: #a93226; }
+    button.secondary { background: #2a4a6a; }
+    button.secondary:hover { background: #3a5a7a; }
+    button.success { background: #27ae60; }
+    button.success:hover { background: #1e8449; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .form-group { display: flex; flex-direction: column; flex: 1; min-width: 120px; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 0.75em; font-weight: bold;
+    }
+    .badge.alive { background: #1e8449; color: #adf7c1; }
+    .badge.dead  { background: #6b2424; color: #f7aaaa; }
+    .device-header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .device-id { font-size: 1em; color: #e0e0e0; font-family: monospace; }
+    .fw-ver { font-size: 0.8em; color: #888; }
+    .section { margin-top: 12px; padding-top: 12px; border-top: 1px solid #1e2d4a; }
+    .section-toggle {
+      background: none; color: #aac0e0; border: none; padding: 0;
+      cursor: pointer; font-size: 0.85em; text-decoration: underline;
+    }
+    .section-toggle:hover { color: #e0e0e0; }
+    .shadow-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;
+      margin: 10px 0;
+    }
+    .kv { font-size: 0.82em; }
+    .kv .k { color: #888; }
+    .kv .v { color: #4fc87f; }
+    .msg { font-size: 0.8em; color: #888; margin-top: 6px; min-height: 1.2em; }
+    .msg.ok  { color: #27ae60; }
+    .msg.err { color: #c0392b; }
+    .group-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .group-item { display: flex; align-items: center; gap: 5px; font-size: 0.82em; }
+    .group-item input[type=checkbox] { width: auto; }
+    .cmd-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+    #loading { text-align: center; color: #888; padding: 40px; }
+    .header-row {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+    }
+    .status-bar { color: #888; font-size: 0.82em; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+<div class="header-row">
+  <h1>IoT 管理コンソール</h1>
+  <button class="secondary" onclick="logout()">ログアウト</button>
+</div>
+
+<div class="status-bar" id="status-bar">読み込み中...</div>
+
+<div id="loading">デバイスを取得中...</div>
+<div id="device-list" style="display:none"></div>
+
+<script>
+const API_BASE          = '__TMPL_API_ENDPOINT__';
+const COGNITO_DOMAIN    = '__TMPL_COGNITO_DOMAIN__';
+const COGNITO_CLIENT_ID = '__TMPL_COGNITO_CLIENT_ID__';
+const WEB_URL           = '__TMPL_WEB_ADMIN_URL__';
+
+let idToken    = sessionStorage.getItem('id_token') || '';
+let userGroups = JSON.parse(sessionStorage.getItem('user_groups') || '[]');
+
+// ─── Cognito 認証 ────────────────────────────────────────────────────────────
+
+function parseJwtPayload(token) {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(base64));
+  } catch { return {}; }
+}
+
+function redirectToLogin() {
+  const params = new URLSearchParams({
+    client_id:     COGNITO_CLIENT_ID,
+    response_type: 'token',
+    scope:         'openid email profile',
+    redirect_uri:  WEB_URL,
+  });
+  window.location.href = `${COGNITO_DOMAIN}/login?${params}`;
+}
+
+function logout() {
+  sessionStorage.removeItem('id_token');
+  sessionStorage.removeItem('user_groups');
+  const params = new URLSearchParams({ client_id: COGNITO_CLIENT_ID, logout_uri: WEB_URL });
+  window.location.href = `${COGNITO_DOMAIN}/logout?${params}`;
+}
+
+// ─── API ─────────────────────────────────────────────────────────────────────
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: { 'Authorization': `Bearer ${idToken}`, ...(options.headers || {}) },
+  });
+  if (res.status === 401) {
+    sessionStorage.removeItem('id_token');
+    redirectToLogin();
+    throw new Error('Unauthorized');
+  }
+  return res;
+}
+
+// ─── デバイス一覧 ─────────────────────────────────────────────────────────────
+
+let allGroups = [];
+
+async function loadDevices() {
+  try {
+    const res  = await apiFetch('/admin/devices');
+    const data = await res.json();
+    allGroups = data.all_groups || [];
+    renderDevices(data.devices || []);
+    setStatus(`デバイス ${(data.devices || []).length} 台`);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') setStatus('取得エラー: ' + e.message);
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('device-list').style.display = '';
+  }
+}
+
+function setStatus(msg) {
+  document.getElementById('status-bar').textContent = msg;
+}
+
+function renderDevices(devices) {
+  const container = document.getElementById('device-list');
+  if (devices.length === 0) {
+    container.innerHTML = '<div style="color:#888;text-align:center;padding:40px">デバイスなし</div>';
+    return;
+  }
+  container.innerHTML = devices.map(d => deviceCard(d)).join('');
+}
+
+function ageLabel(lastSeenS) {
+  if (!lastSeenS) return '';
+  const age = Math.floor(Date.now() / 1000) - lastSeenS;
+  if (age < 60)        return `${age}秒前`;
+  if (age < 3600)      return `${Math.floor(age / 60)}分前`;
+  if (age < 86400)     return `${Math.floor(age / 3600)}時間前`;
+  return `${Math.floor(age / 86400)}日前`;
+}
+
+function deviceCard(d) {
+  const s       = d.shadow || {};
+  const alive   = d.last_seen_s && (Date.now() / 1000 - d.last_seen_s) < 600;
+  const badgeCls = alive ? 'alive' : 'dead';
+  const badgeTxt = alive ? '● alive' : '○ offline';
+  const age      = d.last_seen_s ? ageLabel(d.last_seen_s) : '不明';
+  const id       = d.device_id;
+
+  const groupChecks = allGroups.map(g => {
+    const checked = (d.groups || []).includes(g) ? 'checked' : '';
+    return `<label class="group-item">
+      <input type="checkbox" ${checked} data-device="${id}" data-group="${g}"> ${g}
+    </label>`;
+  }).join('');
+
+  return `
+<div class="card device" id="card-${id}">
+  <div class="device-header">
+    <span class="device-id">${id}</span>
+    <span class="badge ${badgeCls}">${badgeTxt}</span>
+    <span class="fw-ver">fw: ${s.fw_version || '-'}  ${age}</span>
+  </div>
+
+  <div class="shadow-grid">
+    <div class="kv"><div class="k">充電開始</div><div class="v">${s.chg_start_v != null ? s.chg_start_v.toFixed(2) + ' V' : '-'}</div></div>
+    <div class="kv"><div class="k">充電停止</div><div class="v">${s.chg_stop_v  != null ? s.chg_stop_v.toFixed(2)  + ' V' : '-'}</div></div>
+    <div class="kv"><div class="k">充電継続</div><div class="v">${s.chg_duration_sec != null ? s.chg_duration_sec + ' s' : '-'}</div></div>
+    <div class="kv"><div class="k">Ah オフセット</div><div class="v">${s.ah_offset != null ? s.ah_offset : '-'}</div></div>
+    <div class="kv"><div class="k">リレーモード</div><div class="v">${s.relay_mode || '-'}</div></div>
+  </div>
+
+  <!-- Shadow 編集 -->
+  <div class="section">
+    <button class="section-toggle" onclick="toggleSection('shadow-${id}', this)">▶ Shadow 編集</button>
+    <div id="shadow-${id}" style="display:none; margin-top:10px">
+      <div class="form-row">
+        <div class="form-group">
+          <label>chg_start_v (V)</label>
+          <input type="number" step="0.1" id="sv-start-${id}" value="${s.chg_start_v != null ? s.chg_start_v : 11.7}">
+        </div>
+        <div class="form-group">
+          <label>chg_stop_v (V)</label>
+          <input type="number" step="0.1" id="sv-stop-${id}" value="${s.chg_stop_v != null ? s.chg_stop_v : 12.5}">
+        </div>
+        <div class="form-group">
+          <label>chg_duration_sec</label>
+          <input type="number" step="300" id="sv-dur-${id}" value="${s.chg_duration_sec != null ? s.chg_duration_sec : 1800}">
+        </div>
+        <div class="form-group">
+          <label>ah_offset</label>
+          <input type="number" step="1" id="sv-ah-${id}" value="${s.ah_offset != null ? s.ah_offset : 0}">
+        </div>
+        <div class="form-group">
+          <label>relay_mode</label>
+          <select id="sv-relay-${id}">
+            <option value="sleep_indicator" ${(s.relay_mode || '') === 'sleep_indicator' ? 'selected' : ''}>sleep_indicator</option>
+            <option value="off"             ${s.relay_mode === 'off' ? 'selected' : ''}>off</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:8px">
+        <button onclick="saveShadow('${id}')">保存</button>
+      </div>
+      <div class="msg" id="shadow-msg-${id}"></div>
+    </div>
+  </div>
+
+  <!-- コマンド -->
+  <div class="section">
+    <div class="cmd-row">
+      <button class="success" onclick="openChargeModal('${id}')">充電開始</button>
+      <button class="danger"  onclick="confirmAhReset('${id}')">Ah リセット</button>
+    </div>
+    <div class="msg" id="cmd-msg-${id}"></div>
+  </div>
+
+  <!-- グループ管理 -->
+  <div class="section">
+    <label>Thing Groups</label>
+    <div class="group-list" id="groups-${id}">
+      ${groupChecks || '<span style="color:#888;font-size:0.82em">グループなし</span>'}
+    </div>
+    <button onclick="saveGroups('${id}')" style="margin-top:4px">グループ保存</button>
+    <div class="msg" id="group-msg-${id}"></div>
+  </div>
+</div>`;
+}
+
+function toggleSection(id, btn) {
+  const el = document.getElementById(id);
+  const open = el.style.display === 'none';
+  el.style.display = open ? '' : 'none';
+  btn.textContent  = (open ? '▼' : '▶') + btn.textContent.slice(1);
+}
+
+// ─── Shadow 保存 ──────────────────────────────────────────────────────────────
+
+async function saveShadow(deviceId) {
+  const body = {
+    chg_start_v:      parseFloat(document.getElementById(`sv-start-${deviceId}`).value),
+    chg_stop_v:       parseFloat(document.getElementById(`sv-stop-${deviceId}`).value),
+    chg_duration_sec: parseInt(document.getElementById(`sv-dur-${deviceId}`).value, 10),
+    ah_offset:        parseInt(document.getElementById(`sv-ah-${deviceId}`).value, 10),
+    relay_mode:       document.getElementById(`sv-relay-${deviceId}`).value,
+  };
+  const msgEl = document.getElementById(`shadow-msg-${deviceId}`);
+  msgEl.textContent = '保存中...';
+  msgEl.className   = 'msg';
+  try {
+    await apiFetch(`/admin/shadow/${deviceId}`, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    msgEl.textContent = '保存しました（次回起動時に適用）';
+    msgEl.className   = 'msg ok';
+  } catch (e) {
+    msgEl.textContent = 'エラー: ' + e.message;
+    msgEl.className   = 'msg err';
+  }
+}
+
+// ─── コマンド発行 ─────────────────────────────────────────────────────────────
+
+function openChargeModal(deviceId) {
+  const sec = parseInt(prompt('充電時間（秒）を入力してください', '1800'), 10);
+  if (!sec || isNaN(sec)) return;
+  sendCommand(deviceId, { operation: 'charge_main_batt', timeout_sec: sec });
+}
+
+function confirmAhReset(deviceId) {
+  if (!confirm(`${deviceId} の積算電荷量をリセットしますか？`)) return;
+  sendCommand(deviceId, { operation: 'ah_reset' });
+}
+
+async function sendCommand(deviceId, body) {
+  const msgEl = document.getElementById(`cmd-msg-${deviceId}`);
+  msgEl.textContent = '発行中...';
+  msgEl.className   = 'msg';
+  try {
+    const res  = await apiFetch(`/admin/command/${deviceId}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    const data = await res.json();
+    msgEl.textContent = `Job 発行完了: ${data.job_id}`;
+    msgEl.className   = 'msg ok';
+  } catch (e) {
+    msgEl.textContent = 'エラー: ' + e.message;
+    msgEl.className   = 'msg err';
+  }
+}
+
+// ─── グループ保存 ─────────────────────────────────────────────────────────────
+
+async function saveGroups(deviceId) {
+  const checks  = document.querySelectorAll(`#groups-${deviceId} input[type=checkbox]`);
+  const groups  = Array.from(checks).filter(c => c.checked).map(c => c.dataset.group);
+  const msgEl   = document.getElementById(`group-msg-${deviceId}`);
+  msgEl.textContent = '保存中...';
+  msgEl.className   = 'msg';
+  try {
+    await apiFetch(`/admin/groups/${deviceId}`, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ groups }),
+    });
+    msgEl.textContent = '保存しました';
+    msgEl.className   = 'msg ok';
+  } catch (e) {
+    msgEl.textContent = 'エラー: ' + e.message;
+    msgEl.className   = 'msg err';
+  }
+}
+
+// ─── 初期化 ───────────────────────────────────────────────────────────────────
+
+window.onload = () => {
+  const hash         = new URLSearchParams(window.location.hash.slice(1));
+  const tokenFromHash = hash.get('id_token');
+  if (tokenFromHash) {
+    idToken    = tokenFromHash;
+    sessionStorage.setItem('id_token', idToken);
+    const payload = parseJwtPayload(idToken);
+    userGroups = payload['cognito:groups'] || [];
+    sessionStorage.setItem('user_groups', JSON.stringify(userGroups));
+    history.replaceState(null, '', window.location.pathname);
+  }
+
+  if (!idToken) { redirectToLogin(); return; }
+
+  // admin グループ以外は index.html にリダイレクト
+  if (!userGroups.includes('admin')) {
+    window.location.href = '/';
+    return;
+  }
+
+  loadDevices();
+};
+</script>
+</body>
+</html>

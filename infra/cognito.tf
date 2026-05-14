@@ -32,8 +32,14 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
   allowed_oauth_flows_user_pool_client = true
 
-  callback_urls = ["https://${local.web_domain}"]
-  logout_urls   = ["https://${local.web_domain}"]
+  callback_urls = [
+    "https://${local.web_domain}",
+    "https://${local.web_domain}/admin.html",
+  ]
+  logout_urls = [
+    "https://${local.web_domain}",
+    "https://${local.web_domain}/admin.html",
+  ]
 
   supported_identity_providers = ["COGNITO"]
 

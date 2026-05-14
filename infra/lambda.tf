@@ -4,6 +4,7 @@ locals {
   delete_src_dir = "${path.module}/lambda_src/delete"
   labels_src_dir = "${path.module}/lambda_src/labels"
   status_src_dir = "${path.module}/lambda_src/status"
+  admin_src_dir  = "${path.module}/lambda_src/admin"
   build_dir      = "${path.module}/.build"
 }
 
@@ -35,6 +36,12 @@ data "archive_file" "status" {
   type        = "zip"
   source_dir  = local.status_src_dir
   output_path = "${local.build_dir}/status.zip"
+}
+
+data "archive_file" "admin" {
+  type        = "zip"
+  source_dir  = local.admin_src_dir
+  output_path = "${local.build_dir}/admin.zip"
 }
 
 # ─── ingest Lambda（IoT Core → S3 書き込み） ─────────────────────────────────
@@ -140,7 +147,7 @@ resource "aws_apigatewayv2_api" "main" {
 
   cors_configuration {
     allow_origins = ["https://${local.web_domain}"]
-    allow_methods = ["GET", "PUT", "DELETE", "OPTIONS"]
+    allow_methods = ["GET", "PUT", "DELETE", "POST", "OPTIONS"]
     allow_headers = ["Content-Type", "Authorization"]
   }
 }
@@ -274,4 +281,46 @@ resource "aws_lambda_permission" "apigw_status" {
   function_name = aws_lambda_function.status.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "apigw_admin" {
+  statement_id  = "AllowAPIGWInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.admin.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+
+# ─── admin Lambda（管理者専用: デバイス一覧・Shadow 更新・Job 発行・グループ管理） ─
+
+resource "aws_lambda_function" "admin" {
+  function_name    = "${var.project}-admin"
+  filename         = data.archive_file.admin.output_path
+  source_code_hash = data.archive_file.admin.output_base64sha256
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  role             = aws_iam_role.lambda_admin.arn
+  timeout          = 30
+
+  environment {
+    variables = {
+      IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
+      ACCOUNT_ID   = data.aws_caller_identity.current.account_id
+    }
+  }
+}
+
+resource "aws_apigatewayv2_integration" "admin" {
+  api_id                 = aws_apigatewayv2_api.main.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.admin.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "admin" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "ANY /admin/{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
 }
