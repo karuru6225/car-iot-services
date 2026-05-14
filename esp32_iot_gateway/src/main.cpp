@@ -99,6 +99,7 @@ void setup()
 
   queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
   queue.flush(); // 前回バッファ分を即送信
+  delay(500);    // SIM7080G の送信バッファ安定待ち
 
   // 充電完了（remaining == 0 かつ jobId あり）なら SUCCEEDED 報告
   if (getChargeRemainingSec() == 0 && getChargeJobId()[0] != '\0')
@@ -228,6 +229,14 @@ void loop()
     }
     else
     {
+      if (vMain < 11.7)
+      {
+        logger.printf("[MAIN] 電圧が低い (%.2f V) → 充電 DeepSleep (%u sec)\n", vMain, sleepSec);
+        setChargeRemainingSec(SLEEP_INTERVAL_SEC * 6);
+        digitalWrite(CHG_ON_PIN, HIGH);
+        gpio_hold_en((gpio_num_t)CHG_ON_PIN);
+        setChargingSleep(true);
+      }
       logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
     }
     esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
