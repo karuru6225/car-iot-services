@@ -78,5 +78,9 @@ void setChargingSleep(bool v);
 // 充電制御ピン
 #define CHG_ON_PIN 21
 
+// デバッグログ有効フラグ（NVS, デフォルト: false）
+bool getDebugLogEnabled();
+void setDebugLogEnabled(bool enabled);
+
 // メニュー操作で消去するデータを一括クリア（"device" ネームスペースは保持）
 void clearMenuData();

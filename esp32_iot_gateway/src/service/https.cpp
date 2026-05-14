@@ -264,3 +264,109 @@ int Https::download(const char *url, const char *filename)
   }
   return (int)dataLen;
 }
+
+int Https::put(const char *url, const uint8_t *data, size_t len)
+{
+  char host[128];
+  char path[768];
+  if (!parseUrl(url, host, sizeof(host), path, sizeof(path)))
+  {
+    logger.println("[HTTPS] PUT: URL パースエラー");
+    return 0;
+  }
+  if (len == 0 || len > 4096)
+  {
+    logger.printf("[HTTPS] PUT: body length %u は範囲外 (1-4096)\n", (unsigned)len);
+    return 0;
+  }
+  logger.printf("[HTTPS] PUT: %s (%u bytes)\n", host, (unsigned)len);
+
+  lte.sendCmd("AT+SHSSL=1,\"ca.crt\"");
+  {
+    char cmd[160];
+    snprintf(cmd, sizeof(cmd), "AT+SHCONF=\"URL\",\"https://%s\"", host);
+    lte.sendCmd(cmd);
+  }
+  // BODYLEN はデータサイズに合わせて動的に設定
+  {
+    char cmd[40];
+    snprintf(cmd, sizeof(cmd), "AT+SHCONF=\"BODYLEN\",%u", (unsigned)len);
+    lte.sendCmd(cmd);
+  }
+  lte.sendCmd("AT+SHCONF=\"HEADERLEN\",350");
+
+  if (!lte.sendCmd("AT+SHCONN", 30000))
+  {
+    logger.println("[HTTPS] PUT: 接続失敗");
+    lte.sendCmd("AT+SHDISC");
+    return 0;
+  }
+
+  // AT+SHBOD=<len_body>,<timeout> でボディ入力モードへ
+  // len_body=0 で BODYLEN まで自動計算、timeout=10000ms
+  if (!lte.sendCmd("AT+SHBOD=0,10000"))
+  {
+    logger.println("[HTTPS] PUT: SHBOD 失敗");
+    lte.sendCmd("AT+SHDISC");
+    return 0;
+  }
+
+  // OK が返ったらデータ入力モード → データを送信して Ctrl-Z（0x1A）で確定
+  SerialAT.write(data, len);
+  SerialAT.write((uint8_t)0x1A); // Ctrl-Z: 送信確定
+
+  // SHBOD の確定応答（OK or ERROR）待ち
+  {
+    unsigned long t = millis();
+    String buf = "";
+    while (millis() - t < 10000)
+    {
+      while (SerialAT.available())
+        buf += (char)SerialAT.read();
+      if (buf.indexOf("OK") >= 0 || buf.indexOf("ERROR") >= 0) break;
+      delay(10);
+    }
+    if (buf.indexOf("ERROR") >= 0)
+    {
+      logger.println("[HTTPS] PUT: SHBOD 確定エラー");
+      lte.sendCmd("AT+SHDISC");
+      return 0;
+    }
+  }
+
+  // PUT リクエスト送信
+  {
+    char cmd[800];
+    snprintf(cmd, sizeof(cmd), "AT+SHREQ=\"%s\",2", path);
+    lte.sendCmd(cmd, 5000);
+  }
+
+  // +SHREQ: "PUT",<status>,<dataLen> 受信
+  int statusCode = 0;
+  {
+    unsigned long deadline = millis() + 30000;
+    String buf = "";
+    while (millis() < deadline)
+    {
+      while (SerialAT.available())
+        buf += (char)SerialAT.read();
+      int idx = buf.indexOf("+SHREQ:");
+      if (idx >= 0)
+      {
+        int c1 = buf.indexOf(',', idx + 7);
+        int c2 = buf.indexOf(',', c1 + 1);
+        int nl = buf.indexOf('\n', c2 + 1);
+        if (c1 >= 0 && c2 >= 0 && nl >= 0)
+        {
+          statusCode = buf.substring(c1 + 1, c2).toInt();
+          break;
+        }
+      }
+      delay(10);
+    }
+  }
+
+  logger.printf("[HTTPS] PUT HTTP %d\n", statusCode);
+  lte.sendCmd("AT+SHDISC");
+  return statusCode;
+}

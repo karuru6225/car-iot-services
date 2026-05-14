@@ -1,4 +1,5 @@
 #include "logger.h"
+#include "log_storage.h"
 #include <stdarg.h>
 
 Logger logger;
@@ -16,6 +17,7 @@ void Logger::print(const char *msg)
 void Logger::println(const char *msg)
 {
   Serial.println(msg);
+  logStorageWrite(msg);
 }
 
 void Logger::printf(const char *fmt, ...)
@@ -26,4 +28,5 @@ void Logger::printf(const char *fmt, ...)
   vsnprintf(buf, sizeof(buf), fmt, args);
   va_end(args);
   Serial.print(buf);
+  logStorageWrite(buf);
 }

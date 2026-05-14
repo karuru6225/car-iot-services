@@ -59,6 +59,42 @@ resource "aws_s3_bucket_policy" "firmware" {
   })
 }
 
+# ─── デバッグログバケット ──────────────────────────────────────────────────────
+# デバイスから upload_log コマンド経由で HTTPS PUT されるログファイルを保存する
+
+resource "aws_s3_bucket" "debug_logs" {
+  bucket = "${var.project}-debug-logs-${data.aws_caller_identity.current.account_id}"
+}
+
+resource "aws_s3_bucket_public_access_block" "debug_logs" {
+  bucket                  = aws_s3_bucket.debug_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "debug_logs" {
+  bucket = aws_s3_bucket.debug_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "debug_logs" {
+  bucket = aws_s3_bucket.debug_logs.id
+  rule {
+    id     = "auto-delete"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 30
+    }
+  }
+}
+
 # ─── Glue Database ────────────────────────────────────────────────────────────
 
 resource "aws_glue_catalog_database" "main" {

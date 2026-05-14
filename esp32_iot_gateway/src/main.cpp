@@ -31,6 +31,7 @@
 #include "domain/ble_targets.h"
 #include "service/menu.h"
 #include "service/pubqueue.h"
+#include "service/log_storage.h"
 
 #include <esp_sleep.h>
 #include <driver/gpio.h>
@@ -96,6 +97,7 @@ void setup()
 #ifndef DEBUG_SKIP_NETWORK
   oledPrint("LTE connecting...");
   lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
+  logStorageInit(); // 時刻同期後に呼ぶ（ファイル名に UNIX 時間を使用）
 
   queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
   queue.flush(); // 前回バッファ分を即送信

@@ -14,6 +14,10 @@ public:
   // AT+SH* スタックを使った HTTPS ダウンロードでファイル保存
   // 成功時は ファイルサイズ、失敗時は-1 を返す
   int download(const char *url, const char *filename);
+
+  // AT+SH* スタックを使った HTTPS PUT（presigned URL 向け）
+  // 戻り値: HTTP ステータスコード（200=成功、0=接続/送信失敗）
+  int put(const char *url, const uint8_t *data, size_t len);
 };
 
 extern Https https;

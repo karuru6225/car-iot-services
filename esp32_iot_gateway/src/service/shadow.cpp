@@ -75,6 +75,14 @@ bool shadowPollDelta(uint32_t timeoutMs)
     changed = true;
   }
 
+  if (state["debug_log"].is<bool>())
+  {
+    bool en = state["debug_log"].as<bool>();
+    setDebugLogEnabled(en);
+    logger.printf("[SHADOW] debug_log → %s\n", en ? "on" : "off");
+    changed = true;
+  }
+
   if (changed)
     shadowPublishConfig(true); // reported を更新して desired をクリア
 
