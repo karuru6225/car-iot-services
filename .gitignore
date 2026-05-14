@@ -17,6 +17,10 @@ build/
 *.bin
 *.map
 
+# SPIFFS ダウンプ出力
+ops/spiffs_extracted/
+ops/spiffs_dump.bin
+
 # OS
 .DS_Store
 Thumbs.db
