@@ -54,7 +54,8 @@ bool shadowPollDelta(uint32_t timeoutMs)
     return false;
 
   JsonObject state = doc["state"];
-  if (state.isNull()) return false;
+  if (state.isNull())
+    return false;
 
   bool changed = false;
 
@@ -69,8 +70,8 @@ bool shadowPollDelta(uint32_t timeoutMs)
   {
     const char *mode = state["relay_mode"];
     setRelayMode(strcmp(mode, "off") == 0
-                   ? RelayMode::RELAY_OFF
-                   : RelayMode::SLEEP_INDICATOR);
+                     ? RelayMode::RELAY_OFF
+                     : RelayMode::SLEEP_INDICATOR);
     logger.printf("[SHADOW] relay_mode → %s\n", mode);
     changed = true;
   }
@@ -80,6 +81,27 @@ bool shadowPollDelta(uint32_t timeoutMs)
     bool en = state["debug_log"].as<bool>();
     setDebugLogEnabled(en);
     logger.printf("[SHADOW] debug_log → %s\n", en ? "on" : "off");
+    changed = true;
+  }
+
+  if (state["chg_start_v"].is<float>())
+  {
+    setChgStartV(state["chg_start_v"].as<float>());
+    logger.printf("[SHADOW] chg_start_v → %.2f\n", getChgStartV());
+    changed = true;
+  }
+
+  if (state["chg_stop_v"].is<float>())
+  {
+    setChgStopV(state["chg_stop_v"].as<float>());
+    logger.printf("[SHADOW] chg_stop_v → %.2f\n", getChgStopV());
+    changed = true;
+  }
+
+  if (state["chg_duration_sec"].is<uint32_t>())
+  {
+    setChgDurationSec(state["chg_duration_sec"].as<uint32_t>());
+    logger.printf("[SHADOW] chg_duration_sec → %u\n", getChgDurationSec());
     changed = true;
   }
 

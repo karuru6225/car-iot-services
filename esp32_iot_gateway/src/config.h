@@ -5,7 +5,7 @@
 #ifndef GIT_HASH
 #define GIT_HASH "00000000"
 #endif
-#define FIRMWARE_VERSION "1.9.1+" GIT_HASH
+#define FIRMWARE_VERSION "1.10.0+" GIT_HASH
 
 // 動作モード
 enum class OperationMode { DEEP_SLEEP, CONTINUOUS };
@@ -62,6 +62,17 @@ void setAhOffset(int32_t ah);
 // 充電タイムアウトの取得・保存（battery 用、デフォルト: 20 分）
 uint32_t getChgTimeoutMin();
 void setChgTimeoutMin(uint32_t minutes);
+
+// 充電開始・停止電圧しきい値の取得・保存（battery 用）
+// 開始: デフォルト 11.7V、停止: デフォルト 12.5V
+float getChgStartV();
+void  setChgStartV(float v);
+float getChgStopV();
+void  setChgStopV(float v);
+
+// 自動充電の継続時間（秒）の取得・保存（battery 用、デフォルト: 1800 sec = 30 分）
+uint32_t getChgDurationSec();
+void     setChgDurationSec(uint32_t sec);
 
 // 充電状態（RTC メモリ。全 sleep サイクルを通じて保持）
 // initCharge() でセット、充電完了後に clearCharge() でクリア
