@@ -3,7 +3,7 @@ Admin API — admin グループユーザー専用
 
 GET  /admin/devices                    全 esp32-gw-* デバイス一覧 + Shadow + Thing Groups
 PUT  /admin/shadow/{device_id}         desired 部分更新
-POST /admin/command/{device_id}        IoT Job 作成（ah_reset / charge_main_batt）
+POST /admin/command/{device_id}        IoT Job 作成（ah_reset / charge_main_batt / upload_log）
 PUT  /admin/groups/{device_id}         Thing Group メンバーシップ更新
 """
 
@@ -15,11 +15,13 @@ import boto3
 
 IOT_ENDPOINT = os.environ["IOT_ENDPOINT"]
 ACCOUNT_ID   = os.environ["ACCOUNT_ID"]
+LOG_BUCKET   = os.environ["LOG_BUCKET"]
 REGION       = os.environ.get("AWS_REGION", "ap-northeast-1")
 THING_PREFIX = "esp32-gw-"
 
 iot_data = boto3.client("iot-data", endpoint_url=IOT_ENDPOINT)
 iot      = boto3.client("iot")
+s3       = boto3.client("s3")
 
 
 def _resp(status, body):
@@ -87,12 +89,20 @@ def handle_shadow(device_id, body):
 
 def handle_command(device_id, body):
     operation = body.get("operation")
-    if operation not in ("ah_reset", "charge_main_batt"):
+    if operation not in ("ah_reset", "charge_main_batt", "upload_log"):
         return _err(400, f"unknown operation: {operation}")
 
     doc = {"operation": operation}
     if operation == "charge_main_batt":
         doc["timeout_sec"] = int(body.get("timeout_sec", 1200))
+    elif operation == "upload_log":
+        ts  = int(time.time())
+        key = f"logs/{device_id}/{ts}.log"
+        doc["presigned_url"] = s3.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": LOG_BUCKET, "Key": key},
+            ExpiresIn=3600,
+        )
 
     job_id    = f"cmd-{device_id}-{int(time.time())}"
     thing_arn = f"arn:aws:iot:{REGION}:{ACCOUNT_ID}:thing/{device_id}"

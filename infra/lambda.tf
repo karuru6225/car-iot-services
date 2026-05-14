@@ -306,6 +306,7 @@ resource "aws_lambda_function" "admin" {
     variables = {
       IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
       ACCOUNT_ID   = data.aws_caller_identity.current.account_id
+      LOG_BUCKET   = aws_s3_bucket.debug_logs.bucket
     }
   }
 }

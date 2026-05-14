@@ -302,6 +302,11 @@ resource "aws_iam_role_policy" "lambda_admin" {
         Action   = ["iot:AddThingToThingGroup", "iot:RemoveThingFromThingGroup"]
         Resource = "*"
       },
+      {
+        Effect   = "Allow"
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.debug_logs.arn}/*"
+      },
     ]
   })
 }
