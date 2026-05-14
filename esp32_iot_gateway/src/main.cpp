@@ -3,7 +3,7 @@
 // 起動 → (BTN0 長押し) メニュー → LTE 接続 → OTA チェック → loop()
 //
 // loop() の動作モード:
-//   DEEP_SLEEP  : measureAndPublish() → DeepSleep 5分（デフォルト本番動作）
+//   DEEP_SLEEP  : measureAndPublish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
 //   CONTINUOUS  : measureAndPublish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
 //
 // デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
@@ -56,7 +56,8 @@ void setup()
   g_wakeupCause = esp_sleep_get_wakeup_cause();
 
   // 充電 sleep から復帰した場合は最優先で CHG_ON を落とす
-  if (isChargingSleep()) {
+  if (isChargingSleep())
+  {
     gpio_hold_dis((gpio_num_t)CHG_ON_PIN);
     pinMode(CHG_ON_PIN, OUTPUT);
     digitalWrite(CHG_ON_PIN, LOW);
@@ -100,9 +101,12 @@ void setup()
   queue.flush(); // 前回バッファ分を即送信
 
   // 充電完了（remaining == 0 かつ jobId あり）なら SUCCEEDED 報告
-  if (getChargeRemainingSec() == 0 && getChargeJobId()[0] != '\0') {
-    jobsReport(getChargeJobId(), "SUCCEEDED");
-    clearCharge();
+  if (getChargeRemainingSec() == 0 && getChargeJobId()[0] != '\0')
+  {
+    if (jobsReport(getChargeJobId(), "SUCCEEDED"))
+    {
+      clearCharge();
+    }
   }
 
   ota.reportPendingJobResult();
@@ -136,6 +140,10 @@ void setup()
   pinMode(RELAY_1_PIN, OUTPUT);
   pinMode(RELAY_2_PIN, OUTPUT);
   pinMode(CHG_ON_PIN, OUTPUT);
+  digitalWrite(RELAY_0_PIN, LOW);
+  digitalWrite(RELAY_1_PIN, LOW);
+  digitalWrite(RELAY_2_PIN, LOW);
+  digitalWrite(CHG_ON_PIN, LOW);
 }
 
 static void updateRelayIndicator(int remainSec, RelayMode mode)
@@ -173,6 +181,7 @@ void loop()
 {
 #ifndef DEBUG_SKIP_NETWORK
   g_lastResult = measure();
+  float vMain = g_lastResult.reading.main.voltage;
   publish(g_lastResult);
   queue.flush();
   shadowPollDelta();
@@ -189,21 +198,39 @@ void loop()
 #endif
     oledClear();
 
+    // 次の5分境界（UTC）に起動するようスリープ時間を調整
+    uint32_t sleepSec = SLEEP_INTERVAL_SEC;
+    time_t now = time(nullptr);
+    if (now > 1577836800L) // 2020-01-01以降なら時刻同期済みと判断
+    {
+      time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
+      sleepSec = (uint32_t)(next - now);
+    }
+
     if (getChargeRemainingSec() > 0)
     {
-      uint32_t r = getChargeRemainingSec();
-      setChargeRemainingSec(r >= SLEEP_INTERVAL_SEC ? r - SLEEP_INTERVAL_SEC : 0);
-      logger.printf("[MAIN] 充電 DeepSleep (remaining after: %u sec)\n",
-                    getChargeRemainingSec());
-      digitalWrite(CHG_ON_PIN, HIGH);
-      gpio_hold_en((gpio_num_t)CHG_ON_PIN);
-      setChargingSleep(true);
+      if (vMain > 12.5)
+      {
+        setChargeRemainingSec(0);
+        logger.println("[MAIN] 充電完了と判断（充分に電圧が高くなった） → CHG_ON OFF");
+        logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
+      }
+      else
+      {
+        uint32_t r = getChargeRemainingSec();
+        setChargeRemainingSec(r >= sleepSec ? r - sleepSec : 0);
+        logger.printf("[MAIN] 充電 DeepSleep (%u sec, remaining after: %u sec)\n",
+                      sleepSec, getChargeRemainingSec());
+        digitalWrite(CHG_ON_PIN, HIGH);
+        gpio_hold_en((gpio_num_t)CHG_ON_PIN);
+        setChargingSleep(true);
+      }
     }
     else
     {
-      logger.println("[MAIN] DeepSleep へ移行");
+      logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
     }
-    esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_SEC * 1000000ULL);
+    esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
     esp_deep_sleep_start();
   }
 
