@@ -92,7 +92,13 @@ int Https::get(const char *url,
   logger.printf("[HTTPS] 接続: %s\n", host);
 
   // AT+SH* 設定（ctxindex=1: ctxindex=0 は MQTT が使用）
-  lte.sendCmd("AT+SHSSL=1,\"ca.crt\"");
+  // ctxindex=1 に TLS 1.2 を明示設定（未設定だと S3 との TLS ハンドシェイクが失敗する）
+  // AT+SMSSL=<index>: 0=SSL無効, 1-6 = CSSLCFG ctindex 0-5
+  // MQTT は AT+SMSSL=1 → CSSLCFG ctindex 0 を使用。
+  // HTTPS は AT+SHSSL=2 → CSSLCFG ctindex 1 を使用（競合回避）。
+  // ctindex 1 に TLS 1.2 を明示設定（MQTT 用 ctindex 0 とは別設定が必要）。
+  lte.sendCmd("AT+CSSLCFG=\"sslversion\",1,3");
+  lte.sendCmd("AT+SHSSL=2,\"ca.crt\"");
   {
     char cmd[160];
     snprintf(cmd, sizeof(cmd), "AT+SHCONF=\"URL\",\"https://%s\"", host);
@@ -281,7 +287,12 @@ int Https::put(const char *url, const uint8_t *data, size_t len)
   }
   logger.printf("[HTTPS] PUT: %s (%u bytes)\n", host, (unsigned)len);
 
-  lte.sendCmd("AT+SHSSL=1,\"ca.crt\"");
+  // AT+SMSSL=<index>: 0=SSL無効, 1-6 = CSSLCFG ctindex 0-5
+  // MQTT は AT+SMSSL=1 → CSSLCFG ctindex 0 を使用。
+  // HTTPS は AT+SHSSL=2 → CSSLCFG ctindex 1 を使用（競合回避）。
+  // ctindex 1 に TLS 1.2 を明示設定（MQTT 用 ctindex 0 とは別設定が必要）。
+  lte.sendCmd("AT+CSSLCFG=\"sslversion\",1,3");
+  lte.sendCmd("AT+SHSSL=2,\"ca.crt\"");
   {
     char cmd[160];
     snprintf(cmd, sizeof(cmd), "AT+SHCONF=\"URL\",\"https://%s\"", host);
@@ -302,20 +313,39 @@ int Https::put(const char *url, const uint8_t *data, size_t len)
     return 0;
   }
 
-  // AT+SHBOD=<len_body>,<timeout> でボディ入力モードへ
-  // len_body=0 で BODYLEN まで自動計算、timeout=10000ms
-  if (!lte.sendCmd("AT+SHBOD=0,10000"))
+  // AT+SHBOD: データ入力モード開始
+  // len_body に実際のサイズを指定することで CR(0x0D) を含むバイナリも正しく受け付ける。
+  // モデムは OK ではなく '>' プロンプトを返すため sendCmd は使わず自前で待つ。
   {
-    logger.println("[HTTPS] PUT: SHBOD 失敗");
-    lte.sendCmd("AT+SHDISC");
-    return 0;
+    char shbodCmd[32];
+    snprintf(shbodCmd, sizeof(shbodCmd), "AT+SHBOD=%u,10000", (unsigned)len);
+    SerialAT.println(shbodCmd);
+    logger.printf("  [AT] %s\n", shbodCmd);
+
+    // '>' プロンプトを待つ
+    unsigned long t = millis();
+    String buf = "";
+    bool prompted = false;
+    while (millis() - t < 5000)
+    {
+      while (SerialAT.available()) buf += (char)SerialAT.read();
+      if (buf.indexOf('>') >= 0) { prompted = true; break; }
+      if (buf.indexOf("ERROR") >= 0) break;
+      delay(10);
+    }
+    if (!prompted)
+    {
+      logger.println("[HTTPS] PUT: SHBOD prompt timeout");
+      lte.sendCmd("AT+SHDISC");
+      return 0;
+    }
   }
 
-  // OK が返ったらデータ入力モード → データを送信して Ctrl-Z（0x1A）で確定
+  // データ送信 → Ctrl-Z（0x1A）で確定
   SerialAT.write(data, len);
-  SerialAT.write((uint8_t)0x1A); // Ctrl-Z: 送信確定
+  SerialAT.write((uint8_t)0x1A);
 
-  // SHBOD の確定応答（OK or ERROR）待ち
+  // SHBOD 確定応答（OK or ERROR）待ち
   {
     unsigned long t = millis();
     String buf = "";
@@ -326,9 +356,9 @@ int Https::put(const char *url, const uint8_t *data, size_t len)
       if (buf.indexOf("OK") >= 0 || buf.indexOf("ERROR") >= 0) break;
       delay(10);
     }
-    if (buf.indexOf("ERROR") >= 0)
+    if (buf.indexOf("OK") < 0)
     {
-      logger.println("[HTTPS] PUT: SHBOD 確定エラー");
+      logger.println("[HTTPS] PUT: SHBOD error");
       lte.sendCmd("AT+SHDISC");
       return 0;
     }

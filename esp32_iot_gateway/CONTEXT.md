@@ -340,6 +340,85 @@ Shadow はテレメトリではなく設定値（ah_offset / relay_mode / fw_ver
 バッテリーテレメトリは `sensors/{device_id}/data`（type=`"battery"`）として送信し既存の ingest パイプラインで S3 に蓄積。
 Shadow の desired / delta による双方向リモート設定変更も実装済み。
 
+### uzlib 圧縮・解凍 API（実機検証済み）
+
+`lib/uzlib/` に圧縮・解凍両方の実装がある。
+
+#### 解凍（gzip ファイルを展開）
+
+```cpp
+#include "../../lib/uzlib/uzlib.h"
+
+static uint8_t dict[32768]; // 32KB スライディングウィンドウ（必須）
+static uint8_t out[OUTPUT_SIZE];
+
+TINF_DATA d = {};
+d.source       = gzData;
+d.source_limit = gzData + gzLen;
+d.dest         = out;
+
+uzlib_uncompress_init(&d, dict, sizeof(dict));
+if (uzlib_gzip_parse_header(&d) != TINF_OK) { /* エラー */ }
+
+int ret;
+do { ret = uzlib_uncompress_chksum(&d); } while (ret == TINF_OK);
+if (ret != TINF_DONE) { /* エラー */ }
+
+size_t decompLen = d.dest - out;
+```
+
+#### 圧縮（gzip ファイルを生成）
+
+`uzlib_compress` はデータのみ圧縮し、ブロックヘッダ・フッターは書かない。
+**必ず `zlib_start_block` → `uzlib_compress` → `zlib_finish_block` の順で呼ぶ。**
+
+```cpp
+#include "../../lib/uzlib/uzlib.h"
+#include "../../lib/uzlib/defl_static.h"
+
+// 出力バイトを受け取るコールバック（writeDestByte が NULL だと出力が捨てられる）
+static uint8_t s_deflateBuf[512];
+static uint32_t s_deflateLen = 0;
+static unsigned int deflateWriter(struct uzlib_comp *, unsigned char byte) {
+    s_deflateBuf[s_deflateLen++] = byte;
+    return 0;
+}
+
+// ハッシュテーブル（hash_bits=12 → 16KB）
+static uzlib_hash_entry_t hashTable[1 << 12];
+memset(hashTable, 0, sizeof(hashTable));
+s_deflateLen = 0;
+
+struct uzlib_comp comp = {};
+comp.writeDestByte = deflateWriter; // 必須
+comp.hash_table    = hashTable;
+comp.hash_bits     = 12;
+
+zlib_start_block(&comp);               // BFINAL=1, static Huffman ヘッダを書く
+uzlib_compress(&comp, data, dataLen);  // LZ77+静的ハフマン圧縮
+zlib_finish_block(&comp);             // end-of-block + バイト境界フラッシュ
+
+// s_deflateBuf[0..s_deflateLen-1] に deflate ストリームが入っている
+```
+
+#### gzip ファイルの組み立て
+
+```text
+[10 bytes] gzip ヘッダ: 1F 8B 08 00 00 00 00 00 00 FF
+[N bytes]  deflate ストリーム（上記の出力）
+[4 bytes]  CRC32（LE）: uzlib_crc32(data, len, 0xffffffff) ^ 0xffffffff
+[4 bytes]  元データサイズ（LE）: sizeof(data)
+```
+
+#### 注意事項
+
+- `writeDestByte` が NULL だと出力が **完全に捨てられる**（outbuf に書かれない）
+- `grow_buffer=1` にすると outbuf に書かれるが malloc/realloc が必要（組み込みには不向き）
+- `zlib_start_block` を省くと BFINAL=0 の非終端ブロックになり、PC の解凍ツールが拒否する
+- 0x00-0xFF の非圧縮データはほぼ圧縮できず deflate 出力が入力より大きくなる（正常動作）
+
+---
+
 ### TODO: OTA ファームウェアの gzip 圧縮（任意・高速化）
 
 **背景**: 実測で Phase1（セルラー DL）71秒・Phase2（UART 読み取り）127秒。Phase2 がボトルネック。
