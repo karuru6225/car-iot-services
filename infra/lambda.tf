@@ -317,9 +317,26 @@ resource "aws_apigatewayv2_integration" "admin" {
   payload_format_version = "2.0"
 }
 
-resource "aws_apigatewayv2_route" "admin" {
+# ANY を使うと OPTIONS（プリフライト）も JWT 認証にかかるため、メソッド別に分割する
+resource "aws_apigatewayv2_route" "admin_get" {
   api_id             = aws_apigatewayv2_api.main.id
-  route_key          = "ANY /admin/{proxy+}"
+  route_key          = "GET /admin/{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
+}
+
+resource "aws_apigatewayv2_route" "admin_put" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "PUT /admin/{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
+}
+
+resource "aws_apigatewayv2_route" "admin_post" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "POST /admin/{proxy+}"
   target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
   authorization_type = "JWT"
