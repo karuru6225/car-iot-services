@@ -10,5 +10,4 @@ static const int LOG_MAX_FILES = 12;
 
 void logStorageInit();                            // 起動時に呼ぶ（古いファイル削除・新規作成）
 void logStorageWrite(const char *msg);            // logger からフック（内部で logger を呼ばない）
-bool logStorageUpload(const char *presignedUrl);  // 全ログを結合して HTTPS PUT
 void logStorageClear();                           // 全ログファイルを削除

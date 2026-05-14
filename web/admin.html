@@ -253,9 +253,8 @@ function deviceCard(d) {
   <!-- コマンド -->
   <div class="section">
     <div class="cmd-row">
-      <button class="success"   onclick="openChargeModal('${id}')">充電開始</button>
-      <button class="danger"    onclick="confirmAhReset('${id}')">Ah リセット</button>
-      <button class="secondary" onclick="confirmUploadLog('${id}')">ログ取得</button>
+      <button class="success" onclick="openChargeModal('${id}')">充電開始</button>
+      <button class="danger"  onclick="confirmAhReset('${id}')">Ah リセット</button>
     </div>
     <div class="msg" id="cmd-msg-${id}"></div>
   </div>
@@ -320,10 +319,6 @@ function confirmAhReset(deviceId) {
   sendCommand(deviceId, { operation: 'ah_reset' });
 }
 
-function confirmUploadLog(deviceId) {
-  if (!confirm(`${deviceId} のログを S3 にアップロードしますか？`)) return;
-  sendCommand(deviceId, { operation: 'upload_log' });
-}
 
 async function sendCommand(deviceId, body) {
   const msgEl = document.getElementById(`cmd-msg-${deviceId}`);

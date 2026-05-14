@@ -1,5 +1,4 @@
 #include "log_storage.h"
-#include "https.h"
 #include "../config.h"
 #include <SPIFFS.h>
 #include <time.h>
@@ -118,73 +117,6 @@ void logStorageWrite(const char *msg)
   f.print(msg);
   f.print('\n');
   f.close();
-}
-
-// ─── アップロード ─────────────────────────────────────────────────────────────
-
-bool logStorageUpload(const char *presignedUrl)
-{
-  if (!SPIFFS.begin(false)) return false;
-
-  unsigned long timestamps[LOG_MAX_FILES + 2];
-  int count = collectLogFiles(timestamps, sizeof(timestamps) / sizeof(timestamps[0]));
-  if (count == 0)
-  {
-    Serial.println("[LOG_STORE] アップロード対象なし");
-    return false;
-  }
-
-  // 合計サイズを計算
-  size_t total = 0;
-  for (int i = 0; i < count; i++)
-  {
-    char path[32];
-    buildPath(timestamps[i], path, sizeof(path));
-    File f = SPIFFS.open(path, FILE_READ);
-    if (f) { total += f.size(); f.close(); }
-  }
-
-  if (total == 0)
-  {
-    Serial.println("[LOG_STORE] ログが空");
-    return false;
-  }
-
-  uint8_t *buf = (uint8_t *)malloc(total);
-  if (!buf)
-  {
-    Serial.println("[LOG_STORE] malloc 失敗");
-    return false;
-  }
-
-  // 時刻順に結合
-  size_t pos = 0;
-  for (int i = 0; i < count; i++)
-  {
-    char path[32];
-    buildPath(timestamps[i], path, sizeof(path));
-    File f = SPIFFS.open(path, FILE_READ);
-    if (!f) continue;
-    while (f.available() && pos < total)
-      buf[pos++] = (uint8_t)f.read();
-    f.close();
-  }
-
-  // 4096 バイト上限を超えた場合は末尾（直近ログ）を優先して切り詰める
-  static const size_t BODYLEN_MAX = 4096;
-  const uint8_t *sendPtr = buf;
-  size_t sendLen = pos;
-  if (sendLen > BODYLEN_MAX)
-  {
-    sendPtr = buf + (sendLen - BODYLEN_MAX);
-    sendLen = BODYLEN_MAX;
-    Serial.printf("[LOG_STORE] %u → %u bytes に切り詰め\n", (unsigned)pos, (unsigned)sendLen);
-  }
-
-  Serial.printf("[LOG_STORE] アップロード: %u bytes, %d ファイル\n", (unsigned)sendLen, count);
-  bool ok = (https.put(presignedUrl, sendPtr, sendLen) == 200);
-  free(buf);
-  return ok;
 }
 
 // ─── クリア ───────────────────────────────────────────────────────────────────

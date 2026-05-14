@@ -34,7 +34,7 @@ bool jobsGetNext(JobInfo &out)
     return false;
 
   char recvTopic[128];
-  static char payload[4096]; // presigned URL を含む upload_log ジョブは 1024 では不足
+  static char payload[1024];
   if (!mqtt.pollMqtt(recvTopic, sizeof(recvTopic), payload, sizeof(payload), 5000))
   {
     logger.println("[JOBS] レスポンスなし");

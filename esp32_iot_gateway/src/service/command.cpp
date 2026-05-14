@@ -1,7 +1,6 @@
 #include "command.h"
 #include "jobs.h"
 #include "logger.h"
-#include "log_storage.h"
 #include "../device/ina228.h"
 #include "../device/ads.h"
 #include "../config.h"
@@ -43,23 +42,6 @@ bool commandHandleJob(const JobInfo &job)
     initCharge(timeoutSec, job.id);
     logger.printf("[CMD] charge_main_batt: %u sec remaining\n", timeoutSec);
     return true;
-  }
-
-  if (strcmp(job.operation, "upload_log") == 0)
-  {
-    JsonDocument doc;
-    deserializeJson(doc, job.document);
-    const char *url = doc["presigned_url"] | "";
-    if (url[0] == '\0')
-    {
-      logger.println("[CMD] upload_log: presigned_url なし");
-      jobsReport(job.id, "FAILED", "presigned_url missing");
-      return false;
-    }
-    jobsReport(job.id, "IN_PROGRESS");
-    bool ok = logStorageUpload(url);
-    jobsReport(job.id, ok ? "SUCCEEDED" : "FAILED", ok ? nullptr : "upload failed");
-    return ok;
   }
 
   logger.printf("[CMD] unknown operation: %s\n", job.operation);
