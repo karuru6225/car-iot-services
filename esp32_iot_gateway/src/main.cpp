@@ -210,7 +210,7 @@ void loop()
 
     if (getChargeRemainingSec() > 0)
     {
-      if (vMain > 12.5)
+      if (vMain > getChgStopV())
       {
         setChargeRemainingSec(0);
         logger.println("[MAIN] 充電完了と判断（充分に電圧が高くなった） → CHG_ON OFF");
@@ -229,10 +229,10 @@ void loop()
     }
     else
     {
-      if (vMain < 11.7)
+      if (vMain < getChgStartV())
       {
         logger.printf("[MAIN] 電圧が低い (%.2f V) → 充電 DeepSleep (%u sec)\n", vMain, sleepSec);
-        setChargeRemainingSec(SLEEP_INTERVAL_SEC * 6);
+        setChargeRemainingSec(getChgDurationSec());
         digitalWrite(CHG_ON_PIN, HIGH);
         gpio_hold_en((gpio_num_t)CHG_ON_PIN);
         setChargingSleep(true);

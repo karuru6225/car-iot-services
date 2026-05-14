@@ -144,6 +144,56 @@ void setChgTimeoutMin(uint32_t minutes)
   nvs_close(nvs);
 }
 
+// float を uint32_t ビット列として NVS に保存するヘルパー
+static float nvsGetFloat(const char *key, float defaultVal)
+{
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NS_BATTERY, NVS_READONLY, &nvs) != ESP_OK) return defaultVal;
+  uint32_t bits;
+  bool ok = nvs_get_u32(nvs, key, &bits) == ESP_OK;
+  nvs_close(nvs);
+  if (!ok) return defaultVal;
+  float val;
+  memcpy(&val, &bits, sizeof(float));
+  return val;
+}
+
+static void nvsSetFloat(const char *key, float val)
+{
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NS_BATTERY, NVS_READWRITE, &nvs) != ESP_OK) return;
+  uint32_t bits;
+  memcpy(&bits, &val, sizeof(float));
+  nvs_set_u32(nvs, key, bits);
+  nvs_commit(nvs);
+  nvs_close(nvs);
+}
+
+float getChgStartV() { return nvsGetFloat("chg_start_v", 11.7f); }
+void  setChgStartV(float v) { nvsSetFloat("chg_start_v", v); }
+float getChgStopV()  { return nvsGetFloat("chg_stop_v",  12.5f); }
+void  setChgStopV(float v)  { nvsSetFloat("chg_stop_v",  v); }
+
+uint32_t getChgDurationSec()
+{
+  nvs_handle_t nvs;
+  uint32_t val = 1800; // デフォルト 30 分
+  if (nvs_open(NVS_NS_BATTERY, NVS_READONLY, &nvs) == ESP_OK) {
+    nvs_get_u32(nvs, "chg_duration", &val);
+    nvs_close(nvs);
+  }
+  return val;
+}
+
+void setChgDurationSec(uint32_t sec)
+{
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NS_BATTERY, NVS_READWRITE, &nvs) != ESP_OK) return;
+  nvs_set_u32(nvs, "chg_duration", sec);
+  nvs_commit(nvs);
+  nvs_close(nvs);
+}
+
 // ─── 充電状態（RTC メモリ、全 sleep サイクルを通じて保持） ──────────────────
 
 RTC_DATA_ATTR static uint32_t s_charge_remaining = 0;

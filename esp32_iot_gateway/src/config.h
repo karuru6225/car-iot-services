@@ -63,6 +63,17 @@ void setAhOffset(int32_t ah);
 uint32_t getChgTimeoutMin();
 void setChgTimeoutMin(uint32_t minutes);
 
+// 充電開始・停止電圧しきい値の取得・保存（battery 用）
+// 開始: デフォルト 11.7V、停止: デフォルト 12.5V
+float getChgStartV();
+void  setChgStartV(float v);
+float getChgStopV();
+void  setChgStopV(float v);
+
+// 自動充電の継続時間（秒）の取得・保存（battery 用、デフォルト: 1800 sec = 30 分）
+uint32_t getChgDurationSec();
+void     setChgDurationSec(uint32_t sec);
+
 // 充電状態（RTC メモリ。全 sleep サイクルを通じて保持）
 // initCharge() でセット、充電完了後に clearCharge() でクリア
 void        initCharge(uint32_t totalSec, const char *jobId);

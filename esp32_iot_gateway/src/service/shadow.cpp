@@ -75,6 +75,27 @@ bool shadowPollDelta(uint32_t timeoutMs)
     changed = true;
   }
 
+  if (state["chg_start_v"].is<float>())
+  {
+    setChgStartV(state["chg_start_v"].as<float>());
+    logger.printf("[SHADOW] chg_start_v → %.2f\n", getChgStartV());
+    changed = true;
+  }
+
+  if (state["chg_stop_v"].is<float>())
+  {
+    setChgStopV(state["chg_stop_v"].as<float>());
+    logger.printf("[SHADOW] chg_stop_v → %.2f\n", getChgStopV());
+    changed = true;
+  }
+
+  if (state["chg_duration_sec"].is<uint32_t>())
+  {
+    setChgDurationSec(state["chg_duration_sec"].as<uint32_t>());
+    logger.printf("[SHADOW] chg_duration_sec → %u\n", getChgDurationSec());
+    changed = true;
+  }
+
   if (changed)
     shadowPublishConfig(true); // reported を更新して desired をクリア
 
