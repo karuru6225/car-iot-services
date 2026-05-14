@@ -104,6 +104,30 @@ if (-not $url) { Write-Error "URLが空です"; exit 1 }
 if (-not $url) { Write-Error "URL is empty."; exit 1 }
 ```
 
+## `$PSScriptRoot` を使ったパス解決
+
+ops/ スクリプトから `esp32_iot_gateway/` などのパスを参照するときは
+`$PSScriptRoot` でスクリプト自身のディレクトリを基点にする。`cd` に依存すると
+どのディレクトリから呼んでも動くスクリプトにならない。
+
+```powershell
+$ProjectDir = "$PSScriptRoot\..\esp32_iot_gateway"  # ops/ から見た相対パス
+$BuildDir   = "$ProjectDir\.pio\build\..."
+```
+
+外部コマンド（`pio run` 等）はカレントディレクトリに依存するため、
+必要な場合は `Push-Location` / `Pop-Location` でスコープを絞る。
+
+```powershell
+Push-Location $ProjectDir
+try {
+    & $PioExe run
+    if ($LASTEXITCODE -ne 0) { Write-Error "pio run failed."; exit 1 }
+} finally {
+    Pop-Location
+}
+```
+
 ## `$LASTEXITCODE` によるエラーチェック
 
 PowerShell では外部コマンドのエラーは例外にならないため、

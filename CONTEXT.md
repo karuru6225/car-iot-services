@@ -25,13 +25,19 @@ ESP32-S3
 クラウド → デバイス（リモート設定変更）
   → Shadow desired を更新 → delta トピック → デバイスが NVS に適用
 
-Web 管理画面
+Web 管理画面（index.html）
   → GET /data?hours=24  → Lambda query → Athena（非同期ポーリング）→ S3
       ※ 各行に s3_key（Athena $path 疑似カラム）を含む
   → DELETE /data  body: {"s3_keys": [...]}  → Lambda delete → S3 直接削除
   → GET /status  → Lambda status → IoT Shadow（デバイス設定値の現在値）
   ※ 認証: Cognito JWT（API Gateway JWT Authorizer）、Hosted UI でログイン
   ※ タイムスタンプは JST 表示（Web 側で変換）
+
+Admin コンソール（admin.html、admin グループユーザーのみ）
+  → GET /admin/devices      → 全 esp32-gw-* デバイス一覧 + Shadow reported + Thing Groups
+  → PUT /admin/shadow/{id}  → Shadow desired 更新（chg_start_v, chg_stop_v 等）
+  → POST /admin/command/{id} → IoT Job 発行（ah_reset / charge_main_batt）
+  → PUT /admin/groups/{id}  → Thing Group メンバーシップ変更
 ```
 
 ## MQTT ペイロード形式
