@@ -35,11 +35,13 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired)
                     "\"chg_start_v\":%.2f,"
                     "\"chg_stop_v\":%.2f,"
                     "\"chg_duration_sec\":%u,"
+                    "\"debug_log\":%s,"
                     "\"fw_version\":\"" FIRMWARE_VERSION "\""
                     "},\"desired\":null}}",
                     getAhOffset(), relayStr,
                     getChgStartV(), getChgStopV(),
-                    getChgDurationSec());
+                    getChgDurationSec(),
+                    getDebugLogEnabled() ? "true" : "false");
   return snprintf(buf, size,
                   "{\"state\":{\"reported\":{"
                   "\"ah_offset\":%d,"
@@ -47,11 +49,13 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired)
                   "\"chg_start_v\":%.2f,"
                   "\"chg_stop_v\":%.2f,"
                   "\"chg_duration_sec\":%u,"
+                  "\"debug_log\":%s,"
                   "\"fw_version\":\"" FIRMWARE_VERSION "\""
                   "}}}",
                   getAhOffset(), relayStr,
                   getChgStartV(), getChgStopV(),
-                  getChgDurationSec());
+                  getChgDurationSec(),
+                  getDebugLogEnabled() ? "true" : "false");
 }
 
 int buildThermometerPayload(char *buf, size_t size,
