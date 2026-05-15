@@ -8,10 +8,18 @@
 #define FIRMWARE_VERSION "1.10.1+" GIT_HASH
 
 // 動作モード
-enum class OperationMode { DEEP_SLEEP, CONTINUOUS };
+enum class OperationMode
+{
+  DEEP_SLEEP,
+  CONTINUOUS
+};
 
 // リレー動作モード
-enum class RelayMode { SLEEP_INDICATOR, RELAY_OFF };
+enum class RelayMode
+{
+  SLEEP_INDICATOR,
+  RELAY_OFF
+};
 
 // DeepSleep
 static const uint32_t SLEEP_INTERVAL_SEC = 300;
@@ -66,25 +74,13 @@ void setChgTimeoutMin(uint32_t minutes);
 // 充電開始・停止電圧しきい値の取得・保存（battery 用）
 // 開始: デフォルト 11.7V、停止: デフォルト 12.5V
 float getChgStartV();
-void  setChgStartV(float v);
+void setChgStartV(float v);
 float getChgStopV();
-void  setChgStopV(float v);
+void setChgStopV(float v);
 
 // 自動充電の継続時間（秒）の取得・保存（battery 用、デフォルト: 1800 sec = 30 分）
 uint32_t getChgDurationSec();
-void     setChgDurationSec(uint32_t sec);
-
-// 充電状態（RTC メモリ。全 sleep サイクルを通じて保持）
-// initCharge() でセット、充電完了後に clearCharge() でクリア
-void        initCharge(uint32_t totalSec, const char *jobId);
-uint32_t    getChargeRemainingSec();
-void        setChargeRemainingSec(uint32_t sec);
-const char *getChargeJobId();   // 空でない = 充電中 or 完了直後
-void        clearCharge();
-
-// 充電 sleep から復帰したかどうか（loop → 次回 setup で使用）
-bool isChargingSleep();
-void setChargingSleep(bool v);
+void setChgDurationSec(uint32_t sec);
 
 // 充電制御ピン
 #define CHG_ON_PIN 21

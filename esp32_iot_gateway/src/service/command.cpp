@@ -3,8 +3,6 @@
 #include "logger.h"
 #include "../device/ina228.h"
 #include "../device/ads.h"
-#include "../config.h"
-#include <ArduinoJson.h>
 #include <cstring>
 
 bool commandHandleJob(const JobInfo &job)
@@ -21,12 +19,8 @@ bool commandHandleJob(const JobInfo &job)
 
   if (strcmp(job.operation, "charge_main_batt") == 0)
   {
-    JsonDocument doc;
-    deserializeJson(doc, job.document);
-    uint32_t timeoutSec = doc["timeout_sec"] | 1200u;
-
     float vMain = adsReadDiffMain();
-    float vSub  = adsReadDiffSub();
+    float vSub = adsReadDiffSub();
 
     if (vSub <= vMain)
     {
@@ -37,10 +31,8 @@ bool commandHandleJob(const JobInfo &job)
       return false;
     }
 
-    // 残り時間を RTC メモリに記録して return（5分ごとに充電 sleep を繰り返す）
-    jobsReport(job.id, "IN_PROGRESS");
-    initCharge(timeoutSec, job.id);
-    logger.printf("[CMD] charge_main_batt: %u sec remaining\n", timeoutSec);
+    jobsReport(job.id, "SUCCEEDED");
+    logger.printf("[CMD] charge_main_batt: done\n");
     return true;
   }
 

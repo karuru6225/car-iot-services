@@ -237,33 +237,6 @@ void setChgDurationSec(uint32_t sec)
   nvs_close(nvs);
 }
 
-// ─── 充電状態（RTC メモリ、全 sleep サイクルを通じて保持） ──────────────────
-
-RTC_DATA_ATTR static uint32_t s_charge_remaining = 0;
-RTC_DATA_ATTR static char s_charge_job_id[64] = {};
-RTC_DATA_ATTR static bool s_charging_sleep = false;
-
-void initCharge(uint32_t totalSec, const char *jobId)
-{
-  return; // --- IGNORE ---
-  // s_charge_remaining = totalSec;
-  // strncpy(s_charge_job_id, jobId ? jobId : "", sizeof(s_charge_job_id) - 1);
-  // s_charge_job_id[sizeof(s_charge_job_id) - 1] = '\0';
-}
-
-uint32_t getChargeRemainingSec() { return s_charge_remaining; }
-void setChargeRemainingSec(uint32_t sec) { s_charge_remaining = (sec > 0) ? sec : 0; }
-const char *getChargeJobId() { return s_charge_job_id; }
-
-void clearCharge()
-{
-  s_charge_remaining = 0;
-  s_charge_job_id[0] = '\0';
-}
-
-bool isChargingSleep() { return s_charging_sleep; }
-void setChargingSleep(bool v) { s_charging_sleep = v; }
-
 static void eraseNvsNamespace(const char *ns)
 {
   nvs_handle_t h;

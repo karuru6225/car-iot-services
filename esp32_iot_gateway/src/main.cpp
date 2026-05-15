@@ -34,7 +34,6 @@
 #include "service/log_storage.h"
 
 #include <esp_sleep.h>
-#include <driver/gpio.h>
 
 #define RELAY_0_PIN 11
 #define RELAY_1_PIN 13
@@ -55,15 +54,6 @@ static MeasureResult g_lastResult = {};
 void setup()
 {
   g_wakeupCause = esp_sleep_get_wakeup_cause();
-
-  // 充電 sleep から復帰した場合は最優先で CHG_ON を落とす
-  if (isChargingSleep())
-  {
-    gpio_hold_dis((gpio_num_t)CHG_ON_PIN);
-    pinMode(CHG_ON_PIN, OUTPUT);
-    digitalWrite(CHG_ON_PIN, LOW);
-    setChargingSleep(false);
-  }
 
   logger.init();
   delay(1000);
@@ -102,15 +92,6 @@ void setup()
   queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
   queue.flush(); // 前回バッファ分を即送信
   delay(500);    // SIM7080G の送信バッファ安定待ち
-
-  // 充電完了（remaining == 0 かつ jobId あり）なら SUCCEEDED 報告
-  // if (getChargeRemainingSec() == 0 && getChargeJobId()[0] != '\0')
-  // {
-  //   if (jobsReport(getChargeJobId(), "SUCCEEDED"))
-  //   {
-  //     clearCharge();
-  //   }
-  // }
 
   ota.reportPendingJobResult();
 
@@ -209,38 +190,6 @@ void loop()
       time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
       sleepSec = (uint32_t)(next - now);
     }
-
-    // if (getChargeRemainingSec() > 0)
-    // {
-    //   if (vMain > getChgStopV())
-    //   {
-    //     setChargeRemainingSec(0);
-    //     logger.println("[MAIN] 充電完了と判断（充分に電圧が高くなった） → CHG_ON OFF");
-    //     logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
-    //   }
-    //   else
-    //   {
-    //     uint32_t r = getChargeRemainingSec();
-    //     setChargeRemainingSec(r >= sleepSec ? r - sleepSec : 0);
-    //     logger.printf("[MAIN] 充電 DeepSleep (%u sec, remaining after: %u sec)\n",
-    //                   sleepSec, getChargeRemainingSec());
-    //     digitalWrite(CHG_ON_PIN, HIGH);
-    //     gpio_hold_en((gpio_num_t)CHG_ON_PIN);
-    //     setChargingSleep(true);
-    //   }
-    // }
-    // else
-    // {
-    //   if (vMain < getChgStartV())
-    //   {
-    //     logger.printf("[MAIN] 電圧が低い (%.2f V) → 充電 DeepSleep (%u sec)\n", vMain, sleepSec);
-    //     setChargeRemainingSec(getChgDurationSec());
-    //     digitalWrite(CHG_ON_PIN, HIGH);
-    //     gpio_hold_en((gpio_num_t)CHG_ON_PIN);
-    //     setChargingSleep(true);
-    //   }
-    //   logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
-    // }
     esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
     esp_deep_sleep_start();
   }
