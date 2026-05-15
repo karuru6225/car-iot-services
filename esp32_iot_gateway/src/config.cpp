@@ -237,6 +237,10 @@ void setChgDurationSec(uint32_t sec)
   nvs_close(nvs);
 }
 
+RTC_DATA_ATTR static bool s_charging = false;
+bool isCharging() { return s_charging; }
+void setCharging(bool v) { s_charging = v; }
+
 static void eraseNvsNamespace(const char *ns)
 {
   nvs_handle_t h;

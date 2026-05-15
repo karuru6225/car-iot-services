@@ -85,6 +85,10 @@ void setChgDurationSec(uint32_t sec);
 // 充電制御ピン
 #define CHG_ON_PIN 21
 
+// 充電フラグ（RTC メモリ。charge_start/charge_stop コマンドで切り替え）
+bool isCharging();
+void setCharging(bool v);
+
 // デバッグログ有効フラグ（NVS, デフォルト: false）
 bool getDebugLogEnabled();
 void setDebugLogEnabled(bool enabled);

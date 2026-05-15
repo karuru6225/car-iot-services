@@ -34,6 +34,7 @@
 #include "service/log_storage.h"
 
 #include <esp_sleep.h>
+#include <driver/gpio.h>
 
 #define RELAY_0_PIN 11
 #define RELAY_1_PIN 13
@@ -54,6 +55,7 @@ static MeasureResult g_lastResult = {};
 void setup()
 {
   g_wakeupCause = esp_sleep_get_wakeup_cause();
+  gpio_hold_dis((gpio_num_t)CHG_ON_PIN);
 
   logger.init();
   delay(1000);
@@ -127,7 +129,7 @@ void setup()
   digitalWrite(RELAY_0_PIN, LOW);
   digitalWrite(RELAY_1_PIN, LOW);
   digitalWrite(RELAY_2_PIN, LOW);
-  digitalWrite(CHG_ON_PIN, LOW);
+  digitalWrite(CHG_ON_PIN, isCharging() ? HIGH : LOW);
 }
 
 static void updateRelayIndicator(int remainSec, RelayMode mode)
@@ -190,6 +192,8 @@ void loop()
       time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
       sleepSec = (uint32_t)(next - now);
     }
+    if (isCharging())
+      gpio_hold_en((gpio_num_t)CHG_ON_PIN);
     esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
     esp_deep_sleep_start();
   }

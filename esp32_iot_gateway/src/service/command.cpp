@@ -2,7 +2,7 @@
 #include "jobs.h"
 #include "logger.h"
 #include "../device/ina228.h"
-#include "../device/ads.h"
+#include "../config.h"
 #include <cstring>
 
 bool commandHandleJob(const JobInfo &job)
@@ -17,22 +17,19 @@ bool commandHandleJob(const JobInfo &job)
     return true;
   }
 
-  if (strcmp(job.operation, "charge_main_batt") == 0)
+  if (strcmp(job.operation, "charge_start") == 0)
   {
-    float vMain = adsReadDiffMain();
-    float vSub = adsReadDiffSub();
-
-    if (vSub <= vMain)
-    {
-      char reason[40];
-      snprintf(reason, sizeof(reason), "sub(%.2f)<=main(%.2f)", vSub, vMain);
-      logger.printf("[CMD] charge_main_batt skipped: %s\n", reason);
-      jobsReport(job.id, "FAILED", reason);
-      return false;
-    }
-
+    setCharging(true);
+    logger.println("[CMD] charge_start: charging enabled");
     jobsReport(job.id, "SUCCEEDED");
-    logger.printf("[CMD] charge_main_batt: done\n");
+    return true;
+  }
+
+  if (strcmp(job.operation, "charge_stop") == 0)
+  {
+    setCharging(false);
+    logger.println("[CMD] charge_stop: charging disabled");
+    jobsReport(job.id, "SUCCEEDED");
     return true;
   }
 
