@@ -1,16 +1,15 @@
 # send_command.ps1 - Send a command to the device via AWS IoT Jobs
 #
 # Usage:
-#   .\send_command.ps1 -ThingName esp32-gw-aabbccddeeff -Command charge_main_batt
-#   .\send_command.ps1 -ThingName esp32-gw-aabbccddeeff -Command charge_main_batt -TimeoutSec 600
+#   .\send_command.ps1 -ThingName esp32-gw-aabbccddeeff -Command charge_start
+#   .\send_command.ps1 -ThingName esp32-gw-aabbccddeeff -Command charge_stop
 #   .\send_command.ps1 -ThingName esp32-gw-aabbccddeeff -Command ah_reset
 #
 # Run from the ops\ directory
 
 param(
   [Parameter(Mandatory)][string]$ThingName,
-  [Parameter(Mandatory)][ValidateSet("charge_main_batt", "ah_reset")][string]$Command,
-  [int]$TimeoutSec = 600,
+  [Parameter(Mandatory)][ValidateSet("charge_start", "charge_stop", "ah_reset")][string]$Command,
   [string]$Region  = "ap-northeast-1",
   [string]$Profile = ""
 )
@@ -24,7 +23,7 @@ if ($Profile) {
   Invoke-Expression ($credEnv -join "`n")
 }
 
-$doc = if ($Command -eq "charge_main_batt") { '{"operation":"charge_main_batt","timeout_sec":' + $TimeoutSec + '}' } else { '{"operation":"ah_reset"}' }
+$doc = '{"operation":"' + $Command + '"}'
 
 $accountId = (aws sts get-caller-identity --query Account --output text --region $Region)
 if ($LASTEXITCODE -ne 0) { Write-Error "Failed to get account ID."; exit 1 }

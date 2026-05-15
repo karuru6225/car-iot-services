@@ -3,7 +3,7 @@ Admin API — admin グループユーザー専用
 
 GET  /admin/devices                    全 esp32-gw-* デバイス一覧 + Shadow + Thing Groups
 PUT  /admin/shadow/{device_id}         desired 部分更新
-POST /admin/command/{device_id}        IoT Job 作成（ah_reset / charge_main_batt / upload_log）
+POST /admin/command/{device_id}        IoT Job 作成（ah_reset / charge_start / charge_stop）
 PUT  /admin/groups/{device_id}         Thing Group メンバーシップ更新
 """
 
@@ -87,13 +87,10 @@ def handle_shadow(device_id, body):
 
 def handle_command(device_id, body):
     operation = body.get("operation")
-    if operation not in ("ah_reset", "charge_main_batt"):
+    if operation not in ("ah_reset", "charge_start", "charge_stop"):
         return _err(400, f"unknown operation: {operation}")
 
-    doc = {"operation": operation}
-    if operation == "charge_main_batt":
-        doc["timeout_sec"] = int(body.get("timeout_sec", 1200))
-
+    doc       = {"operation": operation}
     job_id    = f"cmd-{device_id}-{int(time.time())}"
     thing_arn = f"arn:aws:iot:{REGION}:{ACCOUNT_ID}:thing/{device_id}"
     iot.create_job(

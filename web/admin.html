@@ -253,7 +253,8 @@ function deviceCard(d) {
   <!-- コマンド -->
   <div class="section">
     <div class="cmd-row">
-      <button class="success" onclick="openChargeModal('${id}')">充電開始</button>
+      <button class="success" onclick="sendChargeStart('${id}')">充電開始</button>
+      <button class="danger"  onclick="sendChargeStop('${id}')">充電停止</button>
       <button class="danger"  onclick="confirmAhReset('${id}')">Ah リセット</button>
     </div>
     <div class="msg" id="cmd-msg-${id}"></div>
@@ -308,10 +309,14 @@ async function saveShadow(deviceId) {
 
 // ─── コマンド発行 ─────────────────────────────────────────────────────────────
 
-function openChargeModal(deviceId) {
-  const sec = parseInt(prompt('充電時間（秒）を入力してください', '1800'), 10);
-  if (!sec || isNaN(sec)) return;
-  sendCommand(deviceId, { operation: 'charge_main_batt', timeout_sec: sec });
+function sendChargeStart(deviceId) {
+  if (!confirm(`${deviceId} の充電を開始しますか？`)) return;
+  sendCommand(deviceId, { operation: 'charge_start' });
+}
+
+function sendChargeStop(deviceId) {
+  if (!confirm(`${deviceId} の充電を停止しますか？`)) return;
+  sendCommand(deviceId, { operation: 'charge_stop' });
 }
 
 function confirmAhReset(deviceId) {
