@@ -96,7 +96,7 @@ void setup()
 
 #ifndef DEBUG_SKIP_NETWORK
   oledPrint("LTE connecting...");
-  lte.setup(); // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
+  lte.setup();      // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
   logStorageInit(); // 時刻同期後に呼ぶ（ファイル名に UNIX 時間を使用）
 
   queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
@@ -104,13 +104,13 @@ void setup()
   delay(500);    // SIM7080G の送信バッファ安定待ち
 
   // 充電完了（remaining == 0 かつ jobId あり）なら SUCCEEDED 報告
-  if (getChargeRemainingSec() == 0 && getChargeJobId()[0] != '\0')
-  {
-    if (jobsReport(getChargeJobId(), "SUCCEEDED"))
-    {
-      clearCharge();
-    }
-  }
+  // if (getChargeRemainingSec() == 0 && getChargeJobId()[0] != '\0')
+  // {
+  //   if (jobsReport(getChargeJobId(), "SUCCEEDED"))
+  //   {
+  //     clearCharge();
+  //   }
+  // }
 
   ota.reportPendingJobResult();
 
@@ -210,37 +210,37 @@ void loop()
       sleepSec = (uint32_t)(next - now);
     }
 
-    if (getChargeRemainingSec() > 0)
-    {
-      if (vMain > getChgStopV())
-      {
-        setChargeRemainingSec(0);
-        logger.println("[MAIN] 充電完了と判断（充分に電圧が高くなった） → CHG_ON OFF");
-        logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
-      }
-      else
-      {
-        uint32_t r = getChargeRemainingSec();
-        setChargeRemainingSec(r >= sleepSec ? r - sleepSec : 0);
-        logger.printf("[MAIN] 充電 DeepSleep (%u sec, remaining after: %u sec)\n",
-                      sleepSec, getChargeRemainingSec());
-        digitalWrite(CHG_ON_PIN, HIGH);
-        gpio_hold_en((gpio_num_t)CHG_ON_PIN);
-        setChargingSleep(true);
-      }
-    }
-    else
-    {
-      if (vMain < getChgStartV())
-      {
-        logger.printf("[MAIN] 電圧が低い (%.2f V) → 充電 DeepSleep (%u sec)\n", vMain, sleepSec);
-        setChargeRemainingSec(getChgDurationSec());
-        digitalWrite(CHG_ON_PIN, HIGH);
-        gpio_hold_en((gpio_num_t)CHG_ON_PIN);
-        setChargingSleep(true);
-      }
-      logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
-    }
+    // if (getChargeRemainingSec() > 0)
+    // {
+    //   if (vMain > getChgStopV())
+    //   {
+    //     setChargeRemainingSec(0);
+    //     logger.println("[MAIN] 充電完了と判断（充分に電圧が高くなった） → CHG_ON OFF");
+    //     logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
+    //   }
+    //   else
+    //   {
+    //     uint32_t r = getChargeRemainingSec();
+    //     setChargeRemainingSec(r >= sleepSec ? r - sleepSec : 0);
+    //     logger.printf("[MAIN] 充電 DeepSleep (%u sec, remaining after: %u sec)\n",
+    //                   sleepSec, getChargeRemainingSec());
+    //     digitalWrite(CHG_ON_PIN, HIGH);
+    //     gpio_hold_en((gpio_num_t)CHG_ON_PIN);
+    //     setChargingSleep(true);
+    //   }
+    // }
+    // else
+    // {
+    //   if (vMain < getChgStartV())
+    //   {
+    //     logger.printf("[MAIN] 電圧が低い (%.2f V) → 充電 DeepSleep (%u sec)\n", vMain, sleepSec);
+    //     setChargeRemainingSec(getChgDurationSec());
+    //     digitalWrite(CHG_ON_PIN, HIGH);
+    //     gpio_hold_en((gpio_num_t)CHG_ON_PIN);
+    //     setChargingSleep(true);
+    //   }
+    //   logger.printf("[MAIN] DeepSleep へ移行 (%u sec)\n", sleepSec);
+    // }
     esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
     esp_deep_sleep_start();
   }

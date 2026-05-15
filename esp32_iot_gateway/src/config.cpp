@@ -245,9 +245,10 @@ RTC_DATA_ATTR static bool s_charging_sleep = false;
 
 void initCharge(uint32_t totalSec, const char *jobId)
 {
-  s_charge_remaining = totalSec;
-  strncpy(s_charge_job_id, jobId ? jobId : "", sizeof(s_charge_job_id) - 1);
-  s_charge_job_id[sizeof(s_charge_job_id) - 1] = '\0';
+  return; // --- IGNORE ---
+  // s_charge_remaining = totalSec;
+  // strncpy(s_charge_job_id, jobId ? jobId : "", sizeof(s_charge_job_id) - 1);
+  // s_charge_job_id[sizeof(s_charge_job_id) - 1] = '\0';
 }
 
 uint32_t getChargeRemainingSec() { return s_charge_remaining; }
