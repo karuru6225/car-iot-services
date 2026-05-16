@@ -47,6 +47,13 @@ public:
   bool readFile(const char *filename, std::function<bool(const uint8_t *, size_t)> onChunk);
   bool deleteFile(const char *filename);
 
+  // gz OTA 用: AT+CFSINIT + ファイルサイズ取得（戻り値: サイズ, -1=失敗）
+  int fileOpen(const char *filename);
+  // gz OTA 用: 指定オフセットからチャンクを読む（戻り値: 読んだバイト数, -1=失敗）
+  int fileReadChunk(const char *filename, int offset, uint8_t *buf, int maxLen);
+  // gz OTA 用: AT+CFSTERM
+  void fileClose();
+
 private:
   TinyGsm _modem{SerialAT};
   TinyGsmClient _client{_modem};

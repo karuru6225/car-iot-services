@@ -8,8 +8,148 @@
 #include "../config.h"
 #include <esp_ota_ops.h>
 #include <ArduinoJson.h>
+#include <cstdarg>
+
+extern "C"
+{
+#include "../../lib/uzlib/uzlib.h"
+}
 
 Ota ota;
+
+// ─── gz OTA ストリーミング解凍 ───────────────────────────────────────────────
+
+static void gzLog(const char *fmt, ...)
+{
+  char buf[128];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, args);
+  va_end(args);
+  logger.print(buf);
+}
+
+struct GzStream
+{
+  const char *filename;
+  int fileSize;
+  int filePos;
+  static const int BUF_SIZE = 4096;
+  uint8_t buf[BUF_SIZE];
+  int bufLen;
+  int bufPos;
+};
+static GzStream s_gz;
+
+static unsigned int gzReadByte(TINF_DATA *d, unsigned char *out)
+{
+  (void)d;
+  if (s_gz.bufPos >= s_gz.bufLen)
+  {
+    if (s_gz.filePos >= s_gz.fileSize)
+      return (unsigned int)-1;
+    int toRead = min(GzStream::BUF_SIZE, s_gz.fileSize - s_gz.filePos);
+    int got = lte.fileReadChunk(s_gz.filename, s_gz.filePos, s_gz.buf, toRead);
+    if (got <= 0)
+      return (unsigned int)-1;
+    s_gz.bufLen = got;
+    s_gz.bufPos = 0;
+    s_gz.filePos += got;
+  }
+  *out = s_gz.buf[s_gz.bufPos++];
+  return 0;
+}
+
+// ─── OTA 書き込みヘルパー ────────────────────────────────────────────────────
+
+static bool writeBinToOta(const char *filename, int fileSize,
+                          esp_ota_handle_t handle, size_t &written)
+{
+  written = 0;
+  int lastPct = -1;
+  return lte.readFile(filename, [&](const uint8_t *data, size_t len) -> bool
+                      {
+    if (esp_ota_write(handle, data, len) != ESP_OK)
+    {
+      logger.println("[OTA] write 失敗");
+      return false;
+    }
+    written += len;
+    int pct = (int)(written * 100 / fileSize);
+    if (pct != lastPct)
+    {
+      oledShowOtaProgress("Writing...", written, fileSize);
+      lastPct = pct;
+    }
+    return true; });
+}
+
+static bool writeGzToOta(const char *filename, esp_ota_handle_t handle, size_t &written)
+{
+  int fileSize = lte.fileOpen(filename);
+  if (fileSize < 0)
+  {
+    logger.println("[OTA] gz fileOpen 失敗");
+    return false;
+  }
+
+  s_gz.filename = filename;
+  s_gz.fileSize = fileSize;
+  s_gz.filePos = 0;
+  s_gz.bufLen = 0;
+  s_gz.bufPos = 0;
+
+  static uint8_t dict[32768];
+  TINF_DATA d = {};
+  d.source = NULL;
+  d.readSourceByte = gzReadByte;
+  d.log = gzLog;
+  uzlib_uncompress_init(&d, dict, sizeof(dict));
+
+  if (uzlib_gzip_parse_header(&d) != TINF_OK)
+  {
+    logger.println("[OTA] gz ヘッダパース失敗");
+    lte.fileClose();
+    return false;
+  }
+
+  static uint8_t outBuf[512];
+  written = 0;
+  d.destSize = sizeof(outBuf);
+  int ret = TINF_OK;
+
+  while (ret == TINF_OK)
+  {
+    d.dest = outBuf;
+    ret = uzlib_uncompress_chksum(&d);
+
+    size_t produced = (size_t)(d.dest - outBuf);
+    if (produced > 0)
+    {
+      if (esp_ota_write(handle, outBuf, produced) != ESP_OK)
+      {
+        logger.println("[OTA] gz write 失敗");
+        lte.fileClose();
+        return false;
+      }
+      written += produced;
+      oledShowOtaProgress("Writing...", s_gz.filePos, fileSize);
+    }
+  }
+
+  lte.fileClose();
+
+  if (ret != TINF_DONE)
+  {
+    logger.printf("[OTA] gz 解凍エラー: %d\n", ret);
+    return false;
+  }
+
+  logger.printf("[OTA] gz 解凍完了: %u bytes\n", (unsigned)written);
+  return true;
+}
+
+// ─── apply ──────────────────────────────────────────────────────────────────
 
 bool Ota::apply(const char *url, const char *jobId)
 {
@@ -22,16 +162,21 @@ bool Ota::apply(const char *url, const char *jobId)
   logger.printf("[OTA] 書き込み先: %s\n", partition->label);
   logger.printf("[OTA] DL URL: %.100s\n", url);
 
+  // .gz か .bin かを URL 末尾で判定
+  size_t urlLen = strlen(url);
+  bool isGz = urlLen >= 3 && strcmp(url + urlLen - 3, ".gz") == 0;
+  const char *tmpFile = isGz ? "firmware.gz" : "firmware.bin";
+
   oledShowOtaProgress("Downloading...", 0, 0);
   uint32_t t0 = millis();
-  int fileSize = https.download(url, "firmware.bin");
-  if (fileSize <= 0)
+  int dlSize = https.download(url, tmpFile);
+  if (dlSize <= 0)
   {
     logger.println("[OTA] ダウンロード失敗");
     oledPrint("OTA DL failed");
     return false;
   }
-  logger.printf("[OTA] Phase1(DL): %u ms  %d bytes\n", millis() - t0, fileSize);
+  logger.printf("[OTA] Phase1(DL): %u ms  %d bytes\n", millis() - t0, dlSize);
 
   esp_ota_handle_t handle;
   esp_err_t err = esp_ota_begin(partition, OTA_SIZE_UNKNOWN, &handle);
@@ -42,34 +187,21 @@ bool Ota::apply(const char *url, const char *jobId)
   }
 
   size_t written = 0;
-  int lastPct = -1;
   uint32_t t1 = millis();
-  bool readOk = lte.readFile("firmware.bin",
-                             [&](const uint8_t *data, size_t len) -> bool
-                             {
-                               esp_err_t e = esp_ota_write(handle, data, len);
-                               if (e != ESP_OK)
-                               {
-                                 logger.printf("[OTA] write 失敗: 0x%x\n", e);
-                                 return false;
-                               }
-                               written += len;
-                               int pct = (int)(written * 100 / fileSize);
-                               if (pct != lastPct)
-                               {
-                                 oledShowOtaProgress("Writing...", written, fileSize);
-                                 lastPct = pct;
-                               }
-                               return true;
-                             });
+  bool writeOk;
 
-  logger.printf("[OTA] Phase2(UART読み取り+書き込み): %u ms  %u bytes\n", millis() - t1, written);
+  if (isGz)
+    writeOk = writeGzToOta(tmpFile, handle, written);
+  else
+    writeOk = writeBinToOta(tmpFile, dlSize, handle, written);
 
-  if (!readOk)
+  logger.printf("[OTA] Phase2(書き込み): %u ms  %u bytes\n", millis() - t1, (unsigned)written);
+
+  if (!writeOk)
   {
     esp_ota_abort(handle);
-    logger.println("[OTA] ファイル読み取り失敗");
-    oledPrint("OTA read failed");
+    oledPrint("OTA write failed");
+    lte.deleteFile(tmpFile);
     return false;
   }
 
@@ -91,9 +223,9 @@ bool Ota::apply(const char *url, const char *jobId)
 
   // 書き込み完了確定後に JobID を保存する（接続失敗時は保存しないためJobが FAILED にならない）
   setPendingJobId(jobId);
-  lte.deleteFile("firmware.bin");
+  lte.deleteFile(tmpFile);
 
-  logger.printf("[OTA] 完了 (%u bytes) → 再起動\n", written);
+  logger.printf("[OTA] 完了 (%u bytes) → 再起動\n", (unsigned)written);
   delay(500);
   esp_restart();
   return true; // unreachable
@@ -166,7 +298,7 @@ bool Ota::handleJob(const JobInfo &job)
   }
 
   const char *version = doc["version"];
-  const char *url     = doc["url"];
+  const char *url = doc["url"];
 
   if (!url)
   {
@@ -175,13 +307,16 @@ bool Ota::handleJob(const JobInfo &job)
     return false;
   }
 
-  // 同一バージョンならスキップ
-  if (version && strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0)
+  // 同一バージョンならスキップ（force=true の場合は無視）
+  bool force = doc["force"] | false;
+  if (!force && version && strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0)
   {
     logger.printf("[OTA] 同一バージョン (%s)、スキップ\n", version);
     jobsReport(job.id, "SUCCEEDED");
     return false;
   }
+  if (force)
+    logger.println("[OTA] force=true: バージョンチェックをスキップ");
 
   logger.printf("[OTA] ジョブ: %s  バージョン: %s\n", job.id, version ? version : "不明");
   logger.printf("[OTA] URL (先頭80文字): %.80s\n", url);

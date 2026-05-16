@@ -131,109 +131,128 @@ void Lte::uploadCert(const char *filename, const char *pem)
                 filename, len, resp.indexOf("OK") >= 0 ? "OK" : "NG");
 }
 
-bool Lte::readFile(const char *filename, std::function<bool(const uint8_t *, size_t)> onChunk)
+int Lte::fileOpen(const char *filename)
 {
   sendCmd("AT+CFSINIT");
-
-  // ファイルサイズ確認
+  char cmd[128];
+  snprintf(cmd, sizeof(cmd), "AT+CFSGFIS=3,\"%s\"", filename);
+  String resp = sendCmdResp(cmd, 5000);
+  if (resp.indexOf("ERROR") >= 0)
   {
-    char cmd[128];
-    snprintf(cmd, sizeof(cmd), "AT+CFSGFIS=3,\"%s\"", filename);
-    String resp = sendCmdResp(cmd, 5000);
-    if (resp.indexOf("ERROR") >= 0)
+    logger.printf("[FILE] %s: not found\n", filename);
+    sendCmd("AT+CFSTERM");
+    return -1;
+  }
+  int q1 = resp.indexOf(':');
+  if (q1 < 0) { sendCmd("AT+CFSTERM"); return -1; }
+  int size = resp.substring(q1 + 1).toInt();
+  if (size <= 0) { sendCmd("AT+CFSTERM"); return -1; }
+  logger.printf("[FILE] %s: %d bytes\n", filename, size);
+  return size;
+}
+
+// AT+CFSRFILE=<dir>,<name>,<mode>,<size>,<pos>
+// mode=1: 指定位置から読み取り。バイナリ対応のため readBytes を使う
+int Lte::fileReadChunk(const char *filename, int offset, uint8_t *buf, int maxLen)
+{
+  char rcmd[128];
+  snprintf(rcmd, sizeof(rcmd), "AT+CFSRFILE=3,\"%s\",1,%d,%d", filename, maxLen, offset);
+  logger.printf("  [AT] %s\n", rcmd);
+  SerialAT.println(rcmd);
+
+  // +CFSRFILE: <actual>\r\n<data> を受信
+  unsigned long deadline = millis() + 10000;
+  String        header   = "";
+  int           idx = -1, nl = -1;
+  while (millis() < deadline)
+  {
+    while (SerialAT.available())
+      header += (char)SerialAT.read();
+    idx = header.indexOf("+CFSRFILE:");
+    if (idx >= 0)
     {
-      logger.printf("[FILE] %s: not found\n", filename);
-      sendCmd("AT+CFSTERM");
-      return false;
+      nl = header.indexOf('\n', idx);
+      if (nl >= 0) break;
     }
-    int q1 = resp.indexOf(':');
-    if (q1 < 0) { sendCmd("AT+CFSTERM"); return false; }
-    int fileSize = resp.substring(q1 + 1).toInt();
-    if (fileSize <= 0) { sendCmd("AT+CFSTERM"); return false; }
-    logger.printf("[FILE] %s: %d bytes\n", filename, fileSize);
+    delay(5);
+  }
+  if (idx < 0 || nl < 0)
+  {
+    logger.printf("[FILE] CFSRFILE timeout at %d\n", offset);
+    return -1;
+  }
 
-    // AT+CFSRFILE=<dir>,<name>,<mode>,<size>,<pos>
-    // mode=1: 指定位置から読み取り。バイナリ対応のため readBytes を使う
-    static const int CHUNK = 4096;
-    static uint8_t   chunk[CHUNK];
-    int offset = 0;
+  int actual = header.substring(idx + 10, nl).toInt();
+  if (actual <= 0)
+  {
+    logger.printf("[FILE] CFSRFILE size=0 at %d\n", offset);
+    return -1;
+  }
 
-    while (offset < fileSize)
+  // 先行データをコピー
+  int preloaded = 0;
+  int preStart  = nl + 1;
+  int preAvail  = min((int)header.length() - preStart, actual);
+  for (int i = 0; i < preAvail; i++)
+    buf[preloaded++] = (uint8_t)header[preStart + i];
+
+  // 残りを readBytes で読む（\0 に安全）
+  int received = preloaded;
+  if (received < actual)
+  {
+    SerialAT.setTimeout(10000);
+    received += SerialAT.readBytes((char *)buf + preloaded, actual - preloaded);
+  }
+
+  // 末尾の OK を読み捨て
+  {
+    unsigned long t     = millis();
+    String        trail = "";
+    while (millis() - t < 3000)
     {
-      int readLen = min(CHUNK, fileSize - offset);
-      char rcmd[128];
-      snprintf(rcmd, sizeof(rcmd), "AT+CFSRFILE=3,\"%s\",1,%d,%d", filename, readLen, offset);
-
-      logger.printf("  [AT] %s\n", rcmd);
-      SerialAT.println(rcmd);
-
-      // +CFSRFILE: <actual>\r\n<data> を受信
-      unsigned long deadline = millis() + 10000;
-      String        header   = "";
-      int           idx = -1, nl = -1;
-      while (millis() < deadline)
-      {
-        while (SerialAT.available())
-          header += (char)SerialAT.read();
-        idx = header.indexOf("+CFSRFILE:");
-        if (idx >= 0)
-        {
-          nl = header.indexOf('\n', idx);
-          if (nl >= 0) break;
-        }
-        delay(5);
-      }
-      if (idx < 0 || nl < 0)
-      {
-        logger.printf("[FILE] CFSRFILE timeout at %d\n", offset);
-        sendCmd("AT+CFSTERM");
-        return false;
-      }
-
-      int actual = header.substring(idx + 10, nl).toInt();
-      if (actual <= 0)
-      {
-        logger.printf("[FILE] CFSRFILE size=0 at %d\n", offset);
-        sendCmd("AT+CFSTERM");
-        return false;
-      }
-
-      // 先行データをコピー
-      int preloaded = 0;
-      int preStart  = nl + 1;
-      int preAvail  = min((int)header.length() - preStart, actual);
-      for (int i = 0; i < preAvail; i++)
-        chunk[preloaded++] = (uint8_t)header[preStart + i];
-
-      // 残りを readBytes で読む（\0 に安全）
-      int received = preloaded;
-      if (received < actual)
-      {
-        SerialAT.setTimeout(10000);
-        received += SerialAT.readBytes((char *)chunk + preloaded, actual - preloaded);
-      }
-
-      // 末尾の OK を読み捨て
-      {
-        unsigned long t      = millis();
-        String        trail  = "";
-        while (millis() - t < 3000)
-        {
-          while (SerialAT.available())
-            trail += (char)SerialAT.read();
-          if (trail.indexOf("OK") >= 0) break;
-          delay(5);
-        }
-      }
-
-      if (received <= 0) { sendCmd("AT+CFSTERM"); return false; }
-      if (!onChunk(chunk, received)) { sendCmd("AT+CFSTERM"); return false; }
-
-      offset += received;
-      logger.printf("[FILE] %d / %d bytes\n", offset, fileSize);
+      while (SerialAT.available())
+        trail += (char)SerialAT.read();
+      if (trail.indexOf("OK") >= 0) break;
+      delay(5);
     }
   }
+
+  return (received > 0) ? received : -1;
+}
+
+void Lte::fileClose()
+{
   sendCmd("AT+CFSTERM");
+}
+
+bool Lte::readFile(const char *filename, std::function<bool(const uint8_t *, size_t)> onChunk)
+{
+  int fileSize = fileOpen(filename);
+  if (fileSize < 0) return false;
+
+  static const int CHUNK = 4096;
+  static uint8_t   chunk[CHUNK];
+  int offset = 0;
+
+  while (offset < fileSize)
+  {
+    int readLen = min(CHUNK, fileSize - offset);
+    int got = fileReadChunk(filename, offset, chunk, readLen);
+    if (got < 0)
+    {
+      fileClose();
+      return false;
+    }
+    if (!onChunk(chunk, got))
+    {
+      fileClose();
+      return false;
+    }
+    offset += got;
+    logger.printf("[FILE] %d / %d bytes\n", offset, fileSize);
+  }
+
+  fileClose();
   return true;
 }
 

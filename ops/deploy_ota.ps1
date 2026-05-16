@@ -3,14 +3,20 @@
 # Usage:
 #   .\deploy_ota.ps1 -Version 1.2.0
 #   .\deploy_ota.ps1 -Version 1.2.0 -ThingName esp32-gw-aabbccddeeff
+#   .\deploy_ota.ps1 -Version 1.2.0 -Compress          # gzip firmware before upload
+#   .\deploy_ota.ps1 -Version 1.2.0 -Force             # skip version check on device
 #
 # Omitting ThingName targets all Things matching esp32-gw-*
+# -Compress uploads firmware.bin.gz and sets the job URL to the .gz path
+# -Force adds force=true to the job document, bypassing the version check on device
 # Run from the ops\ directory
 
 param(
   [Parameter(Mandatory)][string]$Version,
   [string]$ThingName = "",
-  [string]$Profile = ''
+  [string]$Profile = '',
+  [switch]$Compress,
+  [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,6 +38,7 @@ $ScriptDir   = $PSScriptRoot
 $ProjectDir  = Resolve-Path "$ScriptDir\..\esp32_iot_gateway"
 $BuildDir    = "$ProjectDir\.pio\build\esp32-s3-devkitc-1-release"
 $FirmwareBin = "$BuildDir\firmware.bin"
+$FirmwareGz  = "$BuildDir\firmware.bin.gz"
 $Pio         = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
 
 # ─── Read settings from Terraform outputs ─────────────────────────────────────
@@ -42,7 +49,13 @@ $BaseUrl = terraform output -raw firmware_base_url
 $Region  = "ap-northeast-1"
 Pop-Location
 
-$FirmwareKey = "firmware/v$Version.bin"
+if ($Compress) {
+  $FirmwareKey   = "firmware/v$Version.bin.gz"
+  $FirmwareLocal = $FirmwareGz
+} else {
+  $FirmwareKey   = "firmware/v$Version.bin"
+  $FirmwareLocal = $FirmwareBin
+}
 $FirmwareUrl = "$BaseUrl/$FirmwareKey"
 $JobDocKey   = "jobs/v$Version.json"
 $Timestamp   = Get-Date -Format "yyyyMMddHHmmss"
@@ -59,27 +72,43 @@ Write-Host ""
 
 Write-Host ">>> Building firmware..."
 Push-Location $ProjectDir
-& $Pio run
+& $Pio run -e esp32-s3-devkitc-1-release
 Pop-Location
 Write-Host "Build complete: $FirmwareBin"
 
-# ─── 2. Upload firmware.bin to S3 ─────────────────────────────────────────────
+# ─── 2. (Optional) Compress firmware.bin → firmware.bin.gz ───────────────────
 
-Write-Host ">>> Uploading firmware.bin to S3..."
-aws s3 cp $FirmwareBin "s3://$Bucket/$FirmwareKey"
+if ($Compress) {
+  Write-Host ">>> Compressing firmware.bin..."
+  $srcStream = [System.IO.File]::OpenRead($FirmwareBin)
+  $dstStream = [System.IO.File]::Create($FirmwareGz)
+  $gzStream  = New-Object System.IO.Compression.GZipStream($dstStream, [System.IO.Compression.CompressionMode]::Compress)
+  $srcStream.CopyTo($gzStream)
+  $gzStream.Dispose(); $dstStream.Dispose(); $srcStream.Dispose()
+  $sizeBin = (Get-Item $FirmwareBin).Length
+  $sizeGz  = (Get-Item $FirmwareGz).Length
+  Write-Host "Compressed: $sizeBin bytes -> $sizeGz bytes ($([int]($sizeGz * 100 / $sizeBin))%)"
+}
+
+# ─── 3. Upload firmware to S3 ────────────────────────────────────────────────
+
+Write-Host ">>> Uploading firmware to S3..."
+aws s3 cp $FirmwareLocal "s3://$Bucket/$FirmwareKey"
 Write-Host "Upload complete: $FirmwareUrl"
 
-# ─── 3. Generate and upload job document ──────────────────────────────────────
+# ─── 4. Generate and upload job document ──────────────────────────────────────
 
 Write-Host ">>> Generating job document..."
-$JobDoc = @{ operation = "ota"; version = $Version; url = $FirmwareUrl } | ConvertTo-Json
+$jobDocObj = @{ operation = "ota"; version = $Version; url = $FirmwareUrl }
+if ($Force) { $jobDocObj["force"] = $true }
+$JobDoc = $jobDocObj | ConvertTo-Json
 $TmpJson = [System.IO.Path]::GetTempFileName() + ".json"
 [System.IO.File]::WriteAllText($TmpJson, $JobDoc, (New-Object System.Text.UTF8Encoding($false)))
 aws s3 cp $TmpJson "s3://$Bucket/$JobDocKey"
 Remove-Item $TmpJson -Force
 Write-Host "Job document uploaded"
 
-# ─── 4. Resolve target Things ─────────────────────────────────────────────────
+# ─── 5. Resolve target Things ─────────────────────────────────────────────────
 
 $AccountId = (aws sts get-caller-identity | ConvertFrom-Json).Account
 
@@ -96,7 +125,7 @@ if ($ThingName) {
   $Targets = ($Things | ForEach-Object { "arn:aws:iot:${Region}:${AccountId}:thing/$_" }) -join ','
 }
 
-# ─── 5. Cancel and delete existing jobs for this version ─────────────────────
+# ─── 6. Cancel and delete existing jobs for this version ─────────────────────
 
 Write-Host ">>> Cleaning up existing jobs matching '$BaseJobId*'..."
 # list-jobs の有効ステータス: IN_PROGRESS / COMPLETED / SCHEDULED / DELETION_IN_PROGRESS / CANCELED
@@ -117,7 +146,7 @@ foreach ($status in $statusesToClean) {
 }
 Write-Host "Cleanup complete."
 
-# ─── 6. Create IoT Job ────────────────────────────────────────────────────────
+# ─── 7. Create IoT Job ────────────────────────────────────────────────────────
 
 Write-Host ">>> Creating IoT Job..."
 $DocUrl = "https://s3.$Region.amazonaws.com/$Bucket/$JobDocKey"
