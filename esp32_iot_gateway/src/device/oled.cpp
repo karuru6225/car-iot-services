@@ -201,13 +201,21 @@ void oledUpdateCountdown(int remainSec)
 
 void oledShowQRCode(const char *text)
 {
-  // QR version 2 (25×25 modules): byte mode ECC_LOW で最大 32 バイト対応
-  // "esp32-gw-aabbccddeeff" = 19 バイト → version 2 で収まる
-  QRCode qr;
-  uint8_t qrBuf[120]; // version 2 の必要サイズ: 79 バイト
-  qrcode_initText(&qr, qrBuf, 2, ECC_LOW, text);
+  // 大文字変換してアルファニューメリックモードを使う
+  // version 1 (21×21) ECC_LOW: 最大 25 文字対応
+  // "ESP32-GW-AABBCCDDEEFF" = 21 文字 → version 1 に収まる
+  char upper[32];
+  size_t len = strlen(text);
+  if (len >= sizeof(upper)) len = sizeof(upper) - 1;
+  for (size_t i = 0; i < len; i++) upper[i] = toupper((unsigned char)text[i]);
+  upper[len] = '\0';
 
-  const int SCALE = 2;
+  QRCode qr;
+  uint8_t qrBuf[80]; // version 1 の必要サイズ: 56 バイト
+  qrcode_initText(&qr, qrBuf, 1, ECC_LOW, upper);
+
+  // scale 3: 21×3 = 63px → 128×64 にぴったり収まる
+  const int SCALE = 3;
   int offsetX = (128 - qr.size * SCALE) / 2;
   int offsetY = (64  - qr.size * SCALE) / 2;
 
