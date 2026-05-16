@@ -1,6 +1,12 @@
 {
   "permissions": {
-    "allow": ["WebFetch(domain:docs.m5stack.com)"],
-    "deny": ["Read(m5stamp_iot_gateway/certs.h)"]
+    "allow": [
+      "WebFetch(domain:docs.m5stack.com)",
+      "Skill(commit)",
+      "Skill(commit:*)"
+    ],
+    "deny": [
+      "Read(m5stamp_iot_gateway/certs.h)"
+    ]
   }
 }

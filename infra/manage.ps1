@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 param(
   [Parameter(Mandatory=$true)]
-  [ValidateSet('apply', 'destroy', 'plan')]
+  [ValidateSet('apply', 'destroy', 'output', 'plan')]
   [string]$Action,
 
   [string]$Profile = '',
@@ -15,6 +15,7 @@ param(
 #   .\manage.ps1 apply  -AutoApprove
 #   .\manage.ps1 plan   -Profile myprofile
 #   .\manage.ps1 destroy
+#   .\manage.ps1 output
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -40,7 +41,7 @@ if (-not (Test-Path $BackendFile)) {
   exit 1
 }
 if (-not (Test-Path $TfvarsFile)) {
-  Write-Error "terraform.tfvars not found. Create it with: api_key = `"your-key`""
+  Write-Error "terraform.tfvars not found."
   exit 1
 }
 
@@ -70,6 +71,10 @@ elseif ($Action -eq 'apply') {
   terraform apply tfplan
   Remove-Item -Force tfplan -ErrorAction SilentlyContinue
   Write-Host '==> apply done'
+}
+elseif ($Action -eq 'output') {
+  Write-Host '==> terraform output'
+  terraform output
 }
 elseif ($Action -eq 'destroy') {
   if (-not $AutoApprove) {
