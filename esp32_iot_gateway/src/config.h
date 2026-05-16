@@ -5,7 +5,7 @@
 #ifndef GIT_HASH
 #define GIT_HASH "00000000"
 #endif
-#define FIRMWARE_VERSION "1.11.0+" GIT_HASH
+#define FIRMWARE_VERSION "1.12.0+" GIT_HASH
 
 // 動作モード
 enum class OperationMode
