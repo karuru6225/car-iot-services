@@ -76,7 +76,10 @@
 
 <div class="header-row">
   <h1>IoT 管理コンソール</h1>
-  <button class="secondary" onclick="logout()">ログアウト</button>
+  <div style="display:flex; gap:8px; align-items:center">
+    <button class="secondary" id="auto-refresh-btn" onclick="toggleAutoRefresh()">自動更新 ON</button>
+    <button class="secondary" onclick="logout()">ログアウト</button>
+  </div>
 </div>
 
 <div class="status-bar" id="status-bar">読み込み中...</div>
@@ -154,7 +157,8 @@ async function loadDevices() {
 }
 
 function setStatus(msg) {
-  document.getElementById('status-bar').textContent = msg;
+  const t = new Date().toLocaleTimeString('ja-JP');
+  document.getElementById('status-bar').textContent = `${msg}  (最終更新: ${t})`;
 }
 
 function renderDevices(devices) {
@@ -360,6 +364,22 @@ async function saveGroups(deviceId) {
   }
 }
 
+// ─── 自動更新 ────────────────────────────────────────────────────────────────
+
+const AUTO_REFRESH_INTERVAL = 60_000;
+let autoRefreshTimer = null;
+
+function toggleAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+    document.getElementById('auto-refresh-btn').textContent = '自動更新 OFF';
+  } else {
+    autoRefreshTimer = setInterval(loadDevices, AUTO_REFRESH_INTERVAL);
+    document.getElementById('auto-refresh-btn').textContent = '自動更新 ON';
+  }
+}
+
 // ─── 初期化 ───────────────────────────────────────────────────────────────────
 
 window.onload = () => {
@@ -383,6 +403,8 @@ window.onload = () => {
   }
 
   loadDevices();
+  // 自動更新をデフォルト ON で開始
+  autoRefreshTimer = setInterval(loadDevices, AUTO_REFRESH_INTERVAL);
 };
 </script>
 </body>
