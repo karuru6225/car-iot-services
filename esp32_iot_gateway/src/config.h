@@ -78,10 +78,6 @@ void setChgStartV(float v);
 float getChgStopV();
 void setChgStopV(float v);
 
-// 自動充電の継続時間（秒）の取得・保存（battery 用、デフォルト: 1800 sec = 30 分）
-uint32_t getChgDurationSec();
-void setChgDurationSec(uint32_t sec);
-
 // 充電制御ピン
 #define CHG_ON_PIN 21
 

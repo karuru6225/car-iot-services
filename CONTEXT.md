@@ -66,7 +66,7 @@ Admin コンソール（admin.html、admin グループユーザーのみ）
 トピック: `$aws/things/{device_id}/shadow/update`
 
 ```json
-{"state":{"reported":{"ah_offset":200,"relay_mode":"sleep_indicator","chg_start_v":11.70,"chg_stop_v":12.50,"chg_duration_sec":1800,"fw_version":"1.9.1+fd8bb3e0"}}}
+{"state":{"reported":{"ah_offset":200,"relay_mode":"sleep_indicator","chg_start_v":11.70,"chg_stop_v":12.50,"fw_version":"1.11.0+xxxxxxxx"}}}
 ```
 
 ### デバイスシャドウ（リモート設定変更）
@@ -76,7 +76,7 @@ Admin コンソール（admin.html、admin グループユーザーのみ）
 ```json
 {"state":{"desired":{"ah_offset":200}}}
 {"state":{"desired":{"relay_mode":"off"}}}
-{"state":{"desired":{"chg_start_v":11.5,"chg_stop_v":12.8,"chg_duration_sec":3600}}}
+{"state":{"desired":{"chg_start_v":11.5,"chg_stop_v":12.8}}}
 ```
 
 対応フィールド:
@@ -85,7 +85,6 @@ Admin コンソール（admin.html、admin グループユーザーのみ）
 - `relay_mode`（`"sleep_indicator"` or `"off"`）— リレー動作モード
 - `chg_start_v`（float）— 自動充電開始電圧（V）、デフォルト 11.7
 - `chg_stop_v`（float）— 自動充電停止電圧（V）、デフォルト 12.5
-- `chg_duration_sec`（uint）— 自動充電継続時間（秒）、デフォルト 1800
 
 ### 旧形式（m5atom_iot_gateway、段階的廃止予定）
 

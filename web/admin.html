@@ -201,7 +201,6 @@ function deviceCard(d) {
   <div class="shadow-grid">
     <div class="kv"><div class="k">充電開始</div><div class="v">${s.chg_start_v != null ? s.chg_start_v.toFixed(2) + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">充電停止</div><div class="v">${s.chg_stop_v  != null ? s.chg_stop_v.toFixed(2)  + ' V' : '-'}</div></div>
-    <div class="kv"><div class="k">充電継続</div><div class="v">${s.chg_duration_sec != null ? s.chg_duration_sec + ' s' : '-'}</div></div>
     <div class="kv"><div class="k">Ah オフセット</div><div class="v">${s.ah_offset != null ? s.ah_offset : '-'}</div></div>
     <div class="kv"><div class="k">リレーモード</div><div class="v">${s.relay_mode || '-'}</div></div>
     <div class="kv"><div class="k">デバッグログ</div><div class="v">${s.debug_log != null ? (s.debug_log ? 'on' : 'off') : '-'}</div></div>
@@ -219,10 +218,6 @@ function deviceCard(d) {
         <div class="form-group">
           <label>chg_stop_v (V)</label>
           <input type="number" step="0.1" id="sv-stop-${id}" value="${s.chg_stop_v != null ? s.chg_stop_v : 12.5}">
-        </div>
-        <div class="form-group">
-          <label>chg_duration_sec</label>
-          <input type="number" step="300" id="sv-dur-${id}" value="${s.chg_duration_sec != null ? s.chg_duration_sec : 1800}">
         </div>
         <div class="form-group">
           <label>ah_offset</label>
@@ -285,7 +280,6 @@ async function saveShadow(deviceId) {
   const body = {
     chg_start_v:      parseFloat(document.getElementById(`sv-start-${deviceId}`).value),
     chg_stop_v:       parseFloat(document.getElementById(`sv-stop-${deviceId}`).value),
-    chg_duration_sec: parseInt(document.getElementById(`sv-dur-${deviceId}`).value, 10),
     ah_offset:        parseInt(document.getElementById(`sv-ah-${deviceId}`).value, 10),
     relay_mode:       document.getElementById(`sv-relay-${deviceId}`).value,
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',

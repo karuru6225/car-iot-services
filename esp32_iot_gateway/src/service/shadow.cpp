@@ -98,13 +98,6 @@ bool shadowPollDelta(uint32_t timeoutMs)
     changed = true;
   }
 
-  if (state["chg_duration_sec"].is<uint32_t>())
-  {
-    setChgDurationSec(state["chg_duration_sec"].as<uint32_t>());
-    logger.printf("[SHADOW] chg_duration_sec → %u\n", getChgDurationSec());
-    changed = true;
-  }
-
   if (changed)
     shadowPublishConfig(true); // reported を更新して desired をクリア
 

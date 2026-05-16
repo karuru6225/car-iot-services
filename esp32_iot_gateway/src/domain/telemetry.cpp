@@ -34,13 +34,11 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired)
                     "\"relay_mode\":\"%s\","
                     "\"chg_start_v\":%.2f,"
                     "\"chg_stop_v\":%.2f,"
-                    "\"chg_duration_sec\":%u,"
                     "\"debug_log\":%s,"
                     "\"fw_version\":\"" FIRMWARE_VERSION "\""
                     "},\"desired\":null}}",
                     getAhOffset(), relayStr,
                     getChgStartV(), getChgStopV(),
-                    getChgDurationSec(),
                     getDebugLogEnabled() ? "true" : "false");
   return snprintf(buf, size,
                   "{\"state\":{\"reported\":{"
@@ -48,13 +46,11 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired)
                   "\"relay_mode\":\"%s\","
                   "\"chg_start_v\":%.2f,"
                   "\"chg_stop_v\":%.2f,"
-                  "\"chg_duration_sec\":%u,"
                   "\"debug_log\":%s,"
                   "\"fw_version\":\"" FIRMWARE_VERSION "\""
                   "}}}",
                   getAhOffset(), relayStr,
                   getChgStartV(), getChgStopV(),
-                  getChgDurationSec(),
                   getDebugLogEnabled() ? "true" : "false");
 }
 

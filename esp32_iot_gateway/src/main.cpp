@@ -167,7 +167,6 @@ void loop()
 {
 #ifndef DEBUG_SKIP_NETWORK
   g_lastResult = measure();
-  float vMain = g_lastResult.reading.main.voltage;
   publish(g_lastResult);
   queue.flush();
   shadowPollDelta();
@@ -191,6 +190,24 @@ void loop()
     {
       time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
       sleepSec = (uint32_t)(next - now);
+    }
+    // 電圧に基づく自動充電制御（スリープ直前に判定）
+    {
+      float v      = g_lastResult.reading.main.voltage;
+      float startV = getChgStartV();
+      float stopV  = getChgStopV();
+      if (v > 0 && !isCharging() && v < startV)
+      {
+        setCharging(true);
+        digitalWrite(CHG_ON_PIN, HIGH);
+        logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV\n", v, startV);
+      }
+      else if (v > 0 && isCharging() && v >= stopV)
+      {
+        setCharging(false);
+        digitalWrite(CHG_ON_PIN, LOW);
+        logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
+      }
     }
     if (isCharging())
       gpio_hold_en((gpio_num_t)CHG_ON_PIN);
