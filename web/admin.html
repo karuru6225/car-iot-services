@@ -75,7 +75,10 @@
 <body>
 
 <div class="header-row">
-  <h1>IoT 管理コンソール</h1>
+  <div>
+    <h1>IoT 管理コンソール</h1>
+    <div style="font-size:0.75em; color:#555; margin-top:2px">infra: __TMPL_GIT_HASH__</div>
+  </div>
   <div style="display:flex; gap:8px; align-items:center">
     <button class="secondary" id="auto-refresh-btn" onclick="toggleAutoRefresh()">自動更新 ON</button>
     <button class="secondary" onclick="logout()">ログアウト</button>

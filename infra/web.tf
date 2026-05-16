@@ -4,6 +4,12 @@ data "aws_route53_zone" "main" {
   zone_id = var.hosted_zone_id
 }
 
+# ─── terraform apply 時点の git hash ─────────────────────────────────────────
+
+data "external" "git_hash" {
+  program = ["git", "log", "-1", "--pretty=format:{\"hash\":\"%h\"}"]
+}
+
 # ─── ローカル変数 ──────────────────────────────────────────────────────────────
 
 locals {
@@ -34,18 +40,22 @@ locals {
     replace(
       replace(
         replace(
-          file("${path.module}/../web/admin.html"),
-          "__TMPL_API_ENDPOINT__",
-          aws_apigatewayv2_stage.main.invoke_url
+          replace(
+            file("${path.module}/../web/admin.html"),
+            "__TMPL_API_ENDPOINT__",
+            aws_apigatewayv2_stage.main.invoke_url
+          ),
+          "__TMPL_COGNITO_DOMAIN__",
+          local.cognito_domain_base
         ),
-        "__TMPL_COGNITO_DOMAIN__",
-        local.cognito_domain_base
+        "__TMPL_COGNITO_CLIENT_ID__",
+        aws_cognito_user_pool_client.web.id
       ),
-      "__TMPL_COGNITO_CLIENT_ID__",
-      aws_cognito_user_pool_client.web.id
+      "__TMPL_WEB_ADMIN_URL__",
+      "https://${local.web_domain}/admin.html"
     ),
-    "__TMPL_WEB_ADMIN_URL__",
-    "https://${local.web_domain}/admin.html"
+    "__TMPL_GIT_HASH__",
+    data.external.git_hash.result.hash
   )
 }
 
