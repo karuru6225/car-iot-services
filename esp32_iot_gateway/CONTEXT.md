@@ -116,7 +116,6 @@ esp32_iot_gateway/
         ├── menu_util.h/.cpp           メニュー用パスユーティリティ（pathPush / pathPop / pathTitle 等）
         ├── pubqueue.h/.cpp            オフラインバッファ（RTC メモリ + SPIFFS）・MQTT publish キュー管理
         ├── log_storage.h/.cpp         デバッグログ SPIFFS 保存（起動ごと 1 ファイル、最大 12 ファイル循環）
-        ├── gz_test.h/.cpp             gzip 圧縮・解凍テスト（開発時のみ使用、メニュー System/GZ Test）
         └── logger.h/.cpp              シリアルデバッグ出力
 └── lib/
     └── uzlib/                         gzip 圧縮・解凍ライブラリ（ESP32-targz 同梱版）
@@ -426,22 +425,24 @@ zlib_finish_block(&comp);             // end-of-block + バイト境界フラッ
 
 ---
 
-### TODO: OTA ファームウェアの gzip 圧縮（任意・高速化）
+### ~~OTA ファームウェアの gzip 圧縮~~ **v1.13.0 で実装済み**
 
-**背景**: 実測で Phase1（セルラー DL）71秒・Phase2（UART 読み取り）127秒。Phase2 がボトルネック。
+`deploy_ota.ps1 -Compress` で `firmware.bin.gz` を S3 にアップロード。
+`ota.apply()` が URL 末尾 `.gz` を検出し、uzlib ストリーミング解凍しながら書き込む。
+`ota.handleJob()` に `force=true` フラグを追加（バージョン一致でも強制更新）。
 
-**方針**:
+**実装ポイント（uzlib ストリーミング）**: `source = NULL` にして `readSourceByte` コールバックを使う。
+コールバック内で `lte.fileReadChunk()` を 4096 バイト単位で同期取得してバッファを補充する。
+`destSize` に出力チャンクサイズを設定し `uzlib_uncompress_chksum()` を繰り返す。
 
-- `deploy_ota.ps1` でビルド後に `firmware.bin.gz` として S3 にアップロード
-- `ota.apply()` 内で `lte.readFile()` コールバックに uzlib のストリーミング解凍を挟む
-- `uzlib` は `lib/uzlib/` に配置済み（esp32-targz 同梱版）
-- 解凍 API: `uzlib_uncompress_init()` → `uzlib_gzip_parse_header()` → `uzlib_uncompress_chksum()`
-- 32KB のスライディングウィンドウバッファが必要（ESP32 の RAM には余裕あり）
+**事前検証テスト（再作成手順）**:
+0x00-0xFF の 256 バイトパターンを gzip 圧縮・S3 PUT・GET・解凍・検証するテスト。
 
-**期待効果**: gzip 50% 圧縮で Phase1 ~35秒・Phase2 ~60秒 → 合計 ~97秒（現状 198秒）
-
-**実機検証済み（service/gz_test.h/.cpp）**: HTTPS PUT/GET + uzlib 圧縮・解凍が正常動作することを確認。
-gzip フォーマットの組み立て・HTTPS の PUT/GET 手順は `CONTEXT.md` の uzlib セクションと `SIM7080G.md` を参照。
+1. 一時 S3 バケットを作成（公開 PUT/GET ポリシー）し `test_data.gz` をアップロード
+2. 以下の Python で gzip ファイルを生成: `data = bytes(range(256)); gzip.open(out,'wb').write(data)`
+3. デバイス側: `TINF_DATA` に `source`/`dest`/`dict` を設定してヘッダパース → 解凍ループ → 検証
+4. gzip ヘッダ: `1F 8B 08 00 00 00 00 00 00 FF` + deflate + CRC32(LE) + size(LE)
+5. 注意: 0x00-0xFF は非圧縮に近く deflate 出力が入力より大きくなる（正常）
 
 ### ~~フェーズ 2: AWS IoT からのコマンド受信~~ **AWS IoT Jobs で実装済み**
 

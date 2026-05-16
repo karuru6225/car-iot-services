@@ -1,6 +1,5 @@
 #include "menu.h"
 #include "menu_util.h"
-#include "gz_test.h"
 #include <esp_system.h>
 #include "../device/button.h"
 #include "../device/oled.h"
@@ -29,7 +28,6 @@ enum class MenuState
   AH_OFFSET,
   CHG_TIMEOUT,
   CHARGING,
-  GZ_TEST,
   RESTART,
   DONE_CONTINUOUS,
 };
@@ -89,7 +87,7 @@ static const MenuItem ITEMS[] = {
     {"Device QR",    "/System",       MenuState::DEVICE_QR,       {}},
     {"Relay Mode",   "/System",       MenuState::RELAY_MODE,      {}},
     {"NVS Clear",    "/System",       MenuState::CONFIRM,         {"NVS Clear?", "Keep MQTT host", doNvsClear}},
-    {"GZ Test",      "/System",       MenuState::GZ_TEST,         {}},
+
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
 
@@ -484,11 +482,6 @@ static MenuState tickChgTimeout(ButtonEvent ev)
   return MenuState::CHG_TIMEOUT;
 }
 
-static MenuState tickGzTest(ButtonEvent)
-{
-  runGzTest();
-  return MenuState::MENU_NAV;
-}
 
 static MenuState tickCharging(ButtonEvent ev)
 {
@@ -577,7 +570,7 @@ OperationMode enterMenuMode()
     case MenuState::AH_OFFSET:          next = tickAhOffset(ev);         break;
     case MenuState::CHG_TIMEOUT:        next = tickChgTimeout(ev);       break;
     case MenuState::CHARGING:           next = tickCharging(ev);         break;
-    case MenuState::GZ_TEST:            next = tickGzTest(ev);           break;
+
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;
     }
