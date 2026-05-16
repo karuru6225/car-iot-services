@@ -47,22 +47,29 @@ jobs:
         run: pio run -e ${{ env.PIO_ENV }}
         working-directory: esp32_iot_gateway
 
+      - name: firmware.bin.gz を生成
+        run: |
+          gzip -k -9 esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin
+          BIN=$(stat -c%s esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin)
+          GZ=$(stat  -c%s esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz)
+          echo "Compressed: ${BIN} bytes -> ${GZ} bytes ($(( GZ * 100 / BIN ))%)"
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: firmware.bin を S3 にアップロード
+      - name: firmware.bin.gz を S3 にアップロード
         run: |
           VERSION=${{ steps.ver.outputs.version }}
           aws s3 cp \
-            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin \
-            "s3://${{ secrets.FIRMWARE_BUCKET }}/firmware/v${VERSION}.bin"
+            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz \
+            "s3://${{ secrets.FIRMWARE_BUCKET }}/firmware/v${VERSION}.bin.gz"
 
       - name: IoT Job ドキュメントを S3 にアップロード
         run: |
           VERSION=${{ steps.ver.outputs.version }}
-          FIRMWARE_URL="https://${{ secrets.FIRMWARE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/firmware/v${VERSION}.bin"
+          FIRMWARE_URL="https://${{ secrets.FIRMWARE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/firmware/v${VERSION}.bin.gz"
           printf '{"operation":"ota","version":"%s","url":"%s"}' "$VERSION" "$FIRMWARE_URL" > job.json
           aws s3 cp job.json "s3://${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
 
@@ -86,5 +93,7 @@ jobs:
       - name: GitHub Release を作成
         uses: softprops/action-gh-release@v2
         with:
-          files: esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin
+          files: |
+            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin
+            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz
           generate_release_notes: true
