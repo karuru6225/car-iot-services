@@ -23,6 +23,7 @@ enum class MenuState
   BLE_REMOVE_CONFIRM,
   SENSOR,
   SYS_INFO,
+  DEVICE_QR,
   RELAY_MODE,
   CONFIRM,     // 汎用確認ダイアログ
   AH_OFFSET,
@@ -85,6 +86,7 @@ static const MenuItem ITEMS[] = {
     {"Start Charge", "/Battery",      MenuState::CHARGING,        {}},
     // path="/System"
     {"Info",         "/System",       MenuState::SYS_INFO,        {}},
+    {"Device QR",    "/System",       MenuState::DEVICE_QR,       {}},
     {"Relay Mode",   "/System",       MenuState::RELAY_MODE,      {}},
     {"NVS Clear",    "/System",       MenuState::CONFIRM,         {"NVS Clear?", "Keep MQTT host", doNvsClear}},
     {"GZ Test",      "/System",       MenuState::GZ_TEST,         {}},
@@ -341,6 +343,20 @@ static MenuState tickSysInfo(ButtonEvent ev)
   return MenuState::SYS_INFO;
 }
 
+static MenuState tickDeviceQR(ButtonEvent ev)
+{
+  static bool needsRefresh = true;
+  if (needsRefresh) {
+    oledShowQRCode(getDeviceId());
+    needsRefresh = false;
+  }
+  if (ev == ButtonEvent::BTN1_LONG) {
+    needsRefresh = true;
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::DEVICE_QR;
+}
+
 static MenuState tickRelayMode(ButtonEvent ev)
 {
   static RelayMode edit = RelayMode::SLEEP_INDICATOR;
@@ -555,6 +571,7 @@ OperationMode enterMenuMode()
     case MenuState::BLE_REMOVE_CONFIRM: next = tickBleRemoveConfirm(ev); break;
     case MenuState::SENSOR:             next = tickSensor(ev);           break;
     case MenuState::SYS_INFO:           next = tickSysInfo(ev);          break;
+    case MenuState::DEVICE_QR:          next = tickDeviceQR(ev);         break;
     case MenuState::RELAY_MODE:         next = tickRelayMode(ev);        break;
     case MenuState::CONFIRM:            next = tickConfirm(ev);          break;
     case MenuState::AH_OFFSET:          next = tickAhOffset(ev);         break;

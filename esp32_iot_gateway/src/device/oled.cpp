@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <qrcode.h>
 
 #define SDA_PIN 17
 #define SCL_PIN 18
@@ -195,5 +196,29 @@ void oledUpdateCountdown(int remainSec)
   display.fillRect(0, 56, 128, 8, SSD1306_BLACK);
   display.setCursor(0, 56);
   display.print("BTN1: sleep");
+  display.display();
+}
+
+void oledShowQRCode(const char *text)
+{
+  // QR version 2 (25×25 modules): byte mode ECC_LOW で最大 32 バイト対応
+  // "esp32-gw-aabbccddeeff" = 19 バイト → version 2 で収まる
+  QRCode qr;
+  uint8_t qrBuf[120]; // version 2 の必要サイズ: 79 バイト
+  qrcode_initText(&qr, qrBuf, 2, ECC_LOW, text);
+
+  const int SCALE = 2;
+  int offsetX = (128 - qr.size * SCALE) / 2;
+  int offsetY = (64  - qr.size * SCALE) / 2;
+
+  display.clearDisplay();
+  for (uint8_t y = 0; y < qr.size; y++) {
+    for (uint8_t x = 0; x < qr.size; x++) {
+      if (qrcode_getModule(&qr, x, y)) {
+        display.fillRect(offsetX + x * SCALE, offsetY + y * SCALE,
+                         SCALE, SCALE, SSD1306_WHITE);
+      }
+    }
+  }
   display.display();
 }

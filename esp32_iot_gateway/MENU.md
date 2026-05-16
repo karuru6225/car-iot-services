@@ -60,7 +60,10 @@ setup():
   ├── Sensor View     → [センサーリアルタイム表示]
   ├── System          → ["/System"]
   │   ├── Info        → [FW バージョン・デバイス ID]
-  │   └── NVS Clear   → [確認] → nvs_flash_erase() + esp_restart()
+  │   ├── Device QR   → [デバイス ID の QR コード表示]
+  │   ├── Relay Mode  → [リレー動作モード切替]
+  │   ├── NVS Clear   → [確認] → nvs_flash_erase() + esp_restart()
+  │   └── GZ Test     → gz 圧縮テスト実行
   ├── Continuous      → 継続計測モードに移行
   └── Restart         → esp_restart()
 ```
@@ -179,8 +182,11 @@ MENU_NAV (汎用ナビ)
  ├─(Sensor View)──────→ SENSOR ──(BTN1 長押し)──→ MENU_NAV
  ├─(System)───────────→ MENU_NAV("/System")
  │   ├─(Info)─────────→ SYS_INFO ──(BTN1 長押し)──→ MENU_NAV
- │   └─(NVS Clear)────→ NVS_CLEAR_CONFIRM ──(Yes)──→ esp_restart()
- │                                          ──(No/長押し)──→ MENU_NAV
+ │   ├─(Device QR)────→ DEVICE_QR ──(BTN1 長押し)──→ MENU_NAV
+ │   ├─(Relay Mode)───→ RELAY_MODE ──(BTN1 短押し/長押し)──→ MENU_NAV
+ │   ├─(NVS Clear)────→ CONFIRM ──(Yes)──→ esp_restart()
+ │   │                            ──(No/長押し)──→ MENU_NAV
+ │   └─(GZ Test)──────→ GZ_TEST ──→ MENU_NAV
  ├─(Continuous)───────→ DONE_CONTINUOUS（継続モード移行）
  └─(Restart)──────────→ esp_restart()
 ```
@@ -212,7 +218,7 @@ if (!bleScanner.registrationMode && !bleTargets.isTarget(addr.c_str())) return;
 |----------|------|------|
 | `service/menu.h/.cpp` | 変更 | path 方式の階層ナビ、NVS Clear 追加 |
 | `device/button.h/.cpp` | 変更なし | デバウンス・長押し検出（`ButtonEvent`） |
-| `device/oled.h/.cpp` | 変更なし | `oledShowMenu` / `oledShowMessage` / `oledShowConfirm` / `oledShowSensorData` |
+| `device/oled.h/.cpp` | 変更 | `oledShowQRCode` 追加（`ricmoo/qrcode` 使用） |
 | `device/ble_scan.h/.cpp` | 変更なし | `registrationMode` フラグ |
 | `device/speaker.h/.cpp` | 変更なし | `bootStart` メロディ |
 | `main.cpp` | 変更なし | `button.begin()` / BTN0 起動判定 |

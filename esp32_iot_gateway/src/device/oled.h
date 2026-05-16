@@ -16,3 +16,4 @@ void oledShowConfirm(const char *message, const char *item, int yesNoCursor);
 void oledShowSensorData(const SensorReading &reading);
 void oledUpdateCountdown(int remainSec); // 計測値画面の下部だけ更新（継続モード用）
 void oledShowCharging(float vMain, float vSub, int remainSec);
+void oledShowQRCode(const char *text);
