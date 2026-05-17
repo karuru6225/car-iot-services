@@ -202,6 +202,7 @@ function deviceCard(d) {
   </div>
 
   <div class="shadow-grid">
+    <div class="kv"><div class="k">充電中</div><div class="v">${s.charging != null ? (s.charging ? '🔴 充電中' : '停止') : '-'}</div></div>
     <div class="kv"><div class="k">充電開始</div><div class="v">${s.chg_start_v != null ? s.chg_start_v.toFixed(2) + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">充電停止</div><div class="v">${s.chg_stop_v  != null ? s.chg_stop_v.toFixed(2)  + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">Ah オフセット</div><div class="v">${s.ah_offset != null ? s.ah_offset : '-'}</div></div>
@@ -240,6 +241,13 @@ function deviceCard(d) {
             <option value="true"  ${s.debug_log  ? 'selected' : ''}>on</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>charging</label>
+          <select id="sv-charging-${id}">
+            <option value="false" ${!s.charging ? 'selected' : ''}>停止</option>
+            <option value="true"  ${s.charging  ? 'selected' : ''}>充電中</option>
+          </select>
+        </div>
       </div>
       <div style="margin-top:8px">
         <button onclick="saveShadow('${id}')">保存</button>
@@ -251,9 +259,7 @@ function deviceCard(d) {
   <!-- コマンド -->
   <div class="section">
     <div class="cmd-row">
-      <button class="success" onclick="sendChargeStart('${id}')">充電開始</button>
-      <button class="danger"  onclick="sendChargeStop('${id}')">充電停止</button>
-      <button class="danger"  onclick="confirmAhReset('${id}')">Ah リセット</button>
+      <button class="danger" onclick="confirmAhReset('${id}')">Ah リセット</button>
     </div>
     <div class="msg" id="cmd-msg-${id}"></div>
   </div>
@@ -286,6 +292,7 @@ async function saveShadow(deviceId) {
     ah_offset:        parseInt(document.getElementById(`sv-ah-${deviceId}`).value, 10),
     relay_mode:       document.getElementById(`sv-relay-${deviceId}`).value,
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',
+    charging:         document.getElementById(`sv-charging-${deviceId}`).value === 'true',
   };
   const msgEl = document.getElementById(`shadow-msg-${deviceId}`);
   msgEl.textContent = '保存中...';
@@ -305,16 +312,6 @@ async function saveShadow(deviceId) {
 }
 
 // ─── コマンド発行 ─────────────────────────────────────────────────────────────
-
-function sendChargeStart(deviceId) {
-  if (!confirm(`${deviceId} の充電を開始しますか？`)) return;
-  sendCommand(deviceId, { operation: 'charge_start' });
-}
-
-function sendChargeStop(deviceId) {
-  if (!confirm(`${deviceId} の充電を停止しますか？`)) return;
-  sendCommand(deviceId, { operation: 'charge_stop' });
-}
 
 function confirmAhReset(deviceId) {
   if (!confirm(`${deviceId} の積算電荷量をリセットしますか？`)) return;

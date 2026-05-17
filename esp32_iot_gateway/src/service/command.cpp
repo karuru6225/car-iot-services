@@ -17,22 +17,6 @@ bool commandHandleJob(const JobInfo &job)
     return true;
   }
 
-  if (strcmp(job.operation, "charge_start") == 0)
-  {
-    setCharging(true);
-    logger.println("[CMD] charge_start: charging enabled");
-    jobsReport(job.id, "SUCCEEDED");
-    return true;
-  }
-
-  if (strcmp(job.operation, "charge_stop") == 0)
-  {
-    setCharging(false);
-    logger.println("[CMD] charge_stop: charging disabled");
-    jobsReport(job.id, "SUCCEEDED");
-    return true;
-  }
-
   logger.printf("[CMD] unknown operation: %s\n", job.operation);
   jobsReport(job.id, "FAILED", "unknown operation");
   return false;

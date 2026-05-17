@@ -201,12 +201,14 @@ void loop()
         setCharging(true);
         digitalWrite(CHG_ON_PIN, HIGH);
         logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV\n", v, startV);
+        shadowPublishConfig();
       }
       else if (v > 0 && isCharging() && v >= stopV)
       {
         setCharging(false);
         digitalWrite(CHG_ON_PIN, LOW);
         logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
+        shadowPublishConfig();
       }
     }
     if (isCharging())

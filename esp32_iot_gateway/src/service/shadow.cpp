@@ -98,6 +98,13 @@ bool shadowPollDelta(uint32_t timeoutMs)
     changed = true;
   }
 
+  if (state["charging"].is<bool>())
+  {
+    setCharging(state["charging"].as<bool>());
+    logger.printf("[SHADOW] charging → %s\n", isCharging() ? "on" : "off");
+    changed = true;
+  }
+
   if (changed)
     shadowPublishConfig(true); // reported を更新して desired をクリア
 
