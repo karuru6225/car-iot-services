@@ -215,27 +215,9 @@ void setChgStartV(float v) { nvsSetFloat("chg_start_v", v); }
 float getChgStopV() { return nvsGetFloat("chg_stop_v", 12.5f); }
 void setChgStopV(float v) { nvsSetFloat("chg_stop_v", v); }
 
-bool isCharging()
-{
-  nvs_handle_t nvs;
-  uint8_t val = 0;
-  if (nvs_open(NVS_NS_BATTERY, NVS_READONLY, &nvs) == ESP_OK)
-  {
-    nvs_get_u8(nvs, "charging", &val);
-    nvs_close(nvs);
-  }
-  return val != 0;
-}
-
-void setCharging(bool v)
-{
-  nvs_handle_t nvs;
-  if (nvs_open(NVS_NS_BATTERY, NVS_READWRITE, &nvs) != ESP_OK)
-    return;
-  nvs_set_u8(nvs, "charging", v ? 1 : 0);
-  nvs_commit(nvs);
-  nvs_close(nvs);
-}
+RTC_DATA_ATTR static bool s_charging = false;
+bool isCharging() { return s_charging; }
+void setCharging(bool v) { s_charging = v; }
 
 static void eraseNvsNamespace(const char *ns)
 {
