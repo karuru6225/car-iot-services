@@ -160,7 +160,7 @@ ESP32-S3-MINI-1
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"relay_mode":"sleep_indicator","chg_start_v":11.70,"chg_stop_v":12.50,"fw_version":"1.11.0+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"relay_mode":"sleep_indicator","chg_start_v":11.70,"chg_stop_v":12.50,"charging":false,"fw_version":"1.14.1+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
@@ -169,7 +169,10 @@ ESP32-S3-MINI-1
 {"state":{"desired":{"ah_offset":200}}}
 {"state":{"desired":{"relay_mode":"off"}}}
 {"state":{"desired":{"chg_start_v":11.5,"chg_stop_v":12.8}}}
+{"state":{"desired":{"charging":true}}}
 ```
+
+shadow publish はスリープ直前に1回だけ行う（起動時は行わない）。電源断で状態がズレた場合でも次サイクル（最大5分）で補正される。
 
 ### Jobs / OTA トピック（service/jobs が使用）
 
@@ -300,7 +303,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.10.0+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `"1.14.1+" GIT_HASH` | ファームウェアバージョン |
 | `CHG_ON_PIN` | `21` | メインバッテリー充電制御ピン（HIGH=ON） |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS`（動作モード） |
@@ -336,7 +339,7 @@ device/lte.h の定数:
 | ボード | esp32-s3-devkitc-1（ESP32-S3-MINI-1 互換） |
 | C++ 標準 | C++17（`-std=gnu++17`） |
 | ビルドフック | `extra_scripts.py`（`pre:`）— git hash を `GIT_HASH` マクロとして注入 |
-| 主要ライブラリ | TinyGSM, ArduinoJson, Adafruit SSD1306, Adafruit GFX, Adafruit ADS1X15 |
+| 主要ライブラリ | TinyGSM, ArduinoJson, Adafruit SSD1306, Adafruit GFX, Adafruit ADS1X15, NimBLE-Arduino, QRCode |
 
 ## 作業中・引き継ぎ事項
 
