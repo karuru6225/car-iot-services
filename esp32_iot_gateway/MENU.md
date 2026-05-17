@@ -62,8 +62,7 @@ setup():
   │   ├── Info        → [FW バージョン・デバイス ID]
   │   ├── Device QR   → [デバイス ID の QR コード表示]
   │   ├── Relay Mode  → [リレー動作モード切替]
-  │   ├── NVS Clear   → [確認] → nvs_flash_erase() + esp_restart()
-  │   └── GZ Test     → gz 圧縮テスト実行
+  │   └── NVS Clear   → [確認] → nvs_flash_erase() + esp_restart()
   ├── Continuous      → 継続計測モードに移行
   └── Restart         → esp_restart()
 ```
@@ -184,9 +183,8 @@ MENU_NAV (汎用ナビ)
  │   ├─(Info)─────────→ SYS_INFO ──(BTN1 長押し)──→ MENU_NAV
  │   ├─(Device QR)────→ DEVICE_QR ──(BTN1 長押し)──→ MENU_NAV
  │   ├─(Relay Mode)───→ RELAY_MODE ──(BTN1 短押し/長押し)──→ MENU_NAV
- │   ├─(NVS Clear)────→ CONFIRM ──(Yes)──→ esp_restart()
- │   │                            ──(No/長押し)──→ MENU_NAV
- │   └─(GZ Test)──────→ GZ_TEST ──→ MENU_NAV
+ │   └─(NVS Clear)────→ CONFIRM ──(Yes)──→ esp_restart()
+ │                                 ──(No/長押し)──→ MENU_NAV
  ├─(Continuous)───────→ DONE_CONTINUOUS（継続モード移行）
  └─(Restart)──────────→ esp_restart()
 ```

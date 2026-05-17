@@ -70,7 +70,10 @@ OLED + 2ボタンの設定メニュー。詳細は `MENU.md` 参照。
 - `Battery/Chg Timeout` — 充電タイムアウト設定（10/20/30/60 分、BTN0 で循環、デフォルト 20 分）
 - `Battery/Start Charge` — メインバッテリー充電開始（V_sub > V_main を確認。カウントダウン中は任意ボタンで停止）
 - `Sensor View` — ADS1115/INA228 リアルタイム表示（50ms 更新）
-- `System Info` — FW バージョン・デバイス ID 表示
+- `System/Info` — FW バージョン・デバイス ID 表示
+- `System/Device QR` — デバイス ID の QR コード表示
+- `System/Relay Mode` — リレー動作モード切替
+- `System/NVS Clear` — 全 NVS 消去して再起動（MQTT ホストは保持）
 - `Continuous` — CONTINUOUS モードで起動（LTE を開始して loop へ）
 - `Restart` — `esp_restart()`
 

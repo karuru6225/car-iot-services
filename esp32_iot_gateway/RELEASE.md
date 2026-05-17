@@ -46,10 +46,12 @@ git push origin main --tags
 
 1. `config.h` の `FIRMWARE_VERSION` をタグのバージョンに書き換えてビルド
    - `esp32-s3-devkitc-1-release` env（`DEBUG_MODE` なし = `DEEP_SLEEP` モード）
-2. `firmware.bin` を S3 にアップロード（`firmware/vX.Y.Z.bin`）
-3. IoT Job ドキュメントを S3 にアップロード（`jobs/vX.Y.Z.json`）
-4. `esp32-gw-*` の Thing 全台に OTA ジョブを作成
-5. GitHub Release を作成して `firmware.bin` を添付
+2. `firmware.bin` を `gzip -9` で圧縮して `firmware.bin.gz` を生成
+3. `firmware.bin.gz` を S3 にアップロード（`firmware/vX.Y.Z.bin.gz`）
+4. OTA Job ドキュメントを生成して S3 にアップロード（`jobs/vX.Y.Z.json`）
+   - Job の `url` フィールドは `.bin.gz` の S3 URL を指す
+5. `ota-target-car-iot-gw` Thing グループ全台に OTA ジョブを作成
+6. GitHub Release を作成して `firmware.bin` と `firmware.bin.gz` を添付
 
 デバイスは次回起動時に OTA ジョブを検出して自動更新する。
 
