@@ -102,7 +102,6 @@ void setup()
     ota.confirmBoot();
 
   shadowSetup();
-  shadowPublishConfig();
   shadowPollDelta(3000); // 起動時に pending な desired を即適用
 
   oledPrint("Job checking...");
@@ -175,7 +174,7 @@ void loop()
 
   if (g_mode == OperationMode::DEEP_SLEEP)
   {
-    // 電圧に基づく自動充電制御（LTE 切断前に判定・shadow publish）
+    // 電圧に基づく自動充電制御（LTE 切断前に判定）
     {
       float v = g_lastResult.reading.main.voltage;
       float startV = getChgStartV();
@@ -185,16 +184,15 @@ void loop()
         setCharging(true);
         digitalWrite(CHG_ON_PIN, HIGH);
         logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV\n", v, startV);
-        shadowPublishConfig();
       }
       else if (v >= 10.0f && isCharging() && v >= stopV)
       {
         setCharging(false);
         digitalWrite(CHG_ON_PIN, LOW);
         logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
-        shadowPublishConfig();
       }
     }
+    shadowPublishConfig();
     delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
 #ifndef DEBUG_SKIP_NETWORK
     queue.save();
