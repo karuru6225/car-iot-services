@@ -113,7 +113,7 @@ static bool writeGzToOta(const char *filename, esp_ota_handle_t handle, size_t &
     return false;
   }
 
-  static uint8_t outBuf[512];
+  static uint8_t outBuf[4096];
   written = 0;
   d.destSize = sizeof(outBuf);
   int ret = TINF_OK;
