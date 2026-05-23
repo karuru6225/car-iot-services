@@ -175,7 +175,162 @@ TX ok  id=0x123 cnt=2
 
 ## 今後の作業（TODO）
 
-- [ ] DS203 で CANH/CANL の波形確認
-- [ ] USB-CAN アダプタを使った双方向通信テスト（`TWAI_MODE_NORMAL` に切り替え）
-- [ ] 通信速度・フォーマットの決定（500kbps? CAN FD?）
-- [ ] `device/can.h/.cpp` として本番コードに統合
+- [x] DS203 で CANH/CANL の波形確認（完了）
+- [x] フェーズ1 ステップ A: 500kbps 実車接続確認（完了）
+- [x] フェーズ1 ステップ B: PID スキャン実行・結果を OBD.md に記録（完了）
+- [x] PID 0x60/0x80 スキャン → 0x61〜0xA0 の対応状況確認（完了、OBD.md に記録済み）
+- [ ] OBD.md のフェーズ2 実装へ
+
+---
+
+## フェーズ1: 実車接続確認
+
+プロトコル詳細は `CAN_REFERENCE.md` を参照。  
+統合設計（フェーズ2以降）は `OBD.md` を参照。
+
+### ステップ A: 500kbps LISTEN_ONLY で接続確認
+
+**blank.cpp の変更点:**
+
+```diff
+- TWAI_TIMING_CONFIG_125KBITS()
++ TWAI_TIMING_CONFIG_500KBITS()
+
+- TWAI_MODE_NO_ACK
++ TWAI_MODE_LISTEN_ONLY
+```
+
+送信ロジック（1秒ごとの TX 部分）は削除し、受信のみ残す。
+
+**接続:**
+
+```
+MCP2562FD CANH → OBD-II コネクタ Pin 6 (CAN-H)
+MCP2562FD CANL → OBD-II コネクタ Pin 14 (CAN-L)
+終端抵抗は追加しない（車体側に実装済み）
+```
+
+**確認手順:**
+1. blank env でビルド・書き込み
+2. シリアルモニタを開く（115200 bps）
+3. 車の IGN ON（エンジン未始動）
+4. シリアルに CAN フレームが流れれば **ハードウェア OK**
+
+### ステップ B: PID サポートスキャン
+
+ステップ A で接続確認が取れたら、`TWAI_MODE_LISTEN_ONLY` → `TWAI_MODE_NORMAL` に変更し、以下の PID スキャンロジックを実装して setup() 末尾で一度だけ実行する。
+
+**実装する関数:**
+
+```cpp
+// PID 0x00/0x20/0x40 を送信し、4バイトビットマスクを取得
+// 失敗時は 0 を返す
+uint32_t getSupportedPidMask(uint8_t supportPid) {
+  twai_message_t tx = {};
+  tx.identifier = 0x7DF;
+  tx.data_length_code = 8;
+  tx.data[0] = 0x02;
+  tx.data[1] = 0x01;
+  tx.data[2] = supportPid;
+  if (twai_transmit(&tx, pdMS_TO_TICKS(10)) != ESP_OK) return 0;
+
+  twai_message_t rx = {};
+  unsigned long deadline = millis() + 300;
+  while (millis() < deadline) {
+    if (twai_receive(&rx, pdMS_TO_TICKS(10)) == ESP_OK && rx.identifier == 0x7E8) {
+      return ((uint32_t)rx.data[3] << 24) | ((uint32_t)rx.data[4] << 16)
+           | ((uint32_t)rx.data[5] << 8)  | rx.data[6];
+    }
+  }
+  return 0;
+}
+
+// ビットマスクから PID がサポートされているか判定
+// base: 0x00 → PIDs 0x01-0x20 / 0x20 → 0x21-0x40 / 0x40 → 0x41-0x60
+bool isPidSupported(uint32_t mask, uint8_t pid, uint8_t base) {
+  uint8_t bit = pid - base - 1;
+  return (mask >> (31 - bit)) & 1;
+}
+```
+
+**スキャン実行（setup() 末尾）:**
+
+```cpp
+Serial.println("=== OBD-II PID Scan ===");
+uint32_t mask0 = getSupportedPidMask(0x00);
+uint32_t mask1 = getSupportedPidMask(0x20);
+uint32_t mask2 = getSupportedPidMask(0x40);
+
+// Priority 1
+const uint8_t p1[] = {0x04, 0x05, 0x0B, 0x0C, 0x0D, 0x11};
+// Priority 2
+const uint8_t p2[] = {0x0A, 0x0E, 0x0F, 0x10, 0x2F, 0x33, 0x42, 0x5C, 0x5E};
+
+for (uint8_t pid : p1) {
+  bool ok = (pid <= 0x20) ? isPidSupported(mask0, pid, 0x00)
+                           : isPidSupported(mask1, pid, 0x20);
+  Serial.printf("[0x%02X] %s\n", pid, ok ? "OK" : "--");
+  if (ok) { /* リクエスト送信 → 応答受信 → 値をデコードして出力 */ }
+}
+// Priority 2 も同様
+```
+
+**期待されるシリアル出力（IGN ON、エンジン未始動）:**
+
+```
+=== OBD-II PID Scan ===
+[0x04] Engine Load:   OK -> 0%
+[0x05] Coolant Temp:  OK -> 85 degC
+[0x0B] MAP:           OK -> 97 kPa (boost: -4 kPa)
+[0x0C] RPM:           OK -> 0 rpm
+[0x0D] Speed:         OK -> 0 km/h
+[0x11] Throttle:      OK -> 0%
+[0x0F] Intake Temp:   OK -> 32 degC
+[0x10] MAF:           OK -> 0.00 g/s
+[0x2F] Fuel Level:    OK -> 75%
+[0x42] ECU Voltage:   OK -> 12.4 V
+[0x5C] Oil Temp:      OK -> 68 degC
+[0x5E] Fuel Rate:     -- (not supported)
+```
+
+スキャン結果は `OBD.md` の「実車スキャン結果」セクションに記録する。
+
+---
+
+## フェーズ1 実施結果（2026-05-23 完了）
+
+### 判明した重要事項
+
+**1. 29ビット拡張アドレッシングが必須**
+
+Honda N-VAN は 11ビット 0x7DF に応答しない。29ビット SAE J1939 形式が必要。
+
+```
+リクエスト: CAN ID = 0x18DB33F1 (extd=1)
+応答:       CAN ID = 0x18DAF10E (extd=1)  ← ECU アドレス = 0x0E
+```
+
+**2. IGN ON が必須**
+
+電源 OFF / ロック状態では CAN ゲートウェイが起きない。  
+`TX OK` が返っても応答なし、bus_err が数秒で数万件に達する。  
+IGN ON（エンジン未始動）で安定通信可能。
+
+**3. blank.cpp の現状設定**
+
+```cpp
+#define CAN_MODE TWAI_MODE_NORMAL
+#define RUN_PID_SCAN
+
+// TX: tx.identifier = 0x18DB33F1; tx.extd = 1;
+// RX: 0x18DAF1xx (29-bit) および 0x7E8 (11-bit) の両方を受け入れ
+```
+
+**4. スキャン結果サマリ**
+
+| 結果 | PID 一覧 |
+|------|---------|
+| ✓ 対応 | 0x04 Engine Load, 0x0B MAP, 0x0C RPM, 0x0D Speed, 0x0E Ignition Timing, 0x11 Throttle, 0x33 Baro, 0x42 ECU Voltage |
+| ✗ 非対応 | 0x05 Coolant, 0x0A Fuel Pressure, 0x0F Intake Temp, 0x10 MAF, 0x2F Fuel Level, 0x5C Oil Temp, 0x5E Fuel Rate |
+
+詳細は `OBD.md` 参照。
