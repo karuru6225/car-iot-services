@@ -1,4 +1,7 @@
 #include "sensor_filter.h"
+
+#ifdef BLE_MEDIAN_FILTER
+
 #include "co2meter.h"
 #include <esp_sleep.h>
 #include <string.h>
@@ -65,3 +68,5 @@ void SensorFilter::apply(SensorVariant &v)
       d.co2 = median3(h->co2s[0], h->co2s[1], h->co2s[2]);
   }, v);
 }
+
+#endif // BLE_MEDIAN_FILTER

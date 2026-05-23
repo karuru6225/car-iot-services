@@ -24,14 +24,18 @@ class SwitchBotCallback : public NimBLEAdvertisedDeviceCallbacks
 
     std::string sd = dev->haveServiceData() ? dev->getServiceData() : std::string();
     SensorVariant v = SensorParserFactory::parse(addr.c_str(), dev->getRSSI(), mf, sd);
+#ifdef BLE_MEDIAN_FILTER
     sensorFilter.apply(v);
+#endif
     xQueueSend(bleScanner.queue, &v, 0);
   }
 };
 
 void BleScanner::setup()
 {
+#ifdef BLE_MEDIAN_FILTER
   sensorFilter.begin();
+#endif
   queue = xQueueCreate(QUEUE_SIZE, sizeof(SensorVariant));
   NimBLEDevice::init("");
   _scan = NimBLEDevice::getScan();

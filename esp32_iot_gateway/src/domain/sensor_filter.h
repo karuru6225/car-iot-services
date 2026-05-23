@@ -1,4 +1,7 @@
 #pragma once
+
+#ifdef BLE_MEDIAN_FILTER
+
 #include "sensor_factory.h"
 #include "../config.h"
 
@@ -21,3 +24,5 @@ private:
 };
 
 extern SensorFilter sensorFilter;
+
+#endif // BLE_MEDIAN_FILTER
