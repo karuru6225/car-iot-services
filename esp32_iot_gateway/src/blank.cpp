@@ -5,14 +5,17 @@
 #define CAN_TX_PIN 5 // MCP2562FD TXD
 #define CAN_EN_PIN 6 // AO3401A パワースイッチ: HIGH=電源ON
 
-// ステップ A: LISTEN_ONLY（実車フレーム受信確認）
-// ステップ B: #define を外してコメント解除 → NORMAL + PID スキャン
-// #define CAN_MODE TWAI_MODE_LISTEN_ONLY
-#define CAN_MODE TWAI_MODE_NORMAL
+// フェーズ切り替え:
+//   PHASE_LISTEN (デフォルト): LISTEN_ONLY でバス上の全フレームを受信
+//   コメントアウトすると TWAI_MODE_NORMAL + OBD-II PID スキャンに切り替わる
+#define PHASE_LISTEN
 
-// ステップ B に切り替えたとき、setup() 末尾で PID スキャンを実行する
-// CAN_MODE を TWAI_MODE_NORMAL にしたら同時に以下も有効化する
-#define RUN_PID_SCAN
+#ifdef PHASE_LISTEN
+  #define CAN_MODE TWAI_MODE_LISTEN_ONLY
+#else
+  #define CAN_MODE TWAI_MODE_NORMAL
+  #define RUN_PID_SCAN
+#endif
 
 static bool twaiReady = false;
 
@@ -276,8 +279,9 @@ void setup()
   digitalWrite(CAN_EN_PIN, HIGH);
   delay(50);
 
-  // ---- フェーズ 1: 5秒間 TX テスト（NO_ACK）----
-  // オシロで 500kbps の波形を確認するための送信テスト
+#ifndef PHASE_LISTEN
+  // ---- TX テスト（NO_ACK、オシロ確認用）----
+  // PHASE_LISTEN 時はスキップ（実車バスに不要な送信を行わない）
   Serial.println("=== TX test (500kbps, 5sec) ===");
   if (!twaiInit(TWAI_MODE_NO_ACK))
   {
@@ -304,8 +308,9 @@ void setup()
   twai_driver_uninstall();
   Serial.println("TX test done. Switching to receive mode...");
   delay(100);
+#endif
 
-  // ---- フェーズ 2: 受信モード ----
+  // ---- 受信モード（LISTEN_ONLY or NORMAL）----
   if (!twaiInit(CAN_MODE))
   {
     Serial.println("TWAI init failed (RX phase)");
