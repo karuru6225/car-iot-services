@@ -1,5 +1,6 @@
 #include "ble_scan.h"
 #include "../domain/ble_targets.h"
+#include "../domain/sensor_filter.h"
 
 BleScanner bleScanner;
 
@@ -23,12 +24,14 @@ class SwitchBotCallback : public NimBLEAdvertisedDeviceCallbacks
 
     std::string sd = dev->haveServiceData() ? dev->getServiceData() : std::string();
     SensorVariant v = SensorParserFactory::parse(addr.c_str(), dev->getRSSI(), mf, sd);
+    sensorFilter.apply(v);
     xQueueSend(bleScanner.queue, &v, 0);
   }
 };
 
 void BleScanner::setup()
 {
+  sensorFilter.begin();
   queue = xQueueCreate(QUEUE_SIZE, sizeof(SensorVariant));
   NimBLEDevice::init("");
   _scan = NimBLEDevice::getScan();
