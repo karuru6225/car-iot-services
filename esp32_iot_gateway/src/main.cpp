@@ -39,7 +39,10 @@
 #define RELAY_0_PIN 11
 #define RELAY_1_PIN 13
 #define RELAY_2_PIN 15
-#define UNITX_EN_PIN 9
+
+#define GU0_0 4
+#define GU0_1 5
+#define GU0_EN 6
 
 // #define DEBUG_SKIP_NETWORK
 
