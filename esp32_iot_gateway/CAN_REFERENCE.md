@@ -157,7 +157,54 @@ Byte 4〜7: 0x00（パディング）
 
 ---
 
-## 5. 終端抵抗について
+## 5. OBD-II アダプタ コネクタ配線
+
+OBD-II アダプタから引き出した 16 本の配線を 4ピンコネクタ × 4 に分割して収容する。
+
+### Connector 1 — CAN + 電源（実装済み・常用）
+
+| OBD-II Pin | 信号 |
+|-----------|------|
+| 16 | +12V |
+| 5 | Signal GND |
+| 6 | CAN-H |
+| 14 | CAN-L |
+
+### Connector 2 — シリアル系（K-Line / J1850）
+
+| OBD-II Pin | 信号 |
+|-----------|------|
+| 7 | K-Line |
+| 15 | L-Line |
+| 2 | J1850 Bus+ |
+| 10 | J1850 Bus− |
+
+### Connector 3 — メーカー任意①
+
+| OBD-II Pin | 信号 |
+|-----------|------|
+| 4 | Chassis GND |
+| 1 | Manufacturer |
+| 3 | Manufacturer |
+| 8 | Manufacturer |
+
+### Connector 4 — メーカー任意②
+
+| OBD-II Pin | 信号 |
+|-----------|------|
+| 9 | Manufacturer |
+| 11 | Manufacturer |
+| 12 | Manufacturer |
+| 13 | Manufacturer |
+
+**備考:**
+- Connector 1 のみ接続すれば CAN 通信は動作する
+- Chassis GND（Pin 4）は車体アースからも取得可能なため Connector 3 に収容
+- アダプタによっては Manufacturer ピン（1/3/8〜13）が未配線の場合がある
+
+---
+
+## 6. 終端抵抗について
 
 OBD-II ポート経由で接続する場合、車体側に既に 120Ω × 2 の終端抵抗が実装されている。  
 **追加の終端抵抗を接続してはならない**（並列接続になりバス特性が崩れる）。
