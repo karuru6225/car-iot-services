@@ -129,10 +129,10 @@ esp32_iot_gateway/
 ```text
 ESP32-S3-MINI-1
   → MQTT over TLS（SIM7080G）
-  → AWS IoT Core  topic①: sensors/{device_id}/data  （バッテリーテレメトリ + BLE センサー）
+  → AWS IoT Core  topic①: sensors/{device_id}/data_bin  （バッテリーテレメトリ + BLE センサー、MessagePack）
                   topic②: $aws/things/{device_id}/shadow/update  （設定値 reported）
-  → Topic Rule: SELECT *, topic(2) AS device_id FROM 'sensors/+/data'
-    → Lambda ingest → S3: raw/year=YYYY/month=MM/day=DD/hour=HH/{device_id}-{uuid8}.json
+  → Topic Rule ingest_bin: SELECT encode(*,'base64') AS payload, topic(2) AS device_id FROM 'sensors/+/data_bin'
+    → Lambda ingest（base64 decode → msgpack decode）→ S3: raw/year=YYYY/month=MM/day=DD/hour=HH/{device_id}-{uuid8}.json
 
 クラウド → デバイス
   Shadow desired 更新 → $aws/things/{device_id}/shadow/update/delta → 設定値を NVS に適用
@@ -141,9 +141,14 @@ ESP32-S3-MINI-1
 
 ## MQTT ペイロード形式
 
-### バッテリーテレメトリ（sensors/{device_id}/data）
+### バッテリーテレメトリ（sensors/{device_id}/data_bin）
 
-通信経路上のフィールド名は短縮形を使用する。`ingest` Lambda が受信時にフルネームへ展開して S3 に保存するため、Glue / Athena / Web 側は変更不要。
+**v1.15.0 以降は MessagePack 形式**でトピック `sensors/{device_id}/data_bin` に送信する。
+通信経路上のフィールド名は短縮形を使用。`ingest` Lambda が base64 decode → MessagePack decode → キー展開して S3 に保存するため、Glue / Athena / Web 側は変更不要。
+
+実測ペイロードサイズ: **59 bytes**（旧 JSON + フィールド名短縮 ~96 bytes → 約 38% 削減）
+
+フィールド構成（MessagePack map。キーは下記 JSON 表記と同一）:
 
 ```json
 {"t":"battery","m":12.34,"s":12.10,"i":5.2100,"p":62.500,"tp":28.5,"ah":200.001234,"ts":1746143400}
@@ -165,7 +170,7 @@ ESP32-S3-MINI-1
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"relay_mode":"sleep_indicator","chg_start_v":11.70,"chg_stop_v":12.50,"charging":false,"fw_version":"1.14.1+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"relay_mode":"sleep_indicator","chg_start_v":11.70,"chg_stop_v":12.50,"charging":false,"fw_version":"1.15.0+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
@@ -308,7 +313,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.14.1+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `"1.15.0+" GIT_HASH` | ファームウェアバージョン |
 | `CHG_ON_PIN` | `21` | メインバッテリー充電制御ピン（HIGH=ON） |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS`（動作モード） |
@@ -596,39 +601,25 @@ MQTT 通信経路上のフィールド名を短縮し、送信バイト数を削
 
 `ah` / `ts` / `co2` / `mf` / `fw` は変更なし。
 
-### TODO: 通信量削減 Phase 2（MessagePack 化）— FW 実装済み、インフラ対応待ち
+### ~~TODO: 通信量削減 Phase 2（MessagePack 化）~~ **v1.15.0 で実装完了**
 
-**FW 側実装済み**（`-D USE_MSGPACK` でビルドすると有効）:
+**実装内容**:
 
 - `domain/telemetry.h/.cpp`: `ITelemetryEncoder` 基底クラス（Template Method）+ `JsonTelemetryEncoder` / `MsgPackTelemetryEncoder`
 - `service/mqtt.h/.cpp`: `publish(topic, uint8_t*, size_t)` でバイナリ送信（`SerialAT.write()` 使用）
 - `service/pubqueue`: エンコーダを DI で切り替え。MsgPack 時はトピック `sensors/{id}/data_bin` を使用
-- `platformio.ini`: `develop` / `release` env に `; -D USE_MSGPACK` をコメントアウトで用意
+- `platformio.ini`: `release` / `develop` env ともに `-D USE_MSGPACK` 有効（デフォルト）
+- `infra/iot.tf`: `sensors/+/data_bin` 用 Topic Rule `ingest_bin`（`encode(*,'base64')` 経由）+ Lambda permission 追加
+- `infra/lambda_src/ingest/index.py`: インライン msgpack デコーダ（stdlib のみ）+ `payload` キー分岐
 
-**実機確認済み**（2026-05-26）:
-
-- `AT+SMPUB` でバイナリペイロード（`\0` 含む）が正常に送受信できることを確認
-- バッテリーペイロード実測: **59 bytes**（JSON ~96 bytes → 約 38% 削減）
-
-**削減効果（実測）**（バッテリーテレメトリ 1 件）:
+**効果（実測）**（バッテリーテレメトリ 1 件）:
 
 | 形式 | ペイロード |
 | --- | --- |
-| JSON + フィールド名短縮（現行） | ~96 bytes |
-| MessagePack + フィールド名短縮 | **59 bytes** |
+| JSON + フィールド名短縮（旧） | ~96 bytes |
+| MessagePack + フィールド名短縮（現行） | **59 bytes**（約 38% 削減） |
 
-**残作業（インフラ側）**:
-
-| ファイル | 変更内容 |
-| --- | --- |
-| `infra/iot.tf` | `sensors/+/data_bin` 用 Topic Rule 追加（`encode(*,'base64')` 経由） |
-| `infra/lambda_src/ingest/index.py` | base64 デコード → msgpack デコード → `_expand_keys()` → S3 保存 |
-
-**デプロイ順序**:
-
-1. infra を先にデプロイ（旧 `data` トピックは引き続き動作）
-2. OTA で `-D USE_MSGPACK` FW を配布
-3. 全デバイス更新確認後に旧 Topic Rule（`sensors/+/data`）を削除
+**確認済み**（2026-05-26）: `AT+SMPUB` バイナリ送信、Lambda でのデコード、管理画面でのデータ表示すべて正常動作。
 
 ### TODO: ストリーミング OTA（塩漬け）
 
