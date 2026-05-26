@@ -46,20 +46,22 @@ Admin コンソール（admin.html、admin グループユーザーのみ）
 
 トピック: `sensors/{device_id}/data`
 
+通信経路上のフィールド名は短縮形を使用。`ingest` Lambda が受信時にフルネームへ展開して S3 に保存する。
+
 ```json
-{"type":"battery","main":12.34,"sub":12.10,"current":5.2100,"power":62.500,"temp":28.5,"ah":200.001234,"ts":1746143400}
+{"t":"battery","m":12.34,"s":12.10,"i":5.2100,"p":62.500,"tp":28.5,"ah":200.001234,"ts":1746143400}
 ```
 
-| フィールド | 型 | 内容 |
-| --- | --- | --- |
-| `type` | string | `"battery"` 固定 |
-| `main` | float | メインバッテリー電圧（V） |
-| `sub` | float | サブバッテリー電圧（V） |
-| `current` | float | サブバッテリー電流（A） |
-| `power` | float | サブバッテリー電力（W） |
-| `temp` | float | INA228 内蔵温度センサー（°C） |
-| `ah` | float | 積算電荷量（Ah）= INA228 積算値 + Ah オフセット |
-| `ts` | int | UNIX タイムスタンプ（秒） |
+| 通信上のキー | S3 保存キー | 型 | 内容 |
+| --- | --- | --- | --- |
+| `t` | `type` | string | `"battery"` 固定 |
+| `m` | `main` | float | メインバッテリー電圧（V） |
+| `s` | `sub` | float | サブバッテリー電圧（V） |
+| `i` | `current` | float | サブバッテリー電流（A） |
+| `p` | `power` | float | サブバッテリー電力（W） |
+| `tp` | `temp` | float | INA228 内蔵温度センサー（°C） |
+| `ah` | `ah` | float | 積算電荷量（Ah）= INA228 積算値 + Ah オフセット |
+| `ts` | `ts` | int | UNIX タイムスタンプ（秒） |
 
 ### デバイスシャドウ（設定値 reported）
 
