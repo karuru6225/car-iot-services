@@ -41,20 +41,13 @@ static void strToMac(const char *str, uint8_t *out)
     out[i] = (uint8_t)b[i];
 }
 
-static void buildTopic(const QueueEntry &e, char *buf, size_t len)
+static void buildTopic(const ITelemetryEncoder *enc, char *buf, size_t len)
 {
-  const char *id = getDeviceId();
-  switch (e.type)
-  {
-  case EntryType::Battery:
-  case EntryType::Thermometer:
-  case EntryType::Co2:
-    snprintf(buf, len, "sensors/%s/data", id);
-    break;
-  }
+  snprintf(buf, len, "sensors/%s/%s", getDeviceId(), enc->topicSuffix());
 }
 
-static void buildPayload(const QueueEntry &e, char *buf, size_t len)
+static size_t buildPayload(const QueueEntry &e, uint8_t *buf, size_t cap,
+                           ITelemetryEncoder *enc)
 {
   switch (e.type)
   {
@@ -63,38 +56,38 @@ static void buildPayload(const QueueEntry &e, char *buf, size_t len)
     VoltageReading main = {e.battery.main};
     VoltageReading sub  = {e.battery.sub};
     PowerReading pwr    = {e.battery.current, e.battery.power, e.battery.temp, e.battery.ah};
-    buildBatteryPayload(buf, len, main, sub, pwr, (time_t)e.battery.ts);
-    break;
+    return enc->encodeBattery(buf, cap, main, sub, pwr, (time_t)e.battery.ts);
   }
   case EntryType::Thermometer:
   {
     ThermometerData d;
     macToStr(e.thermo.addr, d.address);
-    d.rssi = e.thermo.rssi;
-    d.temp = e.thermo.temp / 10.0f;
+    d.rssi     = e.thermo.rssi;
+    d.temp     = e.thermo.temp / 10.0f;
     d.humidity = e.thermo.humidity;
-    d.battery = e.thermo.battery;
+    d.battery  = e.thermo.battery;
     d.mfHex[0] = '\0';
-    buildThermometerPayload(buf, len, d, "");
-    break;
+    return enc->encodeThermometer(buf, cap, d);
   }
   case EntryType::Co2:
   {
     Co2MeterData d;
     macToStr(e.co2.addr, d.address);
-    d.rssi = e.co2.rssi;
-    d.temp = e.co2.temp / 10.0f;
+    d.rssi     = e.co2.rssi;
+    d.temp     = e.co2.temp / 10.0f;
     d.humidity = e.co2.humidity;
-    d.co2 = e.co2.co2;
-    d.battery = e.co2.battery;
+    d.co2      = e.co2.co2;
+    d.battery  = e.co2.battery;
     d.mfHex[0] = '\0';
-    buildCo2Payload(buf, len, d, "");
-    break;
+    return enc->encodeCo2(buf, cap, d);
   }
   }
+  return 0;
 }
 
 // ─── PubQueue 実装 ────────────────────────────────────────────────────────────
+
+void PubQueue::setEncoder(ITelemetryEncoder *enc) { _encoder = enc; }
 
 void PubQueue::push(const QueueEntry &e)
 {
@@ -150,21 +143,19 @@ void PubQueue::pushCo2(const Co2MeterData &d)
 
 void PubQueue::flush()
 {
-  if (empty())
-    return;
-  if (!lte.isConnected())
+  if (!_encoder || empty() || !lte.isConnected())
     return;
 
   char topic[80];
-  char payload[PAYLOAD_SENSOR_SIZE];
+  uint8_t payload[PAYLOAD_SENSOR_SIZE];
   int flushed = 0;
 
   while (!empty())
   {
-    buildTopic(g_buf[g_head], topic, sizeof(topic));
-    buildPayload(g_buf[g_head], payload, sizeof(payload));
+    buildTopic(_encoder, topic, sizeof(topic));
+    size_t len = buildPayload(g_buf[g_head], payload, sizeof(payload), _encoder);
 
-    if (!mqtt.publish(topic, payload))
+    if (!mqtt.publish(topic, payload, len))
     {
       logger.println("[QUEUE] MQTT 失敗、flush 停止");
       break;

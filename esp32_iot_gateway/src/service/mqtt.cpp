@@ -51,14 +51,18 @@ bool Mqtt::connect()
 
 bool Mqtt::publish(const char *topic, const char *payload)
 {
+  return publish(topic, (const uint8_t *)payload, strlen(payload));
+}
+
+bool Mqtt::publish(const char *topic, const uint8_t *data, size_t len)
+{
   if (!connect())
     return false;
 
-  int len = strlen(payload);
   String cmd = "AT+SMPUB=\"";
   cmd += topic;
   cmd += "\",";
-  cmd += len;
+  cmd += (int)len;
   cmd += ",0,0";
 
   SerialAT.println(cmd);
@@ -84,7 +88,7 @@ bool Mqtt::publish(const char *topic, const char *payload)
     return false;
   }
 
-  SerialAT.print(payload);
+  SerialAT.write(data, len);
 
   unsigned long t2 = millis();
   String resp = "";
@@ -96,7 +100,7 @@ bool Mqtt::publish(const char *topic, const char *payload)
       break;
   }
   bool ok = resp.indexOf("OK") >= 0;
-  logger.printf("[MQTT] publish %s  %s\n", ok ? "OK" : "NG", payload);
+  logger.printf("[MQTT] publish(%zu bytes) %s\n", len, ok ? "OK" : "NG");
   return ok;
 }
 

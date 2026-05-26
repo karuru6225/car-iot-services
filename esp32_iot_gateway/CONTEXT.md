@@ -596,39 +596,39 @@ MQTT 通信経路上のフィールド名を短縮し、送信バイト数を削
 
 `ah` / `ts` / `co2` / `mf` / `fw` は変更なし。
 
-### TODO: 通信量削減 Phase 2（MessagePack 化）（未着手）
+### TODO: 通信量削減 Phase 2（MessagePack 化）— FW 実装済み、インフラ対応待ち
 
-Phase 1（フィールド名短縮）の効果を実測してから判断する。
-MQTT フレーミング込みで ~132 bytes → ~103 bytes（さらに ~22% 削減）が見込める。
+**FW 側実装済み**（`-D USE_MSGPACK` でビルドすると有効）:
 
-**設計方針**: Phase 1 と同じく短縮名は通信ドライバ層のみ。ingest.py でデコード → フルネーム展開 → S3 保存するため Glue / Athena / Web は変更不要。
+- `domain/telemetry.h/.cpp`: `ITelemetryEncoder` 基底クラス（Template Method）+ `JsonTelemetryEncoder` / `MsgPackTelemetryEncoder`
+- `service/mqtt.h/.cpp`: `publish(topic, uint8_t*, size_t)` でバイナリ送信（`SerialAT.write()` 使用）
+- `service/pubqueue`: エンコーダを DI で切り替え。MsgPack 時はトピック `sensors/{id}/data_bin` を使用
+- `platformio.ini`: `develop` / `release` env に `; -D USE_MSGPACK` をコメントアウトで用意
 
-**削減効果の試算**（バッテリーテレメトリ 1 件、MQTT フレーミング込み）:
+**実機確認済み**（2026-05-26）:
 
-| 形式 | ペイロード | MQTT込み合計 |
-| --- | --- | --- |
-| JSON + フィールド名短縮（現行） | ~96 bytes | ~132 bytes |
-| MessagePack + フィールド名短縮 | ~67 bytes | ~103 bytes |
+- `AT+SMPUB` でバイナリペイロード（`\0` 含む）が正常に送受信できることを確認
+- バッテリーペイロード実測: **59 bytes**（JSON ~96 bytes → 約 38% 削減）
 
-※ フロート値は float32 で格納。`ah` のみ精度確保のため float64 が必要。
+**削減効果（実測）**（バッテリーテレメトリ 1 件）:
 
-**なぜ MessagePack の効果が限定的か**: 桁数の少ない浮動小数点（`5.21` = 4 bytes）は JSON テキストが float32（5 bytes 固定）より短い場合がある。MessagePack が稼げるのは主に Unix タイムスタンプ（10 chars → uint32 5 bytes）と構造文字の削除。gzip との併用は冗長性が少なく効果がないため不要。
+| 形式 | ペイロード |
+| --- | --- |
+| JSON + フィールド名短縮（現行） | ~96 bytes |
+| MessagePack + フィールド名短縮 | **59 bytes** |
 
-**変更が必要なファイル**:
+**残作業（インフラ側）**:
 
 | ファイル | 変更内容 |
 | --- | --- |
-| `src/service/mqtt.h/.cpp` | `publishBinary(topic, uint8_t*, size_t)` 追加（`SerialAT.write()` 使用） |
-| `src/domain/telemetry.h/.cpp` | MsgPack エンコーダ追加（ArduinoJson v7 `serializeMsgPack()`） |
-| `src/service/pubqueue.cpp` | トピックを `sensors/{id}/data_bin` に変更、`publishBinary()` に切り替え |
 | `infra/iot.tf` | `sensors/+/data_bin` 用 Topic Rule 追加（`encode(*,'base64')` 経由） |
 | `infra/lambda_src/ingest/index.py` | base64 デコード → msgpack デコード → `_expand_keys()` → S3 保存 |
 
-**注意事項**:
+**デプロイ順序**:
 
-- `AT+SMPUB` のバイナリペイロード対応を**実機確認してから**実装に進む（`\0` を含むペイロードが正しく送受信できるかマニュアルに明記がない）
-- 移行は「infra 先行デプロイ → OTA」の順序を守る
-- 旧 Topic Rule（`sensors/+/data`）は全デバイス更新確認後に削除
+1. infra を先にデプロイ（旧 `data` トピックは引き続き動作）
+2. OTA で `-D USE_MSGPACK` FW を配布
+3. 全デバイス更新確認後に旧 Topic Rule（`sensors/+/data`）を削除
 
 ### TODO: ストリーミング OTA（塩漬け）
 

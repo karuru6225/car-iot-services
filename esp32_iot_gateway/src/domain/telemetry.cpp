@@ -1,26 +1,8 @@
 #include "telemetry.h"
 #include <stdio.h>
+#include <ArduinoJson.h>
 #include "../config.h"
 
-int buildBatteryPayload(char *buf, size_t size,
-                        const VoltageReading &main,
-                        const VoltageReading &sub,
-                        const PowerReading &pwr,
-                        time_t ts)
-{
-  return snprintf(buf, size,
-                  "{\"t\":\"battery\","
-                  "\"m\":%.2f,"
-                  "\"s\":%.2f,"
-                  "\"i\":%.4f,"
-                  "\"p\":%.3f,"
-                  "\"tp\":%.1f,"
-                  "\"ah\":%.6f,"
-                  "\"ts\":%lld}",
-                  main.voltage, sub.voltage,
-                  pwr.current, pwr.power, pwr.temp, pwr.ah,
-                  (long long)ts);
-}
 
 int buildConfigPayload(char *buf, size_t size, bool clearDesired)
 {
@@ -58,35 +40,66 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired)
                   isCharging() ? "true" : "false");
 }
 
-int buildThermometerPayload(char *buf, size_t size,
-                             const ThermometerData &d,
-                             const char *tsField)
+
+// ─── ITelemetryEncoder（encode* は基底クラスが実装）────────────────────────
+
+size_t ITelemetryEncoder::encodeBattery(uint8_t *buf, size_t cap,
+                                        const VoltageReading &main,
+                                        const VoltageReading &sub,
+                                        const PowerReading &pwr,
+                                        time_t ts)
 {
-  return snprintf(buf, size,
-                  "{\"t\":\"thermometer\","
-                  "\"a\":\"%s\","
-                  "\"tp\":%.1f,"
-                  "\"h\":%d,"
-                  "\"bt\":%d,"
-                  "\"rs\":%d,"
-                  "\"mf\":\"%s\","
-                  "\"fw\":\"" FIRMWARE_VERSION "\"%s}",
-                  d.address, d.temp, d.humidity, d.battery, d.rssi, d.mfHex, tsField);
+  JsonDocument doc;
+  doc["t"]  = "battery";
+  doc["m"]  = main.voltage;
+  doc["s"]  = sub.voltage;
+  doc["i"]  = pwr.current;
+  doc["p"]  = pwr.power;
+  doc["tp"] = pwr.temp;
+  doc["ah"] = pwr.ah;
+  doc["ts"] = (uint32_t)ts;
+  return serialize(doc, buf, cap);
 }
 
-int buildCo2Payload(char *buf, size_t size,
-                    const Co2MeterData &d,
-                    const char *tsField)
+size_t ITelemetryEncoder::encodeThermometer(uint8_t *buf, size_t cap,
+                                            const ThermometerData &d)
 {
-  return snprintf(buf, size,
-                  "{\"t\":\"co2meter\","
-                  "\"a\":\"%s\","
-                  "\"tp\":%.1f,"
-                  "\"h\":%d,"
-                  "\"co2\":%d,"
-                  "\"bt\":%d,"
-                  "\"rs\":%d,"
-                  "\"mf\":\"%s\","
-                  "\"fw\":\"" FIRMWARE_VERSION "\"%s}",
-                  d.address, d.temp, d.humidity, d.co2, d.battery, d.rssi, d.mfHex, tsField);
+  JsonDocument doc;
+  doc["t"]  = "thermometer";
+  doc["a"]  = d.address;
+  doc["tp"] = d.temp;
+  doc["h"]  = d.humidity;
+  doc["bt"] = d.battery;
+  doc["rs"] = d.rssi;
+  doc["mf"] = d.mfHex;
+  doc["fw"] = FIRMWARE_VERSION;
+  return serialize(doc, buf, cap);
+}
+
+size_t ITelemetryEncoder::encodeCo2(uint8_t *buf, size_t cap,
+                                    const Co2MeterData &d)
+{
+  JsonDocument doc;
+  doc["t"]   = "co2meter";
+  doc["a"]   = d.address;
+  doc["tp"]  = d.temp;
+  doc["h"]   = d.humidity;
+  doc["co2"] = d.co2;
+  doc["bt"]  = d.battery;
+  doc["rs"]  = d.rssi;
+  doc["mf"]  = d.mfHex;
+  doc["fw"]  = FIRMWARE_VERSION;
+  return serialize(doc, buf, cap);
+}
+
+// ─── 派生クラス：serialize のみ ───────────────────────────────────────────────
+
+size_t JsonTelemetryEncoder::serialize(JsonDocument &doc, uint8_t *buf, size_t cap)
+{
+  return serializeJson(doc, (char *)buf, cap);
+}
+
+size_t MsgPackTelemetryEncoder::serialize(JsonDocument &doc, uint8_t *buf, size_t cap)
+{
+  return serializeMsgPack(doc, buf, cap);
 }

@@ -29,9 +29,16 @@
 #include "device/button.h"
 
 #include "domain/ble_targets.h"
+#include "domain/telemetry.h"
 #include "service/menu.h"
 #include "service/pubqueue.h"
 #include "service/log_storage.h"
+
+#ifdef USE_MSGPACK
+static MsgPackTelemetryEncoder g_encoder;
+#else
+static JsonTelemetryEncoder g_encoder;
+#endif
 
 #include <esp_sleep.h>
 #include <driver/gpio.h>
@@ -94,6 +101,7 @@ void setup()
   lte.setup();      // LTE_EN ON → モデム初期化 → GPRS 接続 → 時刻同期
   logStorageInit(); // 時刻同期後に呼ぶ（ファイル名に UNIX 時間を使用）
 
+  queue.setEncoder(&g_encoder);
   queue.load();  // 電源投入時: SPIFFS → RTC メモリ（DeepSleep 復帰時は no-op）
   queue.flush(); // 前回バッファ分を即送信
   delay(500);    // SIM7080G の送信バッファ安定待ち

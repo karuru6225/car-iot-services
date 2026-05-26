@@ -3,6 +3,7 @@
 #include "../domain/measurement.h"
 #include "../domain/thermometer.h"
 #include "../domain/co2meter.h"
+#include "../domain/telemetry.h"
 
 enum class EntryType : uint8_t { Battery = 0, Thermometer = 1, Co2 = 2 };
 
@@ -41,6 +42,9 @@ class PubQueue {
 public:
   explicit PubQueue(bool useSpiffs = true);
 
+  // エンコーダを設定する（load() より前に呼ぶこと）
+  void setEncoder(ITelemetryEncoder *enc);
+
   // 計測値をキューに積む
   void pushBattery(const SensorReading &r);
   void pushThermometer(const ThermometerData &d);
@@ -61,6 +65,7 @@ public:
 
 private:
   void push(const QueueEntry &e);
+  ITelemetryEncoder *_encoder = nullptr;
   bool _useSpiffs;
 };
 

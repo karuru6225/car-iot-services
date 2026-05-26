@@ -16,6 +16,7 @@ resource "aws_iot_policy" "device" {
         Action = "iot:Publish"
         Resource = [
           "arn:aws:iot:${var.aws_region}:*:topic/sensors/*/data",
+          "arn:aws:iot:${var.aws_region}:*:topic/sensors/*/data_bin",
           "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/shadow/update",
           "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/jobs/$next/get",
           "arn:aws:iot:${var.aws_region}:*:topic/$aws/things/*/jobs/*/update",
@@ -70,5 +71,33 @@ resource "aws_lambda_permission" "iot_ingest" {
   function_name = aws_lambda_function.ingest.function_name
   principal     = "iot.amazonaws.com"
   source_arn    = aws_iot_topic_rule.ingest.arn
+}
+
+# ─── Topic Rule: sensors/+/data_bin → Lambda ingest（MessagePack）────────────
+
+resource "aws_iot_topic_rule" "ingest_bin" {
+  name        = replace("${var.project}_ingest_bin", "-", "_")
+  enabled     = true
+  sql         = "SELECT encode(*,'base64') AS payload, topic(2) AS device_id FROM 'sensors/+/data_bin'"
+  sql_version = "2016-03-23"
+
+  lambda {
+    function_arn = aws_lambda_function.ingest.arn
+  }
+
+  error_action {
+    cloudwatch_logs {
+      log_group_name = "/aws/iot/${var.project}/rule-errors"
+      role_arn       = aws_iam_role.iot_error_logs.arn
+    }
+  }
+}
+
+resource "aws_lambda_permission" "iot_ingest_bin" {
+  statement_id  = "AllowIoTInvokeBin"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ingest.function_name
+  principal     = "iot.amazonaws.com"
+  source_arn    = aws_iot_topic_rule.ingest_bin.arn
 }
 

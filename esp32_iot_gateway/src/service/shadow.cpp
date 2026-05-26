@@ -17,9 +17,9 @@ void shadowPublishConfig(bool clearDesired)
   snprintf(topic, sizeof(topic), "$aws/things/%s/shadow/update", getDeviceId());
 
   char payload[256];
-  buildConfigPayload(payload, sizeof(payload), clearDesired);
+  int len = buildConfigPayload(payload, sizeof(payload), clearDesired);
 
-  if (mqtt.publish(topic, payload))
+  if (mqtt.publish(topic, (const uint8_t *)payload, (size_t)len))
     logger.println("[SHADOW] config published");
   else
     logger.println("[SHADOW] config publish failed");
