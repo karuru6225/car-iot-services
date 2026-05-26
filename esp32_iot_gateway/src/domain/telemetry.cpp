@@ -9,12 +9,12 @@ int buildBatteryPayload(char *buf, size_t size,
                         time_t ts)
 {
   return snprintf(buf, size,
-                  "{\"type\":\"battery\","
-                  "\"main\":%.2f,"
-                  "\"sub\":%.2f,"
-                  "\"current\":%.4f,"
-                  "\"power\":%.3f,"
-                  "\"temp\":%.1f,"
+                  "{\"t\":\"battery\","
+                  "\"m\":%.2f,"
+                  "\"s\":%.2f,"
+                  "\"i\":%.4f,"
+                  "\"p\":%.3f,"
+                  "\"tp\":%.1f,"
                   "\"ah\":%.6f,"
                   "\"ts\":%lld}",
                   main.voltage, sub.voltage,
@@ -63,12 +63,12 @@ int buildThermometerPayload(char *buf, size_t size,
                              const char *tsField)
 {
   return snprintf(buf, size,
-                  "{\"type\":\"thermometer\","
-                  "\"addr\":\"%s\","
-                  "\"temp\":%.1f,"
-                  "\"humidity\":%d,"
-                  "\"battery\":%d,"
-                  "\"rssi\":%d,"
+                  "{\"t\":\"thermometer\","
+                  "\"a\":\"%s\","
+                  "\"tp\":%.1f,"
+                  "\"h\":%d,"
+                  "\"bt\":%d,"
+                  "\"rs\":%d,"
                   "\"mf\":\"%s\","
                   "\"fw\":\"" FIRMWARE_VERSION "\"%s}",
                   d.address, d.temp, d.humidity, d.battery, d.rssi, d.mfHex, tsField);
@@ -79,13 +79,13 @@ int buildCo2Payload(char *buf, size_t size,
                     const char *tsField)
 {
   return snprintf(buf, size,
-                  "{\"type\":\"co2meter\","
-                  "\"addr\":\"%s\","
-                  "\"temp\":%.1f,"
-                  "\"humidity\":%d,"
+                  "{\"t\":\"co2meter\","
+                  "\"a\":\"%s\","
+                  "\"tp\":%.1f,"
+                  "\"h\":%d,"
                   "\"co2\":%d,"
-                  "\"battery\":%d,"
-                  "\"rssi\":%d,"
+                  "\"bt\":%d,"
+                  "\"rs\":%d,"
                   "\"mf\":\"%s\","
                   "\"fw\":\"" FIRMWARE_VERSION "\"%s}",
                   d.address, d.temp, d.humidity, d.co2, d.battery, d.rssi, d.mfHex, tsField);

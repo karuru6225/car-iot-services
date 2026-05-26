@@ -20,8 +20,19 @@ import boto3
 s3 = boto3.client("s3")
 BUCKET = os.environ["S3_BUCKET"]
 
+_SHORT_TO_FULL = {
+    "t": "type", "m": "main", "s": "sub", "i": "current",
+    "p": "power", "tp": "temp", "a": "addr", "h": "humidity",
+    "bt": "battery", "rs": "rssi",
+}
+
+
+def _expand_keys(d: dict) -> dict:
+    return {_SHORT_TO_FULL.get(k, k): v for k, v in d.items()}
+
 
 def handler(event, context):
+    event = _expand_keys(event)
     device_id = event.get("device_id", "unknown")
 
     ts_raw = event.get("ts", "")
