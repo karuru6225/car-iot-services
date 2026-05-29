@@ -113,6 +113,7 @@ void setup()
     ota.confirmBoot();
 
   shadowSetup();
+  shadowPublishConfig(); // reported を送信して AWS に delta を再計算させる
   shadowPollDelta(3000); // 起動時に pending な desired を即適用
 
   oledPrint("Job checking...");
@@ -203,7 +204,8 @@ void loop()
         logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
       }
     }
-    shadowPublishConfig();
+    shadowPublishConfig(); // reported 送信 → AWS が delta を再計算
+    shadowPollDelta();     // delta を受信して NVS に適用（内部で clearDesired も送信）
     delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
 #ifndef DEBUG_SKIP_NETWORK
     queue.save();
