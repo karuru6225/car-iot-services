@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLE ダッシュボード</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      padding: 16px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    h1 { color: #4f8ef7; margin-bottom: 16px; font-size: 1.3em; }
+
+    .card {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .card h2 {
+      font-size: 0.85em;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+
+    /* 接続ステータス */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .dot.connected    { background: #2ecc71; }
+    .dot.connecting   { background: #f39c12; animation: blink 0.8s step-start infinite; }
+    .dot.disconnected { background: #e74c3c; }
+
+    @keyframes blink { 50% { opacity: 0; } }
+
+    #statusText { font-size: 0.95em; flex: 1; }
+    #deviceName { font-size: 0.8em; color: #888; margin-left: auto; }
+
+    button {
+      background: #4f8ef7;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 0.95em;
+      min-height: 44px;
+      transition: background 0.15s;
+    }
+    button:hover:not(:disabled) { background: #3a7de4; }
+    button:disabled { background: #2a4060; color: #666; cursor: not-allowed; }
+    button.danger  { background: #c0392b; }
+    button.danger:hover:not(:disabled) { background: #a93226; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    /* データ表示 */
+    .data-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .data-item label {
+      font-size: 0.75em;
+      color: #888;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .data-item .value {
+      font-size: 1.4em;
+      font-weight: 600;
+      color: #4f8ef7;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .data-item .value.stale { color: #555; }
+
+    /* ログ */
+    #log {
+      background: #0f1a2e;
+      border-radius: 6px;
+      padding: 10px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.78em;
+      line-height: 1.6;
+      color: #a0b4c8;
+    }
+
+    #log .entry { display: flex; gap: 8px; }
+    #log .ts    { color: #4a6a8a; flex-shrink: 0; }
+    #log .msg.rx { color: #2ecc71; }
+    #log .msg.tx { color: #f39c12; }
+    #log .msg.sys { color: #888; }
+    #log .msg.err { color: #e74c3c; }
+
+    /* 送信フォーム */
+    .send-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    #sendInput {
+      flex: 1;
+      background: #0f3460;
+      color: #e0e0e0;
+      border: 1px solid #3a5a8a;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 0.9em;
+      min-height: 44px;
+    }
+    #sendInput:focus { outline: none; border-color: #4f8ef7; }
+
+    .unsupported {
+      background: #2a1a1a;
+      border: 1px solid #c0392b;
+      border-radius: 8px;
+      padding: 16px;
+      color: #e74c3c;
+      margin-bottom: 16px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<h1>BLE ダッシュボード</h1>
+
+<div class="unsupported" id="unsupportedMsg">
+  このブラウザは Web Bluetooth に対応していません。Chrome (デスクトップ / Android) を使ってください。
+</div>
+
+<!-- 接続カード -->
+<div class="card">
+  <h2>接続</h2>
+  <div class="status-row">
+    <div class="dot disconnected" id="dot"></div>
+    <span id="statusText">未接続</span>
+    <span id="deviceName"></span>
+  </div>
+  <div class="btn-row">
+    <button id="btnConnect">接続</button>
+    <button id="btnDisconnect" class="danger" disabled>切断</button>
+  </div>
+</div>
+
+<!-- データカード -->
+<div class="card">
+  <h2>最新データ</h2>
+  <div class="data-grid">
+    <div class="data-item">
+      <label>カウンタ (n)</label>
+      <span class="value stale" id="valN">—</span>
+    </div>
+    <div class="data-item">
+      <label>電圧 (v)</label>
+      <span class="value stale" id="valV">—</span>
+    </div>
+    <div class="data-item">
+      <label>電流 (i)</label>
+      <span class="value stale" id="valI">—</span>
+    </div>
+    <div class="data-item">
+      <label>電力 (p)</label>
+      <span class="value stale" id="valP">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- ログカード -->
+<div class="card">
+  <h2>ログ</h2>
+  <div id="log"></div>
+</div>
+
+<!-- 送信カード -->
+<div class="card">
+  <h2>送信 (RX → デバイス)</h2>
+  <div class="send-row">
+    <input type="text" id="sendInput" placeholder="送信するテキスト" disabled>
+    <button id="btnSend" disabled>送信</button>
+  </div>
+</div>
+
+<script>
+  const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+  const NUS_TX     = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // device -> phone (notify)
+  const NUS_RX     = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // phone -> device (write)
+
+  const dot        = document.getElementById('dot');
+  const statusText = document.getElementById('statusText');
+  const deviceName = document.getElementById('deviceName');
+  const btnConnect    = document.getElementById('btnConnect');
+  const btnDisconnect = document.getElementById('btnDisconnect');
+  const btnSend    = document.getElementById('btnSend');
+  const sendInput  = document.getElementById('sendInput');
+  const logEl      = document.getElementById('log');
+
+  let rxChar = null;
+
+  // Web Bluetooth サポートチェック
+  if (!navigator.bluetooth) {
+    document.getElementById('unsupportedMsg').style.display = 'block';
+    btnConnect.disabled = true;
+  }
+
+  // ---------- ログ ----------
+  function addLog(msg, type = 'sys') {
+    const now = new Date();
+    const ts = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    entry.innerHTML = `<span class="ts">${ts}</span><span class="msg ${type}">${escHtml(msg)}</span>`;
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ---------- UI 状態 ----------
+  function setConnecting() {
+    dot.className = 'dot connecting';
+    statusText.textContent = '接続中...';
+    btnConnect.disabled = true;
+    btnDisconnect.disabled = true;
+  }
+
+  function setConnected(name) {
+    dot.className = 'dot connected';
+    statusText.textContent = '接続済み';
+    deviceName.textContent = name;
+    btnConnect.disabled = true;
+    btnDisconnect.disabled = false;
+    btnSend.disabled = false;
+    sendInput.disabled = false;
+  }
+
+  function setDisconnected() {
+    dot.className = 'dot disconnected';
+    statusText.textContent = '未接続';
+    deviceName.textContent = '';
+    btnConnect.disabled = false;
+    btnDisconnect.disabled = true;
+    btnSend.disabled = true;
+    sendInput.disabled = true;
+    rxChar = null;
+    setStale();
+  }
+
+  function setStale() {
+    ['valN','valV','valI','valP'].forEach(id => {
+      const el = document.getElementById(id);
+      el.textContent = '—';
+      el.classList.add('stale');
+    });
+  }
+
+  // ---------- データ表示 ----------
+  function updateData(payload) {
+    try {
+      const d = JSON.parse(payload);
+      const fields = { n: 'valN', v: 'valV', i: 'valI', p: 'valP' };
+      for (const [key, id] of Object.entries(fields)) {
+        if (key in d) {
+          const el = document.getElementById(id);
+          el.textContent = d[key];
+          el.classList.remove('stale');
+        }
+      }
+    } catch {
+      // JSON でなければ無視（ログには出す）
+    }
+  }
+
+  // ---------- 接続 ----------
+  btnConnect.addEventListener('click', async () => {
+    try {
+      setConnecting();
+      addLog('デバイスを検索中...', 'sys');
+
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [NUS_SERVICE] }]
+      });
+
+      addLog(`デバイス選択: ${device.name ?? '(名称なし)'}`, 'sys');
+      device.addEventListener('gattserverdisconnected', () => {
+        addLog('切断されました', 'sys');
+        setDisconnected();
+      });
+
+      const server  = await device.gatt.connect();
+      const service = await server.getPrimaryService(NUS_SERVICE);
+
+      // TX: デバイス → スマホ (Notify)
+      const txChar = await service.getCharacteristic(NUS_TX);
+      txChar.addEventListener('characteristicvaluechanged', e => {
+        const val = new TextDecoder().decode(e.target.value);
+        addLog(`← ${val}`, 'rx');
+        updateData(val);
+      });
+      await txChar.startNotifications();
+
+      // RX: スマホ → デバイス (Write)
+      rxChar = await service.getCharacteristic(NUS_RX);
+
+      setConnected(device.name ?? '(名称なし)');
+      addLog('接続完了・Notify 開始', 'sys');
+    } catch (err) {
+      addLog(`エラー: ${err.message}`, 'err');
+      setDisconnected();
+    }
+  });
+
+  // ---------- 切断 ----------
+  btnDisconnect.addEventListener('click', async () => {
+    try {
+      const devices = await navigator.bluetooth.getDevices?.() ?? [];
+      for (const d of devices) {
+        if (d.gatt?.connected) d.gatt.disconnect();
+      }
+    } catch {
+      /* ignore */
+    }
+    addLog('手動切断', 'sys');
+    setDisconnected();
+  });
+
+  // ---------- 送信 ----------
+  async function doSend() {
+    const text = sendInput.value.trim();
+    if (!text || !rxChar) return;
+    try {
+      const encoded = new TextEncoder().encode(text);
+      await rxChar.writeValueWithoutResponse(encoded);
+      addLog(`→ ${text}`, 'tx');
+      sendInput.value = '';
+    } catch (err) {
+      addLog(`送信エラー: ${err.message}`, 'err');
+    }
+  }
+
+  btnSend.addEventListener('click', doSend);
+  sendInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSend(); });
+</script>
+</body>
+</html>
