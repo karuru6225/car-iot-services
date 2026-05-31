@@ -181,9 +181,9 @@ static void updateRelayIndicator(int remainSec, RelayMode mode)
   }
 }
 
-void loop()
+// BLE 切断後の再接続待ちと CONTINUOUS/DEEP_SLEEP 昇降格を管理する
+static void updateBleReconnectState()
 {
-  // BLE 切断 → 2分間再接続を待ってから DEEP_SLEEP に戻す
   if (g_bleUpgradedToContinuous && !blePeripheral.isConnected())
   {
     if (g_bleDisconnectedAt == 0)
@@ -198,78 +198,66 @@ void loop()
       g_bleDisconnectedAt = 0;
       logger.println("[BLE] 再接続タイムアウト → DEEP_SLEEP");
     }
-    // タイムアウト前は CONTINUOUS を維持
   }
   else if (blePeripheral.isConnected())
   {
-    g_bleDisconnectedAt = 0; // 接続中はカウントリセット
+    g_bleDisconnectedAt = 0;
   }
+}
 
-#ifndef DEBUG_SKIP_NETWORK
-  g_lastResult = measure();
-  publish(g_lastResult);
-  queue.flush();
+// 充電制御 → shadow 同期 → LTE 切断 → DeepSleep（戻らない）
+static void enterDeepSleepMode()
+{
+  // 電圧に基づく自動充電制御
+  {
+    float v = g_lastResult.reading.main.voltage;
+    float startV = getChgStartV();
+    float stopV  = getChgStopV();
+    if (v >= 10.0f && !isCharging() && v < startV)
+    {
+      setCharging(true);
+      digitalWrite(CHG_ON_PIN, HIGH);
+      logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV\n", v, startV);
+    }
+    else if (v >= 10.0f && isCharging() && v >= stopV)
+    {
+      setCharging(false);
+      digitalWrite(CHG_ON_PIN, LOW);
+      logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
+    }
+  }
+  shadowPublishConfig();
   shadowPollDelta();
-  oledShowSensorData(g_lastResult.reading);
-#endif
-
-  // BLE 接続中で DEEP_SLEEP モードなら CONTINUOUS に昇格
-  if (blePeripheral.isConnected() && g_mode == OperationMode::DEEP_SLEEP)
-  {
-    g_mode = OperationMode::CONTINUOUS;
-    g_bleUpgradedToContinuous = true;
-  }
-
-  if (g_mode == OperationMode::DEEP_SLEEP)
-  {
-    // 電圧に基づく自動充電制御（LTE 切断前に判定）
-    {
-      float v = g_lastResult.reading.main.voltage;
-      float startV = getChgStartV();
-      float stopV = getChgStopV();
-      if (v >= 10.0f && !isCharging() && v < startV)
-      {
-        setCharging(true);
-        digitalWrite(CHG_ON_PIN, HIGH);
-        logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV\n", v, startV);
-      }
-      else if (v >= 10.0f && isCharging() && v >= stopV)
-      {
-        setCharging(false);
-        digitalWrite(CHG_ON_PIN, LOW);
-        logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
-      }
-    }
-    shadowPublishConfig(); // reported 送信 → AWS が delta を再計算
-    shadowPollDelta();     // delta を受信して NVS に適用（内部で clearDesired も送信）
-    delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
+  delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
 #ifndef DEBUG_SKIP_NETWORK
-    queue.save();
-    lte.disconnect();
-    lte.radioOff(); // LTE_EN LOW
+  queue.save();
+  lte.disconnect();
+  lte.radioOff();
 #endif
-    oledClear();
+  oledClear();
 
-    // 次の5分境界（UTC）に起動するようスリープ時間を調整
-    uint32_t sleepSec = SLEEP_INTERVAL_SEC;
-    time_t now = time(nullptr);
-    if (now > 1577836800L) // 2020-01-01以降なら時刻同期済みと判断
-    {
-      time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
-      sleepSec = (uint32_t)(next - now);
-    }
-    if (isCharging())
-      gpio_hold_en((gpio_num_t)CHG_ON_PIN);
-    rtc_gpio_init(GPIO_NUM_0);
-    rtc_gpio_set_direction(GPIO_NUM_0, RTC_GPIO_MODE_INPUT_ONLY);
-    rtc_gpio_pullup_en(GPIO_NUM_0);
-    rtc_gpio_pulldown_dis(GPIO_NUM_0);
-    esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
-    esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
-    esp_deep_sleep_start();
+  // 次の5分境界（UTC）に起動するようスリープ時間を調整
+  uint32_t sleepSec = SLEEP_INTERVAL_SEC;
+  time_t now = time(nullptr);
+  if (now > 1577836800L) // 2020-01-01以降なら時刻同期済みと判断
+  {
+    time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
+    sleepSec = (uint32_t)(next - now);
   }
+  if (isCharging())
+    gpio_hold_en((gpio_num_t)CHG_ON_PIN);
+  rtc_gpio_init(GPIO_NUM_0);
+  rtc_gpio_set_direction(GPIO_NUM_0, RTC_GPIO_MODE_INPUT_ONLY);
+  rtc_gpio_pullup_en(GPIO_NUM_0);
+  rtc_gpio_pulldown_dis(GPIO_NUM_0);
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
+  esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
+  esp_deep_sleep_start();
+}
 
-  // CONTINUOUS: 次の5分境界（UTC）まで待機しながらボタン監視・カウントダウン表示
+// 次の5分境界（UTC）まで待機しながらボタン監視・カウントダウン表示・BLE Notify
+static void runContinuousLoop()
+{
   uint32_t waitSec = SLEEP_INTERVAL_SEC;
   {
     time_t nowT = time(nullptr);
@@ -279,11 +267,12 @@ void loop()
       waitSec = (uint32_t)(next - nowT);
     }
   }
-  unsigned long waitMs = (unsigned long)waitSec * 1000UL;
-  RelayMode relayMode = getRelayMode();
-  unsigned long waitStart = millis();
-  unsigned long lastNotifyMs = 0;
-  int lastRemain = -1;
+  unsigned long waitMs     = (unsigned long)waitSec * 1000UL;
+  RelayMode relayMode      = getRelayMode();
+  unsigned long waitStart  = millis();
+  unsigned long lastNotify = 0;
+  int lastRemain           = -1;
+
   while (millis() - waitStart < waitMs)
   {
     ButtonEvent ev = button.read();
@@ -312,6 +301,7 @@ void loop()
         g_mode = OperationMode::DEEP_SLEEP;
       }
     }
+
     int remain = (int)((waitMs - (millis() - waitStart)) / 1000);
     if (remain != lastRemain)
     {
@@ -320,11 +310,10 @@ void loop()
       lastRemain = remain;
     }
 
-    // BLE Notify（毎秒、接続中のみ）
     unsigned long now = millis();
-    if (now - lastNotifyMs >= 1000)
+    if (now - lastNotify >= 1000)
     {
-      lastNotifyMs = now;
+      lastNotify = now;
       blePeripheral.notify(
         adsReadDiffMain(),
         ina228.readCurrent(),
@@ -335,4 +324,29 @@ void loop()
 
     delay(50);
   }
+}
+
+void loop()
+{
+  updateBleReconnectState();
+
+#ifndef DEBUG_SKIP_NETWORK
+  g_lastResult = measure();
+  publish(g_lastResult);
+  queue.flush();
+  shadowPollDelta();
+  oledShowSensorData(g_lastResult.reading);
+#endif
+
+  // BLE 接続 → CONTINUOUS 昇格
+  if (blePeripheral.isConnected() && g_mode == OperationMode::DEEP_SLEEP)
+  {
+    g_mode = OperationMode::CONTINUOUS;
+    g_bleUpgradedToContinuous = true;
+  }
+
+  if (g_mode == OperationMode::DEEP_SLEEP)
+    enterDeepSleepMode(); // 戻らない
+  else
+    runContinuousLoop();
 }
