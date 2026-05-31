@@ -128,7 +128,7 @@ class _BleHomeState extends State<BleHome> {
 
     // ボンディング後に OS が自動接続済みの場合はスキャンを迂回（失敗時はスキャンへ自動フォールバック）
     final already = FlutterBluePlus.connectedDevices
-        .where((d) => d.platformName == 'car-iot-ble')
+        .where((d) => d.platformName.startsWith('car-iot-'))
         .toList();
 
     if (already.isNotEmpty) {

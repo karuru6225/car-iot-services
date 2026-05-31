@@ -37,7 +37,12 @@ void BleScanner::setup()
   sensorFilter.begin();
 #endif
   queue = xQueueCreate(QUEUE_SIZE, sizeof(SensorVariant));
-  NimBLEDevice::init("car-iot-ble");
+  // デバイス名に MAC 上位 3 バイトを付加して複数台を区別可能にする
+  // "esp32-gw-aabbccddeeff" → "car-iot-aabbcc"
+  const char *id = getDeviceId();
+  char bleName[20];
+  snprintf(bleName, sizeof(bleName), "car-iot-%.6s", id + 9); // 9 = strlen("esp32-gw-")
+  NimBLEDevice::init(bleName);
   _scan = NimBLEDevice::getScan();
   _scan->setAdvertisedDeviceCallbacks(new SwitchBotCallback());
   _scan->setActiveScan(true);
