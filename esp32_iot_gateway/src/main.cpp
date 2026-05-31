@@ -3,8 +3,8 @@
 // 起動 → (BTN0 長押し) メニュー → LTE 接続 → OTA チェック → loop()
 //
 // loop() の動作モード:
-//   DEEP_SLEEP  : measureAndPublish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
-//   CONTINUOUS  : measureAndPublish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
+//   DEEP_SLEEP  : measure() + publish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
+//   CONTINUOUS  : measure() + publish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
 //
 // デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
 
