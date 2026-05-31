@@ -59,7 +59,8 @@ car-iot-services/
 │   ├── gen_certs.ps1      証明書生成
 │   └── send_command.ps1   IoT Jobs コマンド送信
 ├── web/
-│   └── index.html         Web 管理画面（単一ファイル SPA）
+│   ├── index.html         Web 管理画面（グラフ表示・データ削除）
+│   └── admin.html         管理画面（デバイス一覧・Shadow 設定・充電制御）
 ├── docs/                  調査・設計メモ
 ├── tools/                 開発補助ツール（KiCad MCP サーバー等）
 ├── rtx830_filter_updater/ RTX830 フィルタ更新スクリプト
