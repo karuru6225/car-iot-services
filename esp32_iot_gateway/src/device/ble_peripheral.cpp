@@ -153,6 +153,7 @@ void BlePeripheral::enablePairing() {
 }
 
 void BlePeripheral::disablePairing() {
+  _authComplete = false;
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 }
 
