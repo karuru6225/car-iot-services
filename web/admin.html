@@ -206,7 +206,6 @@ function deviceCard(d) {
     <div class="kv"><div class="k">充電開始</div><div class="v">${s.chg_start_v != null ? s.chg_start_v.toFixed(2) + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">充電停止</div><div class="v">${s.chg_stop_v  != null ? s.chg_stop_v.toFixed(2)  + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">Ah オフセット</div><div class="v">${s.ah_offset != null ? s.ah_offset : '-'}</div></div>
-    <div class="kv"><div class="k">リレーモード</div><div class="v">${s.relay_mode || '-'}</div></div>
     <div class="kv"><div class="k">デバッグログ</div><div class="v">${s.debug_log != null ? (s.debug_log ? 'on' : 'off') : '-'}</div></div>
   </div>
 
@@ -226,13 +225,6 @@ function deviceCard(d) {
         <div class="form-group">
           <label>ah_offset</label>
           <input type="number" step="1" id="sv-ah-${id}" value="${s.ah_offset != null ? s.ah_offset : 0}">
-        </div>
-        <div class="form-group">
-          <label>relay_mode</label>
-          <select id="sv-relay-${id}">
-            <option value="sleep_indicator" ${(s.relay_mode || '') === 'sleep_indicator' ? 'selected' : ''}>sleep_indicator</option>
-            <option value="off"             ${s.relay_mode === 'off' ? 'selected' : ''}>off</option>
-          </select>
         </div>
         <div class="form-group">
           <label>debug_log</label>
@@ -290,7 +282,6 @@ async function saveShadow(deviceId) {
     chg_start_v:      parseFloat(document.getElementById(`sv-start-${deviceId}`).value),
     chg_stop_v:       parseFloat(document.getElementById(`sv-stop-${deviceId}`).value),
     ah_offset:        parseInt(document.getElementById(`sv-ah-${deviceId}`).value, 10),
-    relay_mode:       document.getElementById(`sv-relay-${deviceId}`).value,
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',
     charging:         document.getElementById(`sv-charging-${deviceId}`).value === 'true',
   };
