@@ -205,6 +205,16 @@ static void updateBleReconnectState()
   }
 }
 
+// 次の5分境界（UTC）までの秒数を返す。時刻未同期なら SLEEP_INTERVAL_SEC を返す
+static uint32_t secsToNextBoundary()
+{
+  time_t now = time(nullptr);
+  if (now <= 1577836800L) // 2020-01-01以前なら時刻未同期
+    return SLEEP_INTERVAL_SEC;
+  time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
+  return (uint32_t)(next - now);
+}
+
 // 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）
 static void updateChargingState()
 {
@@ -239,14 +249,7 @@ static void enterDeepSleepMode()
 #endif
   oledClear();
 
-  // 次の5分境界（UTC）に起動するようスリープ時間を調整
-  uint32_t sleepSec = SLEEP_INTERVAL_SEC;
-  time_t now = time(nullptr);
-  if (now > 1577836800L) // 2020-01-01以降なら時刻同期済みと判断
-  {
-    time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
-    sleepSec = (uint32_t)(next - now);
-  }
+  uint32_t sleepSec = secsToNextBoundary();
   if (isCharging())
     gpio_hold_en((gpio_num_t)CHG_ON_PIN);
   rtc_gpio_init(GPIO_NUM_0);
@@ -261,16 +264,7 @@ static void enterDeepSleepMode()
 // 次の5分境界（UTC）まで待機しながらボタン監視・カウントダウン表示・BLE Notify
 static void runContinuousLoop()
 {
-  uint32_t waitSec = SLEEP_INTERVAL_SEC;
-  {
-    time_t nowT = time(nullptr);
-    if (nowT > 1577836800L) // 2020-01-01以降なら時刻同期済みと判断
-    {
-      time_t next = ((nowT / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
-      waitSec = (uint32_t)(next - nowT);
-    }
-  }
-  unsigned long waitMs     = (unsigned long)waitSec * 1000UL;
+  unsigned long waitMs     = (unsigned long)secsToNextBoundary() * 1000UL;
   RelayMode relayMode      = getRelayMode();
   unsigned long waitStart  = millis();
   unsigned long lastNotify = 0;
