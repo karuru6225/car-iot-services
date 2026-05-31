@@ -64,8 +64,6 @@ static OperationMode g_mode = OperationMode::DEEP_SLEEP;
 static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
 static MeasureResult g_lastResult = {};
 static bool g_bleUpgradedToContinuous = false;
-static unsigned long g_bleDisconnectedAt = 0;
-static const uint32_t BLE_RECONNECT_TIMEOUT_MS = 120000; // 切断後 2分間は再接続を待ってから DeepSleep
 
 void setup()
 {
@@ -151,27 +149,13 @@ void setup()
 }
 
 
-// BLE 切断後の再接続待ちと CONTINUOUS/DEEP_SLEEP 昇降格を管理する
+// BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）
 static void updateBleReconnectState()
 {
   if (g_bleUpgradedToContinuous && !blePeripheral.isConnected())
   {
-    if (g_bleDisconnectedAt == 0)
-    {
-      g_bleDisconnectedAt = millis();
-      logger.println("[BLE] 切断 - 再接続待ち開始 (2分)");
-    }
-    if (millis() - g_bleDisconnectedAt >= BLE_RECONNECT_TIMEOUT_MS)
-    {
-      g_mode = OperationMode::DEEP_SLEEP;
-      g_bleUpgradedToContinuous = false;
-      g_bleDisconnectedAt = 0;
-      logger.println("[BLE] 再接続タイムアウト → DEEP_SLEEP");
-    }
-  }
-  else if (blePeripheral.isConnected())
-  {
-    g_bleDisconnectedAt = 0;
+    g_mode = OperationMode::DEEP_SLEEP;
+    g_bleUpgradedToContinuous = false;
   }
 }
 
