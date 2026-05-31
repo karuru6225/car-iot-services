@@ -18,8 +18,11 @@
 BlePeripheral blePeripheral;
 
 class BlePeripheralServerCb : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer*) override {
+  void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override {
     blePeripheral._connected = true;
+    // BLE スキャンと共存するためコネクションインターバルを延長
+    // 400×1.25ms=500ms 〜 800×1.25ms=1000ms、latency=0、timeout=500×10ms=5s
+    pServer->updateConnParams(desc->conn_handle, 400, 800, 0, 500);
   }
   void onDisconnect(NimBLEServer*) override {
     blePeripheral._connected    = false;

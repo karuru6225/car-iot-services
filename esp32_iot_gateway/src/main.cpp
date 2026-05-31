@@ -100,6 +100,8 @@ void setup()
   {
     oledPrint("Menu Mode");
     g_mode = enterMenuMode();
+    if (g_mode == OperationMode::CONTINUOUS && blePeripheral.isConnected())
+      g_bleUpgradedToContinuous = true;
   }
 
 #ifndef DEBUG_SKIP_NETWORK
@@ -234,6 +236,8 @@ static void runContinuousLoop()
     if (ev == ButtonEvent::BTN0_SHORT)
     {
       g_mode = enterMenuMode();
+      if (g_mode == OperationMode::CONTINUOUS && blePeripheral.isConnected())
+        g_bleUpgradedToContinuous = true;
       int curRemain = (int)((waitMs - (millis() - waitStart)) / 1000);
       oledShowSensorData(g_lastResult.reading);
       oledUpdateCountdown(curRemain);
@@ -284,6 +288,12 @@ void loop()
   updateBleReconnectState();
 
 #ifndef DEBUG_SKIP_NETWORK
+  if (!lte.isConnected())
+  {
+    logger.println("[MAIN] LTE 切断検出 → 再接続中...");
+    oledPrint("LTE reconnecting...");
+    lte.connect();
+  }
   g_lastResult = measure();
   publish(g_lastResult);
   queue.flush();

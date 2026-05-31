@@ -42,8 +42,22 @@ bool Mqtt::connect()
   logger.println("[MQTT] 接続中...");
   if (!lte.sendCmd("AT+SMCONN", 30000))
   {
-    logger.println("[MQTT] 接続失敗");
-    return false;
+    logger.println("[MQTT] 接続失敗 → GPRS 確認中...");
+    if (!lte.isConnected())
+    {
+      logger.println("[MQTT] GPRS 切断 → 再接続中...");
+      if (!lte.connect())
+      {
+        logger.println("[MQTT] GPRS 再接続失敗");
+        return false;
+      }
+    }
+    logger.println("[MQTT] MQTT 再接続中...");
+    if (!lte.sendCmd("AT+SMCONN", 30000))
+    {
+      logger.println("[MQTT] 接続失敗");
+      return false;
+    }
   }
   logger.println("[MQTT] 接続完了");
   return true;

@@ -304,6 +304,19 @@ bool Lte::syncTime()
   }
 
   time_t epoch = mktime(&t2) - (time_t)tzQuarters * 15 * 60;
+
+  // 内蔵 RTC がすでに正常な時刻を持っている場合、モデムの時刻が過去に戻っているなら更新しない。
+  // DeepSleep をまたいでも RTC は正しく進むため、NITZ 未受信のモデム時刻で上書きされるのを防ぐ。
+  static const time_t MIN_VALID_EPOCH = 1700000000L; // 2023-11-15 以降なら有効とみなす
+  time_t now = time(nullptr);
+  if (now > MIN_VALID_EPOCH && epoch < now - 30)
+  {
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
+    logger.printf("[TIME] モデム時刻が過去のため RTC を維持: %s\n", buf);
+    return true;
+  }
+
   struct timeval tv = {epoch, 0};
   settimeofday(&tv, NULL);
 
