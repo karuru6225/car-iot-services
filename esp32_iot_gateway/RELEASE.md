@@ -14,23 +14,34 @@
 
 ## リリース手順
 
-### 1. `config.h` のバージョンを更新
+### 1. ドキュメントを更新
+
+以下を確認・更新する。
+
+- `CONTEXT.md`:
+  - `config.h 定数一覧` の `FIRMWARE_VERSION` 行を新バージョンに更新
+  - Shadow reported ペイロード例の `fw_version` を新バージョンに更新
+  - 変更内容に応じて TODO セクションを更新（完了ならステータス変更、新規なら追記）
+- `ARCHITECTURE.md`: 新しいファイル・クラスを追加した場合は各テーブルを更新
+- `README.md`: ハードウェア構成・リポジトリ構造・デプロイ手順に変更があれば更新
+
+### 2. `config.h` のバージョンを更新
 
 [src/config.h](src/config.h) の `FIRMWARE_VERSION` を新バージョンに書き換える。
 
 ```c
-#define FIRMWARE_VERSION "1.3.1+" GIT_HASH  // ← 数字部分を変更
+#define FIRMWARE_VERSION "1.16.0+" GIT_HASH  // ← 数字部分を変更
 ```
 
-### 2. コミットしてタグを付ける
+### 3. コミットしてタグを付ける
 
 ```bash
-git add esp32_iot_gateway/src/config.h
+git add esp32_iot_gateway/src/config.h esp32_iot_gateway/CONTEXT.md esp32_iot_gateway/ARCHITECTURE.md
 git commit -m "chore: FIRMWARE_VERSION を X.Y.Z に更新"
 git tag vX.Y.Z
 ```
 
-### 3. push する
+### 4. push する
 
 ```bash
 git push origin main --tags

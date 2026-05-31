@@ -170,7 +170,7 @@ ESP32-S3-MINI-1
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"charging":false,"fw_version":"1.15.0+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"charging":false,"override_next_mode":null,"fw_version":"1.16.0+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
@@ -179,7 +179,10 @@ ESP32-S3-MINI-1
 {"state":{"desired":{"ah_offset":200}}}
 {"state":{"desired":{"chg_start_v":11.5,"chg_stop_v":12.8}}}
 {"state":{"desired":{"charging":true}}}
+{"state":{"desired":{"override_next_mode":"one_shot_continuous"}}}
 ```
+
+`override_next_mode: "one_shot_continuous"` を設定すると、次回起動時に1サイクルだけ CONTINUOUS モードで動作（BLE アドバタイズ継続）し、自動で DEEP_SLEEP に戻る。デバイスが ACK として reported に `"one_shot_continuous"` を送信したタイミングで desired も自動クリアされる。
 
 shadow publish はスリープ直前に1回だけ行う（起動時は行わない）。電源断で状態がズレた場合でも次サイクル（最大5分）で補正される。
 
@@ -313,10 +316,10 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.15.0+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `"1.16.0+" GIT_HASH` | ファームウェアバージョン |
 | `CHG_ON_PIN` | `21` | メインバッテリー充電制御ピン（HIGH=ON） |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
-| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS`（動作モード） |
+| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS`（動作モード） |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔 / CONTINUOUS モード待機間隔（秒） |
 | `CERT_PATH_CA` | `"/certs/ca.crt"` | SPIFFS 上の CA 証明書パス |
 | `CERT_PATH_DEVICE` | `"/certs/device.crt"` | SPIFFS 上のデバイス証明書パス |
