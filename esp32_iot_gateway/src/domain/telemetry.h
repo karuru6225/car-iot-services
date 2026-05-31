@@ -9,7 +9,9 @@
 
 // Shadow reported 向けデバイス設定ペイロードを組み立てる
 // clearDesired=true のとき "desired":null を付加して desired をクリアする
-int buildConfigPayload(char *buf, size_t size, bool clearDesired = false);
+// overrideNextMode: "one_shot_continuous" を渡すと ACK として報告、nullptr で null 報告（通常時）
+int buildConfigPayload(char *buf, size_t size, bool clearDesired = false,
+                       const char *overrideNextMode = nullptr);
 
 // ─── テレメトリエンコーダ（pubqueue が使用） ────────────────────────────────────
 //

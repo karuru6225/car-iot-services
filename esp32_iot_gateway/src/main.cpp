@@ -3,8 +3,9 @@
 // 起動 → (BTN0 長押し) メニュー → LTE 接続 → OTA チェック → loop()
 //
 // loop() の動作モード:
-//   DEEP_SLEEP  : measure() + publish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
-//   CONTINUOUS  : measure() + publish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
+//   DEEP_SLEEP          : measure() + publish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
+//   CONTINUOUS          : measure() + publish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
+//   ONE_SHOT_CONTINUOUS : Shadow ble_mode から指定。1サイクルだけ CONTINUOUS → 自動で DEEP_SLEEP
 //
 // デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
 
@@ -120,6 +121,10 @@ void setup()
   shadowSetup();
   shadowPublishConfig(); // reported を送信して AWS に delta を再計算させる
   shadowPollDelta(3000); // 起動時に pending な desired を即適用
+
+  // Shadow override_next_mode を確認
+  if (auto override = getShadowOverrideMode())
+    g_mode = *override;
 
   oledPrint("Job checking...");
   jobsSetup();
@@ -295,6 +300,11 @@ void loop()
 
   if (g_mode == OperationMode::DEEP_SLEEP)
     enterDeepSleepMode(); // 戻らない
+  else if (g_mode == OperationMode::ONE_SHOT_CONTINUOUS)
+  {
+    runContinuousLoop();                   // 1サイクル CONTINUOUS（BLE アドバタイズ継続）
+    g_mode = OperationMode::DEEP_SLEEP;   // 次ループで DeepSleep へ
+  }
   else
     runContinuousLoop();
 }

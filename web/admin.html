@@ -234,6 +234,13 @@ function deviceCard(d) {
           </select>
         </div>
         <div class="form-group">
+          <label>override_next_mode</label>
+          <select id="sv-override-${id}">
+            <option value=""                  ${!s.override_next_mode                           ? 'selected' : ''}>(通常)</option>
+            <option value="one_shot_continuous" ${s.override_next_mode === 'one_shot_continuous' ? 'selected' : ''}>one_shot_continuous</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>charging</label>
           <select id="sv-charging-${id}">
             <option value="false" ${!s.charging ? 'selected' : ''}>停止</option>
@@ -284,6 +291,7 @@ async function saveShadow(deviceId) {
     ah_offset:        parseInt(document.getElementById(`sv-ah-${deviceId}`).value, 10),
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',
     charging:         document.getElementById(`sv-charging-${deviceId}`).value === 'true',
+    override_next_mode: document.getElementById(`sv-override-${deviceId}`).value || null,
   };
   const msgEl = document.getElementById(`shadow-msg-${deviceId}`);
   msgEl.textContent = '保存中...';

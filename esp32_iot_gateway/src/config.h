@@ -11,7 +11,8 @@
 enum class OperationMode
 {
   DEEP_SLEEP,
-  CONTINUOUS
+  CONTINUOUS,
+  ONE_SHOT_CONTINUOUS, // Shadow ble_mode から指定。1サイクル CONTINUOUS → 自動で DEEP_SLEEP
 };
 
 // DeepSleep

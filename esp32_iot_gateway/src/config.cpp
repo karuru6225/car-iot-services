@@ -213,3 +213,4 @@ void clearMenuData()
   eraseNvsNamespace(NVS_NS_OTA);
   eraseNvsNamespace("switchbot");
 }
+

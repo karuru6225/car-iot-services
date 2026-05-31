@@ -4,8 +4,15 @@
 #include "../config.h"
 
 
-int buildConfigPayload(char *buf, size_t size, bool clearDesired)
+int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *overrideNextMode)
 {
+  // override_next_mode: "one_shot_continuous" または null（通常時）
+  char overrideStr[32];
+  if (overrideNextMode)
+    snprintf(overrideStr, sizeof(overrideStr), "\"%s\"", overrideNextMode);
+  else
+    strcpy(overrideStr, "null");
+
   if (clearDesired)
     return snprintf(buf, size,
                     "{\"state\":{"
@@ -15,12 +22,14 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired)
                     "\"chg_stop_v\":%.2f,"
                     "\"debug_log\":%s,"
                     "\"charging\":%s,"
+                    "\"override_next_mode\":%s,"
                     "\"fw_version\":\"" FIRMWARE_VERSION "\""
                     "},\"desired\":null}}",
                     getAhOffset(),
                     getChgStartV(), getChgStopV(),
                     getDebugLogEnabled() ? "true" : "false",
-                    isCharging() ? "true" : "false");
+                    isCharging() ? "true" : "false",
+                    overrideStr);
   return snprintf(buf, size,
                   "{\"state\":{\"reported\":{"
                   "\"ah_offset\":%d,"
@@ -28,12 +37,14 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired)
                   "\"chg_stop_v\":%.2f,"
                   "\"debug_log\":%s,"
                   "\"charging\":%s,"
+                  "\"override_next_mode\":%s,"
                   "\"fw_version\":\"" FIRMWARE_VERSION "\""
                   "}}}",
                   getAhOffset(),
                   getChgStartV(), getChgStopV(),
                   getDebugLogEnabled() ? "true" : "false",
-                  isCharging() ? "true" : "false");
+                  isCharging() ? "true" : "false",
+                  overrideStr);
 }
 
 
