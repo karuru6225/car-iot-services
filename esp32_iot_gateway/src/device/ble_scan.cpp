@@ -37,12 +37,12 @@ void BleScanner::setup()
   sensorFilter.begin();
 #endif
   queue = xQueueCreate(QUEUE_SIZE, sizeof(SensorVariant));
-  NimBLEDevice::init("");
+  NimBLEDevice::init("car-iot-ble");
   _scan = NimBLEDevice::getScan();
   _scan->setAdvertisedDeviceCallbacks(new SwitchBotCallback());
   _scan->setActiveScan(true);
-  _scan->setInterval(100);
-  _scan->setWindow(99);
+  _scan->setInterval(320); // 320ms ごとに 100ms スキャン → 220ms アドバタイズ窓を確保
+  _scan->setWindow(100);
 }
 
 void BleScanner::start(int seconds)
@@ -57,5 +57,5 @@ void BleScanner::clearResults()
 
 void BleScanner::deinit()
 {
-  NimBLEDevice::deinit(true);
+  // BLE Peripheral と共存するため deinit しない
 }

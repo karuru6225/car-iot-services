@@ -4,6 +4,7 @@
 #include "../device/button.h"
 #include "../device/oled.h"
 #include "../device/ble_scan.h"
+#include "../device/ble_peripheral.h"
 #include "../device/ads.h"
 #include "../device/ina228.h"
 #include "../domain/ble_targets.h"
@@ -29,6 +30,7 @@ enum class MenuState
   CHG_TIMEOUT,
   CHARGING,
   RESTART,
+  BLE_PHONE,
   DONE_CONTINUOUS,
 };
 
@@ -69,6 +71,7 @@ struct MenuItem
 static const MenuItem ITEMS[] = {
     // path="/"
     {"BLE Settings", "/",             MenuState::MENU_NAV,        {}},
+    {"Phone",        "/",             MenuState::BLE_PHONE,       {}},
     {"Battery",      "/",             MenuState::MENU_NAV,        {}},
     {"Sensor View",  "/",             MenuState::SENSOR,          {}},
     {"System",       "/",             MenuState::MENU_NAV,        {}},
@@ -540,6 +543,30 @@ static MenuState tickCharging(ButtonEvent ev)
   return MenuState::CHARGING;
 }
 
+// ---- Phone ペアリング ----
+
+static MenuState tickBlePhone(ButtonEvent ev)
+{
+  static bool needsInit = true;
+  if (needsInit)
+  {
+    needsInit = false;
+    blePeripheral.enablePairing(); // Passkey 生成 + OLED 表示
+  }
+  if (blePeripheral.isAuthComplete()) // MITM ペアリング完了
+  {
+    needsInit = true;
+    return MenuState::DONE_CONTINUOUS;
+  }
+  if (ev == ButtonEvent::BTN1_LONG) // キャンセル
+  {
+    needsInit = true;
+    blePeripheral.disablePairing();
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::BLE_PHONE;
+}
+
 // ---- エントリポイント ----
 
 OperationMode enterMenuMode()
@@ -570,6 +597,7 @@ OperationMode enterMenuMode()
     case MenuState::AH_OFFSET:          next = tickAhOffset(ev);         break;
     case MenuState::CHG_TIMEOUT:        next = tickChgTimeout(ev);       break;
     case MenuState::CHARGING:           next = tickCharging(ev);         break;
+    case MenuState::BLE_PHONE:          next = tickBlePhone(ev);         break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;

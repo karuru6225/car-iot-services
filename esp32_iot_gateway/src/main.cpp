@@ -26,6 +26,7 @@
 #include "device/ads.h"
 #include "device/ina228.h"
 #include "device/ble_scan.h"
+#include "device/ble_peripheral.h"
 #include "device/button.h"
 
 #include "domain/ble_targets.h"
@@ -42,6 +43,7 @@ static JsonTelemetryEncoder g_encoder;
 
 #include <esp_sleep.h>
 #include <driver/gpio.h>
+#include <driver/rtc_io.h>
 
 #define RELAY_0_PIN 11
 #define RELAY_1_PIN 13
@@ -61,6 +63,9 @@ static OperationMode g_mode = OperationMode::DEEP_SLEEP;
 
 static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
 static MeasureResult g_lastResult = {};
+static bool g_bleUpgradedToContinuous = false;
+static unsigned long g_bleDisconnectedAt = 0;
+static const uint32_t BLE_RECONNECT_TIMEOUT_MS = 120000; // 切断後 2分間は再接続を待ってから DeepSleep
 
 void setup()
 {
@@ -86,6 +91,8 @@ void setup()
 #ifndef DEBUG_SKIP_NETWORK
   bleScanner.setup();
   bleTargets.load();
+  blePeripheral.setup();
+  blePeripheral.startAdvertising();
 #endif
 
   // BTN0 を押しながら起動でメニューモードへ（LTE 未起動のままオフライン動作）
@@ -176,6 +183,28 @@ static void updateRelayIndicator(int remainSec, RelayMode mode)
 
 void loop()
 {
+  // BLE 切断 → 2分間再接続を待ってから DEEP_SLEEP に戻す
+  if (g_bleUpgradedToContinuous && !blePeripheral.isConnected())
+  {
+    if (g_bleDisconnectedAt == 0)
+    {
+      g_bleDisconnectedAt = millis();
+      logger.println("[BLE] 切断 - 再接続待ち開始 (2分)");
+    }
+    if (millis() - g_bleDisconnectedAt >= BLE_RECONNECT_TIMEOUT_MS)
+    {
+      g_mode = OperationMode::DEEP_SLEEP;
+      g_bleUpgradedToContinuous = false;
+      g_bleDisconnectedAt = 0;
+      logger.println("[BLE] 再接続タイムアウト → DEEP_SLEEP");
+    }
+    // タイムアウト前は CONTINUOUS を維持
+  }
+  else if (blePeripheral.isConnected())
+  {
+    g_bleDisconnectedAt = 0; // 接続中はカウントリセット
+  }
+
 #ifndef DEBUG_SKIP_NETWORK
   g_lastResult = measure();
   publish(g_lastResult);
@@ -183,6 +212,13 @@ void loop()
   shadowPollDelta();
   oledShowSensorData(g_lastResult.reading);
 #endif
+
+  // BLE 接続中で DEEP_SLEEP モードなら CONTINUOUS に昇格
+  if (blePeripheral.isConnected() && g_mode == OperationMode::DEEP_SLEEP)
+  {
+    g_mode = OperationMode::CONTINUOUS;
+    g_bleUpgradedToContinuous = true;
+  }
 
   if (g_mode == OperationMode::DEEP_SLEEP)
   {
@@ -224,22 +260,38 @@ void loop()
     }
     if (isCharging())
       gpio_hold_en((gpio_num_t)CHG_ON_PIN);
+    rtc_gpio_init(GPIO_NUM_0);
+    rtc_gpio_set_direction(GPIO_NUM_0, RTC_GPIO_MODE_INPUT_ONLY);
+    rtc_gpio_pullup_en(GPIO_NUM_0);
+    rtc_gpio_pulldown_dis(GPIO_NUM_0);
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
     esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
     esp_deep_sleep_start();
   }
 
-  // CONTINUOUS: SLEEP_INTERVAL_SEC 秒待機しながらボタン監視・カウントダウン表示
+  // CONTINUOUS: 次の5分境界（UTC）まで待機しながらボタン監視・カウントダウン表示
+  uint32_t waitSec = SLEEP_INTERVAL_SEC;
+  {
+    time_t nowT = time(nullptr);
+    if (nowT > 1577836800L) // 2020-01-01以降なら時刻同期済みと判断
+    {
+      time_t next = ((nowT / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
+      waitSec = (uint32_t)(next - nowT);
+    }
+  }
+  unsigned long waitMs = (unsigned long)waitSec * 1000UL;
   RelayMode relayMode = getRelayMode();
   unsigned long waitStart = millis();
+  unsigned long lastNotifyMs = 0;
   int lastRemain = -1;
-  while (millis() - waitStart < (uint32_t)SLEEP_INTERVAL_SEC * 1000)
+  while (millis() - waitStart < waitMs)
   {
     ButtonEvent ev = button.read();
     if (ev == ButtonEvent::BTN0_SHORT)
     {
       g_mode = enterMenuMode();
       relayMode = getRelayMode();
-      int curRemain = (int)((SLEEP_INTERVAL_SEC * 1000 - (millis() - waitStart)) / 1000);
+      int curRemain = (int)((waitMs - (millis() - waitStart)) / 1000);
       oledShowSensorData(g_lastResult.reading);
       oledUpdateCountdown(curRemain);
       updateRelayIndicator(curRemain, relayMode);
@@ -260,13 +312,27 @@ void loop()
         g_mode = OperationMode::DEEP_SLEEP;
       }
     }
-    int remain = (int)((SLEEP_INTERVAL_SEC * 1000 - (millis() - waitStart)) / 1000);
+    int remain = (int)((waitMs - (millis() - waitStart)) / 1000);
     if (remain != lastRemain)
     {
       oledUpdateCountdown(remain);
       updateRelayIndicator(remain, relayMode);
       lastRemain = remain;
     }
+
+    // BLE Notify（毎秒、接続中のみ）
+    unsigned long now = millis();
+    if (now - lastNotifyMs >= 1000)
+    {
+      lastNotifyMs = now;
+      blePeripheral.notify(
+        adsReadDiffMain(),
+        ina228.readCurrent(),
+        ina228.readPower(),
+        adsReadDiffSub()
+      );
+    }
+
     delay(50);
   }
 }

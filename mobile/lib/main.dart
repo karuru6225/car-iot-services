@@ -6,17 +6,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-// カスタム計測サービス
-const _kMeasService = 'f3a8b2c1-d4e5-4f6a-7b8c-9d0e1f2a3b4c';
-const _kVoltChar    = 'f3a8b2c2-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
-const _kCurrentChar = 'f3a8b2c3-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, A
-const _kPowerChar   = 'f3a8b2c4-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, W
-const _kTempChar    = 'f3a8b2c5-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, °C
+// 計測サービス
+const _kMeasService  = 'f3a8b2c1-d4e5-4f6a-7b8c-9d0e1f2a3b4c';
+const _kVoltMainChar = 'f3a8b2c2-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
+const _kCurrChar     = 'f3a8b2c3-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, A
+const _kPwrChar      = 'f3a8b2c4-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, W
+const _kVoltSubChar  = 'f3a8b2c5-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
 
-// カスタム設定サービス
-const _kCfgService   = 'f3a8b2d1-d4e5-4f6a-7b8c-9d0e1f2a3b4c';
-const _kLowVoltChar  = 'f3a8b2d2-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
-const _kSleepSecChar = 'f3a8b2d3-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // uint32, sec
+// 設定サービス（ペアリング認証必要）
+const _kCfgService      = 'f3a8b2d1-d4e5-4f6a-7b8c-9d0e1f2a3b4c';
+const _kAhOffsetChar    = 'f3a8b2d2-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // int32, Ah
+const _kChgTimeoutChar  = 'f3a8b2d3-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // uint32, 分
+const _kChgStartVChar   = 'f3a8b2d4-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
+const _kChgStopVChar    = 'f3a8b2d5-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
+const _kRelayModeChar   = 'f3a8b2d6-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // uint8, 0=SLEEP_INDICATOR,1=RELAY_OFF
 
 void main() => runApp(const _App());
 
@@ -43,7 +46,6 @@ class _App extends StatelessWidget {
 }
 
 enum _ConnState { disconnected, scanning, connecting, connected }
-
 enum _LogType { sys, rx, tx, err }
 
 class _LogEntry {
@@ -65,17 +67,27 @@ class _BleHomeState extends State<BleHome> {
   String _deviceName = '';
 
   // 計測値
-  final Map<String, double?> _meas = {
-    'voltage': null, 'current': null, 'power': null, 'temp': null,
-  };
+  double? _vMain, _curr, _pwr, _vSub;
 
   // 設定値
-  double?  _lowVolt;
-  int?     _sleepSec;
-  BluetoothCharacteristic? _lowVoltChar;
-  BluetoothCharacteristic? _sleepSecChar;
-  final _lowVoltCtrl  = TextEditingController();
-  final _sleepSecCtrl = TextEditingController();
+  int?    _ahOffset;
+  int?    _chgTimeout;
+  double? _chgStartV;
+  double? _chgStopV;
+  int?    _relayMode; // 0=SLEEP_INDICATOR, 1=RELAY_OFF
+
+  // Characteristic 参照
+  BluetoothCharacteristic? _cAhOffset;
+  BluetoothCharacteristic? _cChgTimeout;
+  BluetoothCharacteristic? _cChgStartV;
+  BluetoothCharacteristic? _cChgStopV;
+  BluetoothCharacteristic? _cRelayMode;
+
+  // テキスト入力コントローラ
+  final _ctrlAhOffset   = TextEditingController();
+  final _ctrlChgTimeout = TextEditingController();
+  final _ctrlChgStartV  = TextEditingController();
+  final _ctrlChgStopV   = TextEditingController();
 
   final List<_LogEntry> _log = [];
   final _logScroll = ScrollController();
@@ -117,10 +129,31 @@ class _BleHomeState extends State<BleHome> {
       return;
     }
 
-    setState(() => _state = _ConnState.scanning);
-    _addLog('スキャン開始...', _LogType.sys);
+    // ボンディング後に OS が自動接続済みの場合はスキャンを迂回（失敗時はスキャンへ自動フォールバック）
+    final already = FlutterBluePlus.connectedDevices
+        .where((d) => d.platformName == 'car-iot-ble')
+        .toList();
 
+    if (already.isNotEmpty) {
+      try {
+        _device = already.first;
+        _deviceName = _device!.platformName;
+        setState(() { _state = _ConnState.connecting; _deviceName = _deviceName; });
+        _addLog('OS 接続済みデバイスを使用: $_deviceName', _LogType.sys);
+        await _discoverAndSubscribe();
+        return;
+      } catch (_) {
+        // 切断直後で stale だった場合はスキャンへフォールバック
+        _addLog('OS 接続経由失敗 → スキャンへ切り替え', _LogType.sys);
+        _cleanup();
+      }
+    }
+
+    // 通常スキャン
     try {
+      setState(() => _state = _ConnState.scanning);
+      _addLog('スキャン開始...', _LogType.sys);
+
       final found = Completer<BluetoothDevice>();
       final scanSub = FlutterBluePlus.onScanResults.listen((results) {
         if (results.isNotEmpty && !found.isCompleted) {
@@ -148,48 +181,7 @@ class _BleHomeState extends State<BleHome> {
       _addLog('接続中: $_deviceName', _LogType.sys);
 
       await _device!.connect(timeout: const Duration(seconds: 10));
-      final services = await _device!.discoverServices();
-
-      // 計測サービス: Notify 購読
-      final measSvc = _findService(services, _kMeasService);
-      if (measSvc != null) {
-        for (final (key, uuid) in [
-          ('voltage', _kVoltChar),
-          ('current', _kCurrentChar),
-          ('power',   _kPowerChar),
-          ('temp',    _kTempChar),
-        ]) {
-          final c = _findChar(measSvc, uuid);
-          if (c != null) {
-            await c.setNotifyValue(true);
-            _notifySubs.add(c.onValueReceived.listen((v) {
-              final val = ByteData.sublistView(Uint8List.fromList(v))
-                  .getFloat32(0, Endian.little);
-              setState(() => _meas[key] = val);
-            }));
-          }
-        }
-        _addLog('計測サービス: Notify 開始', _LogType.sys);
-      }
-
-      // 設定サービス: Characteristic 取得 + 初期値 Read
-      final cfgSvc = _findService(services, _kCfgService);
-      if (cfgSvc != null) {
-        _lowVoltChar  = _findChar(cfgSvc, _kLowVoltChar);
-        _sleepSecChar = _findChar(cfgSvc, _kSleepSecChar);
-        await _readConfig();
-        _addLog('設定サービス: 初期値読み込み完了', _LogType.sys);
-      }
-
-      _connSub = _device!.connectionState.listen((s) {
-        if (s == BluetoothConnectionState.disconnected) {
-          _addLog('切断されました', _LogType.sys);
-          _cleanup();
-        }
-      });
-
-      setState(() => _state = _ConnState.connected);
-      _addLog('接続完了', _LogType.sys);
+      await _discoverAndSubscribe();
     } catch (e) {
       _addLog('エラー: $e', _LogType.err);
       await FlutterBluePlus.stopScan();
@@ -197,58 +189,179 @@ class _BleHomeState extends State<BleHome> {
     }
   }
 
+  Future<void> _discoverAndSubscribe() async {
+    final services = await _device!.discoverServices();
+
+    // 計測サービス: Notify 購読
+    final measSvc = _findService(services, _kMeasService);
+    if (measSvc != null) {
+      for (final (key, uuid) in [
+        ('vMain', _kVoltMainChar),
+        ('curr',  _kCurrChar),
+        ('pwr',   _kPwrChar),
+        ('vSub',  _kVoltSubChar),
+      ]) {
+        final c = _findChar(measSvc, uuid);
+        if (c != null) {
+          await c.setNotifyValue(true);
+          _notifySubs.add(c.onValueReceived.listen((v) {
+            final val = ByteData.sublistView(Uint8List.fromList(v))
+                .getFloat32(0, Endian.little);
+            setState(() {
+              switch (key) {
+                case 'vMain': _vMain = val;
+                case 'curr':  _curr  = val;
+                case 'pwr':   _pwr   = val;
+                case 'vSub':  _vSub  = val;
+              }
+            });
+          }));
+        }
+      }
+      _addLog('計測サービス: Notify 開始', _LogType.sys);
+    }
+
+    // 設定サービス: Characteristic 取得 + 初期値 Read
+    final cfgSvc = _findService(services, _kCfgService);
+    if (cfgSvc != null) {
+      _cAhOffset   = _findChar(cfgSvc, _kAhOffsetChar);
+      _cChgTimeout = _findChar(cfgSvc, _kChgTimeoutChar);
+      _cChgStartV  = _findChar(cfgSvc, _kChgStartVChar);
+      _cChgStopV   = _findChar(cfgSvc, _kChgStopVChar);
+      _cRelayMode  = _findChar(cfgSvc, _kRelayModeChar);
+      await _readConfig();
+      _addLog('設定サービス: 初期値読み込み完了', _LogType.sys);
+    } else {
+      _addLog('設定サービスなし（未ペアリング）', _LogType.sys);
+    }
+
+    _connSub = _device!.connectionState.listen((s) {
+      if (s == BluetoothConnectionState.disconnected) {
+        _addLog('切断されました', _LogType.sys);
+        _cleanup();
+      }
+    });
+
+    setState(() => _state = _ConnState.connected);
+    _addLog('接続完了', _LogType.sys);
+  }
+
   // ---------- 設定 Read ----------
 
   Future<void> _readConfig() async {
-    try {
-      if (_lowVoltChar != null) {
-        final v = await _lowVoltChar!.read();
-        final val = ByteData.sublistView(Uint8List.fromList(v))
-            .getFloat32(0, Endian.little);
-        setState(() => _lowVolt = val);
-        _lowVoltCtrl.text = val.toStringAsFixed(2);
-        _addLog('低電圧閾値: ${val.toStringAsFixed(2)} V', _LogType.rx);
+    Future<void> readInt32(BluetoothCharacteristic? c, String label, String unit,
+        void Function(int) onVal) async {
+      if (c == null) return;
+      try {
+        final v = await c.read();
+        final val = ByteData.sublistView(Uint8List.fromList(v)).getInt32(0, Endian.little);
+        onVal(val);
+        _addLog('$label: $val $unit', _LogType.rx);
+      } catch (e) {
+        _addLog('$label 読み込みエラー: $e', _LogType.err);
       }
-      if (_sleepSecChar != null) {
-        final v = await _sleepSecChar!.read();
-        final val = ByteData.sublistView(Uint8List.fromList(v))
-            .getUint32(0, Endian.little);
-        setState(() => _sleepSec = val);
-        _sleepSecCtrl.text = val.toString();
-        _addLog('スリープ間隔: $val 秒', _LogType.rx);
+    }
+
+    Future<void> readUint32(BluetoothCharacteristic? c, String label, String unit,
+        void Function(int) onVal) async {
+      if (c == null) return;
+      try {
+        final v = await c.read();
+        final val = ByteData.sublistView(Uint8List.fromList(v)).getUint32(0, Endian.little);
+        onVal(val);
+        _addLog('$label: $val $unit', _LogType.rx);
+      } catch (e) {
+        _addLog('$label 読み込みエラー: $e', _LogType.err);
       }
-    } catch (e) {
-      _addLog('設定読み込みエラー: $e', _LogType.err);
+    }
+
+    Future<void> readFloat(BluetoothCharacteristic? c, String label, String unit,
+        void Function(double) onVal) async {
+      if (c == null) return;
+      try {
+        final v = await c.read();
+        final val = ByteData.sublistView(Uint8List.fromList(v)).getFloat32(0, Endian.little);
+        onVal(val);
+        _addLog('$label: ${val.toStringAsFixed(2)} $unit', _LogType.rx);
+      } catch (e) {
+        _addLog('$label 読み込みエラー: $e', _LogType.err);
+      }
+    }
+
+    await readInt32(_cAhOffset, 'Ah オフセット', 'Ah',
+        (v) { setState(() { _ahOffset = v; _ctrlAhOffset.text = v.toString(); }); });
+    await readUint32(_cChgTimeout, '充電タイムアウト', '分',
+        (v) { setState(() { _chgTimeout = v; _ctrlChgTimeout.text = v.toString(); }); });
+    await readFloat(_cChgStartV, '充電開始電圧', 'V',
+        (v) { setState(() { _chgStartV = v; _ctrlChgStartV.text = v.toStringAsFixed(2); }); });
+    await readFloat(_cChgStopV, '充電停止電圧', 'V',
+        (v) { setState(() { _chgStopV = v; _ctrlChgStopV.text = v.toStringAsFixed(2); }); });
+    if (_cRelayMode != null) {
+      try {
+        final v = await _cRelayMode!.read();
+        setState(() => _relayMode = v.isNotEmpty ? v[0] : 0);
+        _addLog('リレーモード: ${_relayMode == 0 ? "SLEEP_INDICATOR" : "RELAY_OFF"}', _LogType.rx);
+      } catch (e) {
+        _addLog('リレーモード読み込みエラー: $e', _LogType.err);
+      }
     }
   }
 
   // ---------- 設定 Write ----------
 
-  Future<void> _writeLowVolt() async {
-    final text = _lowVoltCtrl.text.trim();
-    final val  = double.tryParse(text);
-    if (val == null || _lowVoltChar == null) return;
+  Future<void> _writeInt32(BluetoothCharacteristic? c, String label,
+      String text, String unit, void Function(int) onSuccess) async {
+    if (c == null) return;
+    final val = int.tryParse(text.trim());
+    if (val == null) return;
     try {
-      final bytes = ByteData(4)..setFloat32(0, val, Endian.little);
-      await _lowVoltChar!.write(bytes.buffer.asUint8List());
-      setState(() => _lowVolt = val);
-      _addLog('→ 低電圧閾値: ${val.toStringAsFixed(2)} V', _LogType.tx);
+      final bytes = ByteData(4)..setInt32(0, val, Endian.little);
+      await c.write(bytes.buffer.asUint8List());
+      onSuccess(val);
+      _addLog('→ $label: $val $unit', _LogType.tx);
     } catch (e) {
-      _addLog('書き込みエラー: $e', _LogType.err);
+      _addLog('$label 書き込みエラー: $e', _LogType.err);
     }
   }
 
-  Future<void> _writeSleepSec() async {
-    final text = _sleepSecCtrl.text.trim();
-    final val  = int.tryParse(text);
-    if (val == null || val <= 0 || _sleepSecChar == null) return;
+  Future<void> _writeUint32(BluetoothCharacteristic? c, String label,
+      String text, String unit, void Function(int) onSuccess) async {
+    if (c == null) return;
+    final val = int.tryParse(text.trim());
+    if (val == null || val < 0) return;
     try {
       final bytes = ByteData(4)..setUint32(0, val, Endian.little);
-      await _sleepSecChar!.write(bytes.buffer.asUint8List());
-      setState(() => _sleepSec = val);
-      _addLog('→ スリープ間隔: $val 秒', _LogType.tx);
+      await c.write(bytes.buffer.asUint8List());
+      onSuccess(val);
+      _addLog('→ $label: $val $unit', _LogType.tx);
     } catch (e) {
-      _addLog('書き込みエラー: $e', _LogType.err);
+      _addLog('$label 書き込みエラー: $e', _LogType.err);
+    }
+  }
+
+  Future<void> _writeFloat(BluetoothCharacteristic? c, String label,
+      String text, String unit, void Function(double) onSuccess) async {
+    if (c == null) return;
+    final val = double.tryParse(text.trim());
+    if (val == null) return;
+    try {
+      final bytes = ByteData(4)..setFloat32(0, val, Endian.little);
+      await c.write(bytes.buffer.asUint8List());
+      onSuccess(val);
+      _addLog('→ $label: ${val.toStringAsFixed(2)} $unit', _LogType.tx);
+    } catch (e) {
+      _addLog('$label 書き込みエラー: $e', _LogType.err);
+    }
+  }
+
+  Future<void> _writeRelayMode(int mode) async {
+    if (_cRelayMode == null) return;
+    try {
+      await _cRelayMode!.write([mode]);
+      setState(() => _relayMode = mode);
+      _addLog('→ リレーモード: ${mode == 0 ? "SLEEP_INDICATOR" : "RELAY_OFF"}', _LogType.tx);
+    } catch (e) {
+      _addLog('リレーモード書き込みエラー: $e', _LogType.err);
     }
   }
 
@@ -265,14 +378,13 @@ class _BleHomeState extends State<BleHome> {
     _notifySubs.clear();
     _connSub?.cancel();
     _connSub = null;
-    _lowVoltChar  = null;
-    _sleepSecChar = null;
+    _cAhOffset = _cChgTimeout = _cChgStartV = _cChgStopV = _cRelayMode = null;
     setState(() {
       _state = _ConnState.disconnected;
       _deviceName = '';
-      _meas.updateAll((_, __) => null);
-      _lowVolt  = null;
-      _sleepSec = null;
+      _vMain = _curr = _pwr = _vSub = null;
+      _ahOffset = _chgTimeout = _relayMode = null;
+      _chgStartV = _chgStopV = null;
     });
   }
 
@@ -295,7 +407,6 @@ class _BleHomeState extends State<BleHome> {
         (c) => c.characteristicUuid.toString().toLowerCase() == uuid.toLowerCase(),
       );
     } catch (_) {
-      _addLog('Characteristic が見つかりません: $uuid', _LogType.err);
       return null;
     }
   }
@@ -305,8 +416,10 @@ class _BleHomeState extends State<BleHome> {
     for (final sub in _notifySubs) { sub.cancel(); }
     _connSub?.cancel();
     _logScroll.dispose();
-    _lowVoltCtrl.dispose();
-    _sleepSecCtrl.dispose();
+    _ctrlAhOffset.dispose();
+    _ctrlChgTimeout.dispose();
+    _ctrlChgStartV.dispose();
+    _ctrlChgStopV.dispose();
     super.dispose();
   }
 
@@ -331,16 +444,28 @@ class _BleHomeState extends State<BleHome> {
             onDisconnect: _disconnect,
           ),
           const SizedBox(height: 12),
-          _MeasCard(data: _meas),
+          _MeasCard(vMain: _vMain, curr: _curr, pwr: _pwr, vSub: _vSub),
           const SizedBox(height: 12),
           _ConfigCard(
             enabled: isConn,
-            lowVolt: _lowVolt,
-            sleepSec: _sleepSec,
-            lowVoltCtrl: _lowVoltCtrl,
-            sleepSecCtrl: _sleepSecCtrl,
-            onWriteLowVolt: _writeLowVolt,
-            onWriteSleepSec: _writeSleepSec,
+            ahOffset:   _ahOffset,
+            chgTimeout: _chgTimeout,
+            chgStartV:  _chgStartV,
+            chgStopV:   _chgStopV,
+            relayMode:  _relayMode,
+            ctrlAhOffset:   _ctrlAhOffset,
+            ctrlChgTimeout: _ctrlChgTimeout,
+            ctrlChgStartV:  _ctrlChgStartV,
+            ctrlChgStopV:   _ctrlChgStopV,
+            onWriteAhOffset:   () => _writeInt32(_cAhOffset, 'Ah オフセット',
+                _ctrlAhOffset.text, 'Ah', (v) => setState(() => _ahOffset = v)),
+            onWriteChgTimeout: () => _writeUint32(_cChgTimeout, '充電タイムアウト',
+                _ctrlChgTimeout.text, '分', (v) => setState(() => _chgTimeout = v)),
+            onWriteChgStartV:  () => _writeFloat(_cChgStartV, '充電開始電圧',
+                _ctrlChgStartV.text, 'V', (v) => setState(() => _chgStartV = v)),
+            onWriteChgStopV:   () => _writeFloat(_cChgStopV, '充電停止電圧',
+                _ctrlChgStopV.text, 'V', (v) => setState(() => _chgStopV = v)),
+            onWriteRelayMode:  _writeRelayMode,
             onRead: _readConfig,
           ),
           const SizedBox(height: 12),
@@ -423,8 +548,8 @@ class _ConnCard extends StatelessWidget {
 // ---------- 計測カード ----------
 
 class _MeasCard extends StatelessWidget {
-  final Map<String, double?> data;
-  const _MeasCard({required this.data});
+  final double? vMain, curr, pwr, vSub;
+  const _MeasCard({this.vMain, this.curr, this.pwr, this.vSub});
 
   @override
   Widget build(BuildContext context) {
@@ -444,10 +569,10 @@ class _MeasCard extends StatelessWidget {
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
               children: [
-                _dataItem('電圧', data['voltage'], 'V',  3),
-                _dataItem('電流', data['current'], 'A',  3),
-                _dataItem('電力', data['power'],   'W',  2),
-                _dataItem('温度', data['temp'],    '°C', 2),
+                _dataItem('メイン電圧', vMain, 'V', 3),
+                _dataItem('電流',       curr,  'A', 3),
+                _dataItem('電力',       pwr,   'W', 2),
+                _dataItem('サブ電圧',   vSub,  'V', 3),
               ],
             ),
           ],
@@ -488,22 +613,29 @@ class _MeasCard extends StatelessWidget {
 
 class _ConfigCard extends StatelessWidget {
   final bool enabled;
-  final double? lowVolt;
-  final int? sleepSec;
-  final TextEditingController lowVoltCtrl;
-  final TextEditingController sleepSecCtrl;
-  final VoidCallback onWriteLowVolt;
-  final VoidCallback onWriteSleepSec;
+  final int?    ahOffset, chgTimeout, relayMode;
+  final double? chgStartV, chgStopV;
+  final TextEditingController ctrlAhOffset, ctrlChgTimeout, ctrlChgStartV, ctrlChgStopV;
+  final VoidCallback onWriteAhOffset, onWriteChgTimeout, onWriteChgStartV, onWriteChgStopV;
+  final void Function(int) onWriteRelayMode;
   final VoidCallback onRead;
 
   const _ConfigCard({
     required this.enabled,
-    required this.lowVolt,
-    required this.sleepSec,
-    required this.lowVoltCtrl,
-    required this.sleepSecCtrl,
-    required this.onWriteLowVolt,
-    required this.onWriteSleepSec,
+    required this.ahOffset,
+    required this.chgTimeout,
+    required this.chgStartV,
+    required this.chgStopV,
+    required this.relayMode,
+    required this.ctrlAhOffset,
+    required this.ctrlChgTimeout,
+    required this.ctrlChgStartV,
+    required this.ctrlChgStopV,
+    required this.onWriteAhOffset,
+    required this.onWriteChgTimeout,
+    required this.onWriteChgStartV,
+    required this.onWriteChgStopV,
+    required this.onWriteRelayMode,
     required this.onRead,
   });
 
@@ -517,7 +649,7 @@ class _ConfigCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                _cardLabel('設定'),
+                _cardLabel('設定（要ペアリング）'),
                 const Spacer(),
                 TextButton(
                   onPressed: enabled ? onRead : null,
@@ -528,23 +660,66 @@ class _ConfigCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _cfgRow(
-              label: '低電圧アラート閾値',
-              unit: 'V',
-              current: lowVolt?.toStringAsFixed(2),
-              ctrl: lowVoltCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              label: 'Ah オフセット', unit: 'Ah',
+              current: ahOffset?.toString(),
+              ctrl: ctrlAhOffset,
+              keyboardType: const TextInputType.numberWithOptions(signed: true),
               enabled: enabled,
-              onWrite: onWriteLowVolt,
+              onWrite: onWriteAhOffset,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             _cfgRow(
-              label: 'スリープ間隔',
-              unit: '秒',
-              current: sleepSec?.toString(),
-              ctrl: sleepSecCtrl,
+              label: '充電タイムアウト', unit: '分',
+              current: chgTimeout?.toString(),
+              ctrl: ctrlChgTimeout,
               keyboardType: TextInputType.number,
               enabled: enabled,
-              onWrite: onWriteSleepSec,
+              onWrite: onWriteChgTimeout,
+            ),
+            const SizedBox(height: 14),
+            _cfgRow(
+              label: '充電開始電圧', unit: 'V',
+              current: chgStartV?.toStringAsFixed(2),
+              ctrl: ctrlChgStartV,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              enabled: enabled,
+              onWrite: onWriteChgStartV,
+            ),
+            const SizedBox(height: 14),
+            _cfgRow(
+              label: '充電停止電圧', unit: 'V',
+              current: chgStopV?.toStringAsFixed(2),
+              ctrl: ctrlChgStopV,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              enabled: enabled,
+              onWrite: onWriteChgStopV,
+            ),
+            const SizedBox(height: 14),
+            // リレーモード: トグルボタン
+            Row(
+              children: [
+                const Text('リレーモード', style: TextStyle(fontSize: 13)),
+                const Spacer(),
+                if (relayMode != null)
+                  Text(
+                    relayMode == 0 ? 'SLEEP_INDICATOR' : 'RELAY_OFF',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF4F8EF7)),
+                  )
+                else
+                  const Text('—', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _btn('SLEEP_INDICATOR', () => onWriteRelayMode(0),
+                    enabled: enabled && relayMode != 0,
+                    color: const Color(0xFF4F8EF7)),
+                const SizedBox(width: 8),
+                _btn('RELAY_OFF', () => onWriteRelayMode(1),
+                    enabled: enabled && relayMode != 1,
+                    color: const Color(0xFF4F8EF7)),
+              ],
             ),
           ],
         ),
@@ -586,8 +761,7 @@ class _ConfigCard extends StatelessWidget {
                 keyboardType: keyboardType,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   isDense: true,
                 ),
                 onSubmitted: enabled ? (_) => onWrite() : null,
