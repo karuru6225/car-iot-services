@@ -316,7 +316,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.16.1+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `"1.16.2+" GIT_HASH` | ファームウェアバージョン |
 | `CHG_ON_PIN` | `21` | メインバッテリー充電制御ピン（HIGH=ON） |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS`（動作モード） |
