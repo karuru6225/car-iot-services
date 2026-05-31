@@ -205,27 +205,30 @@ static void updateBleReconnectState()
   }
 }
 
-// 充電制御 → shadow 同期 → LTE 切断 → DeepSleep（戻らない）
+// 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）
+static void updateChargingState()
+{
+  float v      = g_lastResult.reading.main.voltage;
+  float startV = getChgStartV();
+  float stopV  = getChgStopV();
+  if (v >= 10.0f && !isCharging() && v < startV)
+  {
+    setCharging(true);
+    digitalWrite(CHG_ON_PIN, HIGH);
+    logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV\n", v, startV);
+  }
+  else if (v >= 10.0f && isCharging() && v >= stopV)
+  {
+    setCharging(false);
+    digitalWrite(CHG_ON_PIN, LOW);
+    logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
+  }
+}
+
+// shadow 同期 → LTE 切断 → DeepSleep（戻らない）
 static void enterDeepSleepMode()
 {
-  // 電圧に基づく自動充電制御
-  {
-    float v = g_lastResult.reading.main.voltage;
-    float startV = getChgStartV();
-    float stopV  = getChgStopV();
-    if (v >= 10.0f && !isCharging() && v < startV)
-    {
-      setCharging(true);
-      digitalWrite(CHG_ON_PIN, HIGH);
-      logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV\n", v, startV);
-    }
-    else if (v >= 10.0f && isCharging() && v >= stopV)
-    {
-      setCharging(false);
-      digitalWrite(CHG_ON_PIN, LOW);
-      logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
-    }
-  }
+  updateChargingState();
   shadowPublishConfig();
   shadowPollDelta();
   delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
@@ -314,6 +317,7 @@ static void runContinuousLoop()
     if (now - lastNotify >= 1000)
     {
       lastNotify = now;
+      updateChargingState();
       blePeripheral.notify(
         adsReadDiffMain(),
         ina228.readCurrent(),
