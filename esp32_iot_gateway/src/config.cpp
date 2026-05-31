@@ -11,7 +11,6 @@ static constexpr char NVS_NS_BATTERY[] = "battery";
 static constexpr char NVS_MQTT_HOST[] = "mqtt_host";
 static constexpr char NVS_CERT_CRC[] = "cert_crc";
 static constexpr char NVS_JOB_ID[] = "job_id";
-static constexpr char NVS_RELAY_MODE[] = "relay_mode";
 static constexpr char NVS_DEBUG_LOG[] = "debug_log";
 
 const char *getDeviceId()
@@ -89,28 +88,6 @@ void clearPendingJobId()
   if (nvs_open(NVS_NS_OTA, NVS_READWRITE, &nvs) != ESP_OK)
     return;
   nvs_erase_key(nvs, NVS_JOB_ID);
-  nvs_commit(nvs);
-  nvs_close(nvs);
-}
-
-RelayMode getRelayMode()
-{
-  nvs_handle_t nvs;
-  uint8_t val = (uint8_t)RelayMode::SLEEP_INDICATOR; // デフォルト
-  if (nvs_open(NVS_NS_DEVICE, NVS_READONLY, &nvs) == ESP_OK)
-  {
-    nvs_get_u8(nvs, NVS_RELAY_MODE, &val);
-    nvs_close(nvs);
-  }
-  return (RelayMode)val;
-}
-
-void setRelayMode(RelayMode mode)
-{
-  nvs_handle_t nvs;
-  if (nvs_open(NVS_NS_DEVICE, NVS_READWRITE, &nvs) != ESP_OK)
-    return;
-  nvs_set_u8(nvs, NVS_RELAY_MODE, (uint8_t)mode);
   nvs_commit(nvs);
   nvs_close(nvs);
 }

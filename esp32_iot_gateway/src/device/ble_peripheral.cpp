@@ -14,7 +14,6 @@
 #define CFG_CHG_TIMEOUT_UUID "f3a8b2d3-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define CFG_CHG_START_UUID   "f3a8b2d4-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define CFG_CHG_STOP_UUID    "f3a8b2d5-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
-#define CFG_RELAY_UUID       "f3a8b2d6-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 
 BlePeripheral blePeripheral;
 
@@ -98,17 +97,6 @@ class CfgChgStopCb : public NimBLECharacteristicCallbacks {
   }
 };
 
-class CfgRelayModeCb : public NimBLECharacteristicCallbacks {
-  void onRead(NimBLECharacteristic* pChar) override {
-    uint8_t v = (uint8_t)getRelayMode();
-    pChar->setValue(&v, sizeof(v));
-  }
-  void onWrite(NimBLECharacteristic* pChar) override {
-    if (pChar->getValue().size() == sizeof(uint8_t)) {
-      setRelayMode((RelayMode)pChar->getValue()[0]);
-    }
-  }
-};
 
 void BlePeripheral::setup() {
   NimBLEDevice::setSecurityCallbacks(new BlePeripheralSecurityCb());
@@ -141,10 +129,6 @@ void BlePeripheral::setup() {
   pCfg->createCharacteristic(CFG_CHG_STOP_UUID,
     NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::WRITE_AUTHEN)
     ->setCallbacks(new CfgChgStopCb());
-
-  pCfg->createCharacteristic(CFG_RELAY_UUID,
-    NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::WRITE_AUTHEN)
-    ->setCallbacks(new CfgRelayModeCb());
 
   pCfg->start();
 }

@@ -14,13 +14,6 @@ enum class OperationMode
   CONTINUOUS
 };
 
-// リレー動作モード
-enum class RelayMode
-{
-  SLEEP_INDICATOR,
-  RELAY_OFF
-};
-
 // DeepSleep
 static const uint32_t SLEEP_INTERVAL_SEC = 300;
 
@@ -58,10 +51,6 @@ void setCertCrc(uint32_t crc);
 bool getPendingJobId(char *buf, size_t len);
 void setPendingJobId(const char *jobId);
 void clearPendingJobId();
-
-// リレー動作モードの取得・保存（device 用、デフォルト: SLEEP_INDICATOR）
-RelayMode getRelayMode();
-void setRelayMode(RelayMode mode);
 
 // Ah オフセットの取得・保存（battery 用、デフォルト: 0）
 int32_t getAhOffset();

@@ -150,36 +150,6 @@ void setup()
   digitalWrite(CHG_ON_PIN, isCharging() ? HIGH : LOW);
 }
 
-static void updateRelayIndicator(int remainSec, RelayMode mode)
-{
-  if (mode != RelayMode::SLEEP_INDICATOR)
-  {
-    digitalWrite(RELAY_0_PIN, LOW);
-    digitalWrite(RELAY_1_PIN, LOW);
-    digitalWrite(RELAY_2_PIN, LOW);
-    return;
-  }
-
-  // CONTEXT.md「ULP によるDeepSleepカウントダウンLED」の表に準拠
-  // remain 240〜300: GPIO11●  GPIO13●  GPIO15●
-  // remain 180〜240: GPIO11●  GPIO13●  GPIO15○
-  // remain 120〜180: GPIO11●  GPIO13○  GPIO15○
-  // remain  60〜120: GPIO11○  GPIO13○  GPIO15○
-  // remain   0〜 60: 全点滅（1秒周期）
-  if (remainSec < 60)
-  {
-    uint8_t blink = (remainSec % 2 == 0) ? HIGH : LOW;
-    digitalWrite(RELAY_0_PIN, blink);
-    digitalWrite(RELAY_1_PIN, blink);
-    digitalWrite(RELAY_2_PIN, blink);
-  }
-  else
-  {
-    digitalWrite(RELAY_0_PIN, remainSec >= 120 ? HIGH : LOW);
-    digitalWrite(RELAY_1_PIN, remainSec >= 180 ? HIGH : LOW);
-    digitalWrite(RELAY_2_PIN, remainSec >= 240 ? HIGH : LOW);
-  }
-}
 
 // BLE 切断後の再接続待ちと CONTINUOUS/DEEP_SLEEP 昇降格を管理する
 static void updateBleReconnectState()
@@ -265,7 +235,6 @@ static void enterDeepSleepMode()
 static void runContinuousLoop()
 {
   unsigned long waitMs     = (unsigned long)secsToNextBoundary() * 1000UL;
-  RelayMode relayMode      = getRelayMode();
   unsigned long waitStart  = millis();
   unsigned long lastNotify = 0;
   int lastRemain           = -1;
@@ -276,11 +245,9 @@ static void runContinuousLoop()
     if (ev == ButtonEvent::BTN0_SHORT)
     {
       g_mode = enterMenuMode();
-      relayMode = getRelayMode();
       int curRemain = (int)((waitMs - (millis() - waitStart)) / 1000);
       oledShowSensorData(g_lastResult.reading);
       oledUpdateCountdown(curRemain);
-      updateRelayIndicator(curRemain, relayMode);
       lastRemain = curRemain;
     }
     if (ev == ButtonEvent::BTN1_LONG)
@@ -303,7 +270,6 @@ static void runContinuousLoop()
     if (remain != lastRemain)
     {
       oledUpdateCountdown(remain);
-      updateRelayIndicator(remain, relayMode);
       lastRemain = remain;
     }
 

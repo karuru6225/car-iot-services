@@ -24,7 +24,6 @@ enum class MenuState
   SENSOR,
   SYS_INFO,
   DEVICE_QR,
-  RELAY_MODE,
   CONFIRM,     // 汎用確認ダイアログ
   AH_OFFSET,
   CHG_TIMEOUT,
@@ -88,7 +87,6 @@ static const MenuItem ITEMS[] = {
     // path="/System"
     {"Info",         "/System",       MenuState::SYS_INFO,        {}},
     {"Device QR",    "/System",       MenuState::DEVICE_QR,       {}},
-    {"Relay Mode",   "/System",       MenuState::RELAY_MODE,      {}},
     {"NVS Clear",    "/System",       MenuState::CONFIRM,         {"NVS Clear?", "Keep MQTT host", doNvsClear}},
 
 };
@@ -358,32 +356,6 @@ static MenuState tickDeviceQR(ButtonEvent ev)
   return MenuState::DEVICE_QR;
 }
 
-static MenuState tickRelayMode(ButtonEvent ev)
-{
-  static RelayMode edit = RelayMode::SLEEP_INDICATOR;
-  static bool needsInit = true;
-  if (needsInit) { edit = getRelayMode(); needsInit = false; }
-
-  const char *modeStr = (edit == RelayMode::SLEEP_INDICATOR) ? "Sleep Indicator" : "Off";
-  oledShowMessage("Relay Mode", modeStr);
-
-  if (ev == ButtonEvent::BTN0_SHORT)
-  {
-    edit = (edit == RelayMode::SLEEP_INDICATOR) ? RelayMode::RELAY_OFF : RelayMode::SLEEP_INDICATOR;
-  }
-  else if (ev == ButtonEvent::BTN1_SHORT)
-  {
-    setRelayMode(edit);
-    needsInit = true;
-    return MenuState::MENU_NAV;
-  }
-  else if (ev == ButtonEvent::BTN1_LONG)
-  {
-    needsInit = true;
-    return MenuState::MENU_NAV;
-  }
-  return MenuState::RELAY_MODE;
-}
 
 static MenuState tickConfirm(ButtonEvent ev)
 {
@@ -592,7 +564,6 @@ OperationMode enterMenuMode()
     case MenuState::SENSOR:             next = tickSensor(ev);           break;
     case MenuState::SYS_INFO:           next = tickSysInfo(ev);          break;
     case MenuState::DEVICE_QR:          next = tickDeviceQR(ev);         break;
-    case MenuState::RELAY_MODE:         next = tickRelayMode(ev);        break;
     case MenuState::CONFIRM:            next = tickConfirm(ev);          break;
     case MenuState::AH_OFFSET:          next = tickAhOffset(ev);         break;
     case MenuState::CHG_TIMEOUT:        next = tickChgTimeout(ev);       break;

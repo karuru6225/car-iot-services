@@ -19,7 +19,6 @@ const _kAhOffsetChar    = 'f3a8b2d2-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // int32, Ah
 const _kChgTimeoutChar  = 'f3a8b2d3-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // uint32, 分
 const _kChgStartVChar   = 'f3a8b2d4-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
 const _kChgStopVChar    = 'f3a8b2d5-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
-const _kRelayModeChar   = 'f3a8b2d6-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // uint8, 0=SLEEP_INDICATOR,1=RELAY_OFF
 
 void main() => runApp(const _App());
 
@@ -74,14 +73,12 @@ class _BleHomeState extends State<BleHome> {
   int?    _chgTimeout;
   double? _chgStartV;
   double? _chgStopV;
-  int?    _relayMode; // 0=SLEEP_INDICATOR, 1=RELAY_OFF
 
   // Characteristic 参照
   BluetoothCharacteristic? _cAhOffset;
   BluetoothCharacteristic? _cChgTimeout;
   BluetoothCharacteristic? _cChgStartV;
   BluetoothCharacteristic? _cChgStopV;
-  BluetoothCharacteristic? _cRelayMode;
 
   // テキスト入力コントローラ
   final _ctrlAhOffset   = TextEditingController();
@@ -228,7 +225,6 @@ class _BleHomeState extends State<BleHome> {
       _cChgTimeout = _findChar(cfgSvc, _kChgTimeoutChar);
       _cChgStartV  = _findChar(cfgSvc, _kChgStartVChar);
       _cChgStopV   = _findChar(cfgSvc, _kChgStopVChar);
-      _cRelayMode  = _findChar(cfgSvc, _kRelayModeChar);
       await _readConfig();
       _addLog('設定サービス: 初期値読み込み完了', _LogType.sys);
     } else {
@@ -296,15 +292,6 @@ class _BleHomeState extends State<BleHome> {
         (v) { setState(() { _chgStartV = v; _ctrlChgStartV.text = v.toStringAsFixed(2); }); });
     await readFloat(_cChgStopV, '充電停止電圧', 'V',
         (v) { setState(() { _chgStopV = v; _ctrlChgStopV.text = v.toStringAsFixed(2); }); });
-    if (_cRelayMode != null) {
-      try {
-        final v = await _cRelayMode!.read();
-        setState(() => _relayMode = v.isNotEmpty ? v[0] : 0);
-        _addLog('リレーモード: ${_relayMode == 0 ? "SLEEP_INDICATOR" : "RELAY_OFF"}', _LogType.rx);
-      } catch (e) {
-        _addLog('リレーモード読み込みエラー: $e', _LogType.err);
-      }
-    }
   }
 
   // ---------- 設定 Write ----------
@@ -354,17 +341,6 @@ class _BleHomeState extends State<BleHome> {
     }
   }
 
-  Future<void> _writeRelayMode(int mode) async {
-    if (_cRelayMode == null) return;
-    try {
-      await _cRelayMode!.write([mode]);
-      setState(() => _relayMode = mode);
-      _addLog('→ リレーモード: ${mode == 0 ? "SLEEP_INDICATOR" : "RELAY_OFF"}', _LogType.tx);
-    } catch (e) {
-      _addLog('リレーモード書き込みエラー: $e', _LogType.err);
-    }
-  }
-
   // ---------- 切断 ----------
 
   Future<void> _disconnect() async {
@@ -378,12 +354,12 @@ class _BleHomeState extends State<BleHome> {
     _notifySubs.clear();
     _connSub?.cancel();
     _connSub = null;
-    _cAhOffset = _cChgTimeout = _cChgStartV = _cChgStopV = _cRelayMode = null;
+    _cAhOffset = _cChgTimeout = _cChgStartV = _cChgStopV = null;
     setState(() {
       _state = _ConnState.disconnected;
       _deviceName = '';
       _vMain = _curr = _pwr = _vSub = null;
-      _ahOffset = _chgTimeout = _relayMode = null;
+      _ahOffset = _chgTimeout = null;
       _chgStartV = _chgStopV = null;
     });
   }
@@ -452,7 +428,6 @@ class _BleHomeState extends State<BleHome> {
             chgTimeout: _chgTimeout,
             chgStartV:  _chgStartV,
             chgStopV:   _chgStopV,
-            relayMode:  _relayMode,
             ctrlAhOffset:   _ctrlAhOffset,
             ctrlChgTimeout: _ctrlChgTimeout,
             ctrlChgStartV:  _ctrlChgStartV,
@@ -465,7 +440,6 @@ class _BleHomeState extends State<BleHome> {
                 _ctrlChgStartV.text, 'V', (v) => setState(() => _chgStartV = v)),
             onWriteChgStopV:   () => _writeFloat(_cChgStopV, '充電停止電圧',
                 _ctrlChgStopV.text, 'V', (v) => setState(() => _chgStopV = v)),
-            onWriteRelayMode:  _writeRelayMode,
             onRead: _readConfig,
           ),
           const SizedBox(height: 12),
@@ -613,11 +587,10 @@ class _MeasCard extends StatelessWidget {
 
 class _ConfigCard extends StatelessWidget {
   final bool enabled;
-  final int?    ahOffset, chgTimeout, relayMode;
+  final int?    ahOffset, chgTimeout;
   final double? chgStartV, chgStopV;
   final TextEditingController ctrlAhOffset, ctrlChgTimeout, ctrlChgStartV, ctrlChgStopV;
   final VoidCallback onWriteAhOffset, onWriteChgTimeout, onWriteChgStartV, onWriteChgStopV;
-  final void Function(int) onWriteRelayMode;
   final VoidCallback onRead;
 
   const _ConfigCard({
@@ -626,7 +599,6 @@ class _ConfigCard extends StatelessWidget {
     required this.chgTimeout,
     required this.chgStartV,
     required this.chgStopV,
-    required this.relayMode,
     required this.ctrlAhOffset,
     required this.ctrlChgTimeout,
     required this.ctrlChgStartV,
@@ -635,7 +607,6 @@ class _ConfigCard extends StatelessWidget {
     required this.onWriteChgTimeout,
     required this.onWriteChgStartV,
     required this.onWriteChgStopV,
-    required this.onWriteRelayMode,
     required this.onRead,
   });
 
@@ -693,33 +664,6 @@ class _ConfigCard extends StatelessWidget {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               enabled: enabled,
               onWrite: onWriteChgStopV,
-            ),
-            const SizedBox(height: 14),
-            // リレーモード: トグルボタン
-            Row(
-              children: [
-                const Text('リレーモード', style: TextStyle(fontSize: 13)),
-                const Spacer(),
-                if (relayMode != null)
-                  Text(
-                    relayMode == 0 ? 'SLEEP_INDICATOR' : 'RELAY_OFF',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF4F8EF7)),
-                  )
-                else
-                  const Text('—', style: TextStyle(fontSize: 11, color: Colors.grey)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _btn('SLEEP_INDICATOR', () => onWriteRelayMode(0),
-                    enabled: enabled && relayMode != 0,
-                    color: const Color(0xFF4F8EF7)),
-                const SizedBox(width: 8),
-                _btn('RELAY_OFF', () => onWriteRelayMode(1),
-                    enabled: enabled && relayMode != 1,
-                    color: const Color(0xFF4F8EF7)),
-              ],
             ),
           ],
         ),

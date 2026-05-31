@@ -66,16 +66,6 @@ bool shadowPollDelta(uint32_t timeoutMs)
     changed = true;
   }
 
-  if (state["relay_mode"].is<const char *>())
-  {
-    const char *mode = state["relay_mode"];
-    setRelayMode(strcmp(mode, "off") == 0
-                     ? RelayMode::RELAY_OFF
-                     : RelayMode::SLEEP_INDICATOR);
-    logger.printf("[SHADOW] relay_mode → %s\n", mode);
-    changed = true;
-  }
-
   if (state["debug_log"].is<bool>())
   {
     bool en = state["debug_log"].as<bool>();
