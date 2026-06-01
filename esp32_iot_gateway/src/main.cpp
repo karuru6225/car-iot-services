@@ -149,12 +149,13 @@ void setup()
   pinMode(RELAY_1_PIN, OUTPUT);
   pinMode(RELAY_2_PIN, OUTPUT);
   pinMode(CHG_ON_PIN, OUTPUT);
+  pinMode(GU0_EN, OUTPUT);
   digitalWrite(RELAY_0_PIN, LOW);
   digitalWrite(RELAY_1_PIN, LOW);
   digitalWrite(RELAY_2_PIN, LOW);
   digitalWrite(CHG_ON_PIN, isCharging() ? HIGH : LOW);
+  digitalWrite(GU0_EN, HIGH);
 }
-
 
 // BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）
 static void updateBleReconnectState()
@@ -179,9 +180,9 @@ static uint32_t secsToNextBoundary()
 // 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）
 static void updateChargingState()
 {
-  float v      = g_lastResult.reading.main.voltage;
+  float v = g_lastResult.reading.main.voltage;
   float startV = getChgStartV();
-  float stopV  = getChgStopV();
+  float stopV = getChgStopV();
   if (v >= 10.0f && !isCharging() && v < startV)
   {
     setCharging(true);
@@ -225,10 +226,10 @@ static void enterDeepSleepMode()
 // 次の5分境界（UTC）まで待機しながらボタン監視・カウントダウン表示・BLE Notify
 static void runContinuousLoop()
 {
-  unsigned long waitMs     = (unsigned long)secsToNextBoundary() * 1000UL;
-  unsigned long waitStart  = millis();
+  unsigned long waitMs = (unsigned long)secsToNextBoundary() * 1000UL;
+  unsigned long waitStart = millis();
   unsigned long lastNotify = 0;
-  int lastRemain           = -1;
+  int lastRemain = -1;
 
   while (millis() - waitStart < waitMs)
   {
@@ -272,11 +273,10 @@ static void runContinuousLoop()
       lastNotify = now;
       updateChargingState();
       blePeripheral.notify(
-        adsReadDiffMain(),
-        ina228.readCurrent(),
-        ina228.readPower(),
-        adsReadDiffSub()
-      );
+          adsReadDiffMain(),
+          ina228.readCurrent(),
+          ina228.readPower(),
+          adsReadDiffSub());
     }
 
     delay(50);
@@ -312,8 +312,8 @@ void loop()
     enterDeepSleepMode(); // 戻らない
   else if (g_mode == OperationMode::ONE_SHOT_CONTINUOUS)
   {
-    runContinuousLoop();                   // 1サイクル CONTINUOUS（BLE アドバタイズ継続）
-    g_mode = OperationMode::DEEP_SLEEP;   // 次ループで DeepSleep へ
+    runContinuousLoop();                // 1サイクル CONTINUOUS（BLE アドバタイズ継続）
+    g_mode = OperationMode::DEEP_SLEEP; // 次ループで DeepSleep へ
   }
   else
     runContinuousLoop();

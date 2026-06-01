@@ -100,20 +100,39 @@ Mask[0x80]=0x00000002 → 0x9F のみマスク対応
 **「!! マスク対応だが応答なし」について:**  
 Honda ECU が variant 共通のビットマスクを返しているが、この個体（JJ1/JJ2）では実際のデータを持たない PID が含まれている可能性が高い。timeout を延ばしても変わらない可能性がある。
 
-**確定した取得可能データ一覧（フェーズ2 実装対象）:**
+**確定した取得可能データ一覧（フェーズ2 実装対象・新基板 2026-06-01 実機確認済み）:**
 
-| PID | 名称 | デコード式 | 用途 |
+| PID | 名称 | デコード式 | 備考 |
 |-----|------|-----------|------|
 | 0x04 | Engine Load | A×100/255 % | 負荷監視 |
+| 0x06 | Short Term Fuel Trim | (A-128)×100/128 % | 空燃比補正（短期） |
+| 0x07 | Long Term Fuel Trim | (A-128)×100/128 % | 空燃比補正（長期） |
 | 0x0B | MAP | A kPa | ブースト計算のベース |
 | 0x0C | RPM | (A×256+B)/4 rpm | 全体制御 |
 | 0x0D | Speed | A km/h | — |
 | 0x0E | Ignition Timing | A/2-64 °BTDC | — |
-| 0x11 | Throttle | A×100/255 % | — |
+| 0x0F | — | — | 非対応 |
+| 0x11 | Throttle A | A×100/255 % | — |
+| 0x15 | O2 Sensor B1S2 (NB) | A=電圧(A/200 V), B=燃料トリム | — |
+| 0x1F | Time Since Engine Start | A×256+B 秒 | — |
+| 0x21 | Distance with MIL | A×256+B km | DTC 点灯時走行距離 |
+| 0x24 | O2 Sensor 1 (WB) | ratio=(A×256+B)×2/65536, V=(C×256+D)×8/65536 | ワイドバンドセンサー |
+| 0x2E | Evap Purge | A×100/255 % | — |
+| 0x30 | Warmups Since Cleared | A 回 | — |
+| 0x31 | Distance Since Cleared | A×256+B km | — |
 | 0x33 | Baro | A kPa | ブースト=MAP-Baro |
+| 0x3C | Catalyst Temp B1S1 | (A×256+B)/10-40 °C | — |
 | 0x42 | ECU Voltage | (A×256+B)/1000 V | — |
-| 0x66 | MAF Alt | (B×256+C)/32 g/s | **燃費推算のソース** |
-| 0x67 | Coolant Temp | B-40 °C (Sensor1) | **0x05 の代替** |
+| 0x43 | Absolute Load | (A×256+B)×100/255 % | 0x04 の絶対値版 |
+| 0x44 | Commanded AFR (Lambda) | (A×256+B)×2/65536 | — |
+| 0x47 | Throttle B | A×100/255 % | — |
+| 0x49 | Accel Pedal D | A×100/255 % | アクセル物理開度 |
+| 0x4A | Accel Pedal E | A×100/255 % | アクセル物理開度 |
+| 0x51 | Fuel Type | A (1=ガソリン) | — |
+| 0x55 | Sec O2 Trim B1 (ST) | (A-128)×100/128 % | — |
+| 0x56 | Sec O2 Trim B1 (LT) | (A-128)×100/128 % | — |
+| 0x66 | MAF Alt | (B×256+C)/32 g/s | **燃費推算のソース**（0x10 の代替） |
+| 0x67 | Coolant Temp Alt | B-40 °C (Sensor1) | **0x05 の代替** |
 
 燃費推算: `fuel_rate_lph = maf_gs / (14.7 × 0.745) × 3.6`
 
@@ -147,16 +166,22 @@ OBD-II 応答フレームは一切来ない（確認済み）。
 
 ### 4. 取得できないデータの代替手段
 
-冷却水温・MAF・燃料流量・燃料残量・油温はすべて Mode 01 非対応。  
-Honda N-VAN は Mode 22（Honda 独自拡張）でこれらを提供している可能性があるが、  
-現時点では未確認。フェーズ2では Mode 01 で取得できる値のみを実装する。
+冷却水温（0x05）・MAF（0x10）・燃料流量（0x5E）・燃料残量（0x2F）・油温（0x5C）は Mode 01 非対応。  
+ただし以下の代替で対応済み:
 
-**燃費計算について:** 0x5E（Fuel Rate）も 0x10（MAF）も非対応のため、  
-Mode 01 だけでは燃費を算出できない。将来 Mode 22 で代替できるか確認が必要。
+| 非対応 PID | 代替 | 状態 |
+| --- | --- | --- |
+| 0x05 Coolant Temp | 0x67 Sensor1 (B-40°C) | **取得可能・確認済み** |
+| 0x10 MAF | 0x66 MAF Alt ((B×256+C)/32 g/s) | **取得可能・確認済み** |
+| 0x5E Fuel Rate | 0x66 から推算: `maf_gs/(14.7×0.745)×3.6` | **推算で対応** |
+| 0x2F Fuel Level | Mode 22 探索が必要 | 未対応 |
+| 0x5C Oil Temp | Mode 22 探索が必要 | 未対応 |
+
+Mode 22（Honda 独自拡張）で燃料残量・油温を取得できる可能性があるが未確認。フェーズ2では Mode 01 で取得できる値のみを実装する。
 
 ---
 
-## フェーズ1.5: 生 CAN 探索（最優先）
+## フェーズ1.5: 生 CAN 探索（完了・OBD-II ポートでは不可と判明）
 
 **OBD-II（Mode 01/22）では公開されないデータが F-CAN バス上を流れている可能性がある。**  
 フェーズ2 の実装に入る前に LISTEN_ONLY で生フレームを観察し、取得可能なデータを確定させる。
@@ -215,13 +240,15 @@ void loop() {
 - RPM・車速・水温と突き合わせて一致したフレーム
 - エアコン・ターボ・燃料系に関係すると思われる変化パターン
 
-### 実施結果記録欄
+### 実施結果（2026-06-01）
 
-> ※実施後にここに記録する
+**結論: OBD-II ポートでは生 F-CAN トラフィックは観察できない。**
 
-| CAN ID | extd | データパターン | 推定内容 | OBD との対応 |
-|--------|------|--------------|---------|------------|
-| （未実施） | | | | |
+LISTEN_ONLY モードおよびスキャン後の receive-only モードで、アンビエントな CAN フレームはゼロ。
+OBD-II ポートは CAN ゲートウェイ経由で診断専用に隔離されており、ECU への OBD リクエスト送信時のみ応答フレームが返ってくる構成。
+みんカラ実測の 0x158 / 0x1DC / 0x324 等は OBD-II ポートからは見えない。
+
+**生 F-CAN 観察には OBD-II ポートではなく、車内の F-CAN バス配線に直接タップする必要がある。**
 
 ---
 
@@ -250,16 +277,16 @@ Honda N-VAN は 29ビット拡張アドレッシングが必須（11ビット 0x
 #include <driver/twai.h>
 #include <stdint.h>
 
-static const uint8_t  CAN_RX_PIN  = 4;
-static const uint8_t  CAN_TX_PIN  = 5;
-static const uint8_t  CAN_EN_PIN  = 6;
+static const uint8_t  CAN_RX_PIN  = 8;
+static const uint8_t  CAN_TX_PIN  = 7;
+static const uint8_t  CAN_EN_PIN  = 9;
 static const uint32_t CAN_REQ_ID  = 0x18DB33F1; // 29-bit functional addressing
 static const uint32_t CAN_RESP_MASK = 0x18DAF100; // 応答 ID の上位 24bit (下位8bit = ECU addr)
 
-// GPIO6 HIGH → 50ms 待機 → TWAI 500kbps NORMAL モード起動
+// GPIO9 HIGH → 50ms 待機 → TWAI 500kbps NORMAL モード起動
 bool canInit();
 
-// TWAI 停止 → GPIO6 LOW
+// TWAI 停止 → GPIO9 LOW
 void canDeinit();
 
 // Mode 01 PID リクエストを CAN_REQ_ID (29-bit) に送信

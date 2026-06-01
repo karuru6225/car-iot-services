@@ -1,20 +1,22 @@
 #include <Arduino.h>
 #include "driver/twai.h"
 
-#define CAN_RX_PIN 4 // MCP2562FD RXD
-#define CAN_TX_PIN 5 // MCP2562FD TXD
-#define CAN_EN_PIN 6 // AO3401A パワースイッチ: HIGH=電源ON
+#define CAN_RX_PIN 8 // MCP2562FD RXD
+#define CAN_TX_PIN 7 // MCP2562FD TXD
+#define CAN_EN_PIN 9 // AO3401A パワースイッチ: HIGH=電源ON
+#define BTN0_PIN 26
+#define BTN1_PIN 33
 
 // フェーズ切り替え:
 //   PHASE_LISTEN (デフォルト): LISTEN_ONLY でバス上の全フレームを受信
 //   コメントアウトすると TWAI_MODE_NORMAL + OBD-II PID スキャンに切り替わる
-#define PHASE_LISTEN
+// #define PHASE_LISTEN
 
 #ifdef PHASE_LISTEN
-  #define CAN_MODE TWAI_MODE_LISTEN_ONLY
+#define CAN_MODE TWAI_MODE_LISTEN_ONLY
 #else
-  #define CAN_MODE TWAI_MODE_NORMAL
-  #define RUN_PID_SCAN
+#define CAN_MODE TWAI_MODE_NORMAL
+#define RUN_PID_SCAN
 #endif
 
 static bool twaiReady = false;
@@ -73,21 +75,25 @@ static uint32_t getSupportedPidMask(uint8_t supportPid)
   txErr = twai_transmit(&txMsg, pdMS_TO_TICKS(10));
   Serial.printf("[DBG] TX 0x18DB33F1 pid=0x%02X: %s (0x%x)\n",
                 supportPid, txErr == ESP_OK ? "OK" : "FAIL", txErr);
-  if (txErr != ESP_OK) return 0;
+  if (txErr != ESP_OK)
+    return 0;
 
   // 応答待ち: 0x7E8 以外のフレームも全部表示する
   unsigned long deadline = millis() + 500;
-  while (millis() < deadline) {
+  while (millis() < deadline)
+  {
     twai_message_t rx = {};
-    if (twai_receive(&rx, pdMS_TO_TICKS(10)) == ESP_OK) {
+    if (twai_receive(&rx, pdMS_TO_TICKS(10)) == ESP_OK)
+    {
       Serial.printf("[DBG] RX id=0x%08lX ext=%d len=%d data=", rx.identifier, rx.extd, rx.data_length_code);
-      for (int i = 0; i < rx.data_length_code; i++) Serial.printf("%02X ", rx.data[i]);
+      for (int i = 0; i < rx.data_length_code; i++)
+        Serial.printf("%02X ", rx.data[i]);
       Serial.println();
       bool is29bit = rx.extd && (rx.identifier & 0xFFFFFF00) == 0x18DAF100;
       bool is11bit = !rx.extd && rx.identifier == 0x7E8;
-      if ((is29bit || is11bit) && rx.data[1] == 0x41 && rx.data[2] == supportPid) {
-        return ((uint32_t)rx.data[3] << 24) | ((uint32_t)rx.data[4] << 16)
-             | ((uint32_t)rx.data[5] << 8)  | rx.data[6];
+      if ((is29bit || is11bit) && rx.data[1] == 0x41 && rx.data[2] == supportPid)
+      {
+        return ((uint32_t)rx.data[3] << 24) | ((uint32_t)rx.data[4] << 16) | ((uint32_t)rx.data[5] << 8) | rx.data[6];
       }
     }
   }
@@ -204,7 +210,8 @@ static void printPidResult(uint8_t pid, const char *name,
   case 0x63:
     Serial.printf("[0x63] %-20s OK -> %d Nm\n", name, (int)(A * 256 + B));
     break;
-  case 0x66: {
+  case 0x66:
+  {
     // B*256+C = sensor1 rate in 1/32 g/s units
     uint8_t C = data[5];
     Serial.printf("[0x66] %-20s OK -> sensors=0x%02X MAF1=%.2f g/s\n",
@@ -216,13 +223,15 @@ static void printPidResult(uint8_t pid, const char *name,
     Serial.printf("[0x67] %-20s OK -> sensors=0x%02X S1=%d degC S2=%d degC\n",
                   name, A, (int)B - 40, (int)data[5] - 40);
     break;
-  case 0x68: {
+  case 0x68:
+  {
     // A=bitmap, B=charge air cooler inlet temp, C=outlet temp
     Serial.printf("[0x68] %-20s OK -> sensors=0x%02X in=%d degC out=%d degC\n",
                   name, A, (int)B - 40, (int)data[5] - 40);
     break;
   }
-  case 0x70: {
+  case 0x70:
+  {
     // A=control support bitmap, B*256+C=reference boost, D*256+E=actual boost
     uint8_t D = data[6];
     Serial.printf("[0x70] %-20s OK -> ctrl=0x%02X ref=%d kPa act=%d kPa\n",
@@ -231,7 +240,8 @@ static void printPidResult(uint8_t pid, const char *name,
                   (int)(D * 256 + data[7]) - 32767);
     break;
   }
-  case 0x72: {
+  case 0x72:
+  {
     // A=sensor bitmap, B*256+C=turbo1 RPM (*2), D*256+E=turbo2 RPM (*2)
     uint8_t C = data[5];
     Serial.printf("[0x72] %-20s OK -> sensors=0x%02X T1=%d rpm\n",
@@ -272,7 +282,10 @@ static bool twaiInit(twai_mode_t mode)
 void setup()
 {
   Serial.begin(115200);
-  delay(1000);
+  delay(5000);
+
+  pinMode(BTN0_PIN, INPUT_PULLUP);
+  pinMode(BTN1_PIN, INPUT_PULLUP);
 
   // AO3401A パワースイッチ HIGH → MCP2562FD 電源 ON
   pinMode(CAN_EN_PIN, OUTPUT);
@@ -302,7 +315,7 @@ void setup()
     esp_err_t err = twai_transmit(&tx, pdMS_TO_TICKS(10));
     Serial.printf("TX %s cnt=%lu\n", err == ESP_OK ? "ok" : "fail", txCount);
     txCount++;
-    delay(500);
+    delay(2000);
   }
   twai_stop();
   twai_driver_uninstall();
@@ -324,10 +337,15 @@ void setup()
   Serial.println("Fetching support bitmasks...");
 
   uint32_t mask0 = getSupportedPidMask(0x00); // PIDs 0x01-0x20
+  delay(1000);
   uint32_t mask1 = getSupportedPidMask(0x20); // PIDs 0x21-0x40
+  delay(1000);
   uint32_t mask2 = getSupportedPidMask(0x40); // PIDs 0x41-0x60
+  delay(1000);
   uint32_t mask3 = getSupportedPidMask(0x60); // PIDs 0x61-0x80
+  delay(1000);
   uint32_t mask4 = getSupportedPidMask(0x80); // PIDs 0x81-0xA0
+  delay(1000);
   Serial.printf("Mask[0x00]=0x%08lX  Mask[0x20]=0x%08lX\n", mask0, mask1);
   Serial.printf("Mask[0x40]=0x%08lX  Mask[0x60]=0x%08lX\n", mask2, mask3);
   Serial.printf("Mask[0x80]=0x%08lX\n", mask4);
@@ -389,11 +407,93 @@ void setup()
 #endif
 }
 
+#ifdef RUN_PID_SCAN
+static void pollObd()
+{
+  uint8_t data[8];
+  uint8_t dlc;
+
+  // --- エンジン基本 ---
+  uint16_t rpm     = 0; if (queryPid(0x0C, data, &dlc)) rpm     = (data[3] * 256 + data[4]) / 4;
+  uint8_t  spd     = 0; if (queryPid(0x0D, data, &dlc)) spd     = data[3];
+  uint8_t  load    = 0; if (queryPid(0x04, data, &dlc)) load    = data[3] * 100 / 255;
+  uint8_t  absLoad = 0; if (queryPid(0x43, data, &dlc)) absLoad = (uint32_t)(data[3] * 256 + data[4]) * 100 / 255;
+  uint8_t  mapKpa  = 0; if (queryPid(0x0B, data, &dlc)) mapKpa  = data[3];
+  uint8_t  tps     = 0; if (queryPid(0x11, data, &dlc)) tps     = data[3] * 100 / 255;
+  uint8_t  tpsB    = 0; if (queryPid(0x47, data, &dlc)) tpsB    = data[3] * 100 / 255;
+  uint8_t  appD    = 0; if (queryPid(0x49, data, &dlc)) appD    = data[3] * 100 / 255;
+  uint8_t  appE    = 0; if (queryPid(0x4A, data, &dlc)) appE    = data[3] * 100 / 255;
+  float    ign     = 0; if (queryPid(0x0E, data, &dlc)) ign     = data[3] / 2.0f - 64.0f;
+  uint8_t  baro    = 0; if (queryPid(0x33, data, &dlc)) baro    = data[3];
+  float    ecuV    = 0; if (queryPid(0x42, data, &dlc)) ecuV    = (data[3] * 256 + data[4]) / 1000.0f;
+  uint16_t runTime = 0; if (queryPid(0x1F, data, &dlc)) runTime = data[3] * 256 + data[4];
+
+  // --- 燃料・空燃比 ---
+  float   maf     = 0; if (queryPid(0x66, data, &dlc)) maf     = (data[4] * 256 + data[5]) / 32.0f;
+  float   stft    = 0; if (queryPid(0x06, data, &dlc)) stft    = (data[3] - 128.0f) * 100.0f / 128.0f;
+  float   ltft    = 0; if (queryPid(0x07, data, &dlc)) ltft    = (data[3] - 128.0f) * 100.0f / 128.0f;
+  float   lambda  = 0; if (queryPid(0x44, data, &dlc)) lambda  = (data[3] * 256 + data[4]) * 2.0f / 65536.0f;
+  uint8_t evap    = 0; if (queryPid(0x2E, data, &dlc)) evap    = data[3] * 100 / 255;
+
+  // --- O2 センサー ---
+  // 0x15: A=電圧(A/200 V), B=燃料トリム((B-128)*100/128 %)
+  float   o2v     = 0; float o2ft = 0;
+  if (queryPid(0x15, data, &dlc)) { o2v = data[3] / 200.0f; o2ft = (data[4] - 128.0f) * 100.0f / 128.0f; }
+  // 0x24: A*256+B = lambda×2/65536, C*256+D = 電圧×8/65536 V
+  float   wbLambda = 0; float wbV = 0;
+  if (queryPid(0x24, data, &dlc)) {
+    wbLambda = (data[3] * 256 + data[4]) * 2.0f / 65536.0f;
+    wbV      = (data[5] * 256 + data[6]) * 8.0f / 65536.0f;
+  }
+  float   stft2   = 0; if (queryPid(0x55, data, &dlc)) stft2 = (data[3] - 128.0f) * 100.0f / 128.0f;
+  float   ltft2   = 0; if (queryPid(0x56, data, &dlc)) ltft2 = (data[3] - 128.0f) * 100.0f / 128.0f;
+
+  // --- 温度 ---
+  int16_t clt     = 0; if (queryPid(0x67, data, &dlc)) clt     = (int16_t)data[4] - 40;
+  // 0x3C: (A*256+B)/10 - 40 °C
+  float   catTemp = 0; if (queryPid(0x3C, data, &dlc)) catTemp = (data[3] * 256 + data[4]) / 10.0f - 40.0f;
+
+  // --- 走行累積 ---
+  uint16_t milDist  = 0; if (queryPid(0x21, data, &dlc)) milDist  = data[3] * 256 + data[4];
+  uint8_t  warmups  = 0; if (queryPid(0x30, data, &dlc)) warmups  = data[3];
+  uint16_t clrDist  = 0; if (queryPid(0x31, data, &dlc)) clrDist  = data[3] * 256 + data[4];
+  uint8_t  fuelType = 0; if (queryPid(0x51, data, &dlc)) fuelType = data[3];
+
+  Serial.println("--- OBD poll ---");
+  Serial.printf(" Engine : RPM:%4d SPD:%3dkm/h LOAD:%3d%% ABS:%3d%% MAP:%3dkPa IGN:%+5.1fdeg BARO:%3dkPa\n",
+                rpm, spd, load, absLoad, mapKpa, ign, baro);
+  Serial.printf(" Throttle: TPS:%3d%% TPSB:%3d%% APP-D:%3d%% APP-E:%3d%%\n",
+                tps, tpsB, appD, appE);
+  Serial.printf(" Fuel/AFR: MAF:%.2fg/s STFT:%+.1f%% LTFT:%+.1f%% Lambda:%.4f Evap:%3d%%\n",
+                maf, stft, ltft, lambda, evap);
+  Serial.printf(" O2      : NB=%.3fV(%+.1f%%) WB-L=%.4f WB-V=%.3fV STFT2:%+.1f%% LTFT2:%+.1f%%\n",
+                o2v, o2ft, wbLambda, wbV, stft2, ltft2);
+  Serial.printf(" Temp    : CLT:%3dC CAT:%.1fC\n", (int)clt, catTemp);
+  Serial.printf(" Misc    : ECU:%.3fV RunTime:%us MIL-dist:%ukm Warmups:%u ClrDist:%ukm FuelType:%u\n",
+                ecuV, runTime, milDist, warmups, clrDist, fuelType);
+}
+#endif
+
 void loop()
 {
+  if (digitalRead(BTN0_PIN) == LOW || digitalRead(BTN1_PIN) == LOW)
+  {
+    Serial.println("Button pressed, restarting...");
+    delay(100);
+    ESP.restart();
+  }
+
   if (!twaiReady)
     return;
 
+#ifdef RUN_PID_SCAN
+  static unsigned long lastPollMs = 0;
+  if (millis() - lastPollMs >= 2000)
+  {
+    lastPollMs = millis();
+    pollObd();
+  }
+#else
   twai_message_t rx = {};
   if (twai_receive(&rx, pdMS_TO_TICKS(10)) == ESP_OK)
   {
@@ -402,16 +502,17 @@ void loop()
       Serial.printf("%02X ", rx.data[i]);
     Serial.println();
   }
+#endif
 
   static unsigned long lastStsMs = 0;
-  if (millis() - lastStsMs >= 5000)
+  if (millis() - lastStsMs >= 10000)
   {
     lastStsMs = millis();
     twai_status_info_t sts;
     twai_get_status_info(&sts);
-    Serial.printf("[STS] state=%d txerr=%lu rxerr=%lu bus_err=%lu arb_lost=%lu msgs_rx=%lu\n",
+    Serial.printf("[STS] state=%d txerr=%lu rxerr=%lu bus_err=%lu arb_lost=%lu\n",
                   (int)sts.state, sts.tx_error_counter, sts.rx_error_counter,
-                  sts.bus_error_count, sts.arb_lost_count, sts.msgs_to_rx);
+                  sts.bus_error_count, sts.arb_lost_count);
     if (sts.state == TWAI_STATE_BUS_OFF)
     {
       Serial.println("[STS] BUS_OFF detected, initiating recovery...");
