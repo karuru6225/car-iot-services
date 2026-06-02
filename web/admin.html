@@ -205,6 +205,7 @@ function deviceCard(d) {
     <div class="kv"><div class="k">充電中</div><div class="v">${s.charging != null ? (s.charging ? '🔴 充電中' : '停止') : '-'}</div></div>
     <div class="kv"><div class="k">充電開始</div><div class="v">${s.chg_start_v != null ? s.chg_start_v.toFixed(2) + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">充電停止</div><div class="v">${s.chg_stop_v  != null ? s.chg_stop_v.toFixed(2)  + ' V' : '-'}</div></div>
+    <div class="kv"><div class="k">最小電圧差</div><div class="v">${s.chg_min_diff_v != null ? s.chg_min_diff_v.toFixed(2) + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">Ah オフセット</div><div class="v">${s.ah_offset != null ? s.ah_offset : '-'}</div></div>
     <div class="kv"><div class="k">デバッグログ</div><div class="v">${s.debug_log != null ? (s.debug_log ? 'on' : 'off') : '-'}</div></div>
   </div>
@@ -221,6 +222,10 @@ function deviceCard(d) {
         <div class="form-group">
           <label>chg_stop_v (V)</label>
           <input type="number" step="0.1" id="sv-stop-${id}" value="${s.chg_stop_v != null ? s.chg_stop_v : 12.5}">
+        </div>
+        <div class="form-group">
+          <label>chg_min_diff_v (V)</label>
+          <input type="number" step="0.01" id="sv-min-diff-${id}" value="${s.chg_min_diff_v != null ? s.chg_min_diff_v : 0.3}">
         </div>
         <div class="form-group">
           <label>ah_offset</label>
@@ -288,6 +293,7 @@ async function saveShadow(deviceId) {
   const body = {
     chg_start_v:      parseFloat(document.getElementById(`sv-start-${deviceId}`).value),
     chg_stop_v:       parseFloat(document.getElementById(`sv-stop-${deviceId}`).value),
+    chg_min_diff_v:   parseFloat(document.getElementById(`sv-min-diff-${deviceId}`).value),
     ah_offset:        parseInt(document.getElementById(`sv-ah-${deviceId}`).value, 10),
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',
     charging:         document.getElementById(`sv-charging-${deviceId}`).value === 'true',

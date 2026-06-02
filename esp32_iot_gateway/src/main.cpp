@@ -180,20 +180,25 @@ static uint32_t secsToNextBoundary()
 // 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）
 static void updateChargingState()
 {
-  float v = g_lastResult.reading.main.voltage;
-  float startV = getChgStartV();
-  float stopV = getChgStopV();
-  if (v >= 10.0f && !isCharging() && v < startV)
+  float vMain   = g_lastResult.reading.main.voltage;
+  float vSub    = g_lastResult.reading.sub.voltage;
+  float startV  = getChgStartV();
+  float stopV   = getChgStopV();
+  float minDiff = getChgMinDiffV();
+  float diff    = vSub - vMain;
+
+  if (vMain >= 10.0f && !isCharging() && vMain < startV && diff >= minDiff)
   {
     setCharging(true);
     digitalWrite(CHG_ON_PIN, HIGH);
-    logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV\n", v, startV);
+    logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV diff=%.2fV\n", vMain, startV, diff);
   }
-  else if (v >= 10.0f && isCharging() && v >= stopV)
+  else if (vMain >= 10.0f && isCharging() && (vMain >= stopV || diff < minDiff))
   {
     setCharging(false);
     digitalWrite(CHG_ON_PIN, LOW);
-    logger.printf("[MAIN] auto charge OFF vMain=%.2fV >= stopV=%.2fV\n", v, stopV);
+    logger.printf("[MAIN] auto charge OFF vMain=%.2fV stopV=%.2fV diff=%.2fV minDiff=%.2fV\n",
+                  vMain, stopV, diff, minDiff);
   }
 }
 

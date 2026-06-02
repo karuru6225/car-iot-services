@@ -20,13 +20,14 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *ov
                     "\"ah_offset\":%d,"
                     "\"chg_start_v\":%.2f,"
                     "\"chg_stop_v\":%.2f,"
+                    "\"chg_min_diff_v\":%.2f,"
                     "\"debug_log\":%s,"
                     "\"charging\":%s,"
                     "\"override_next_mode\":%s,"
                     "\"fw_version\":\"" FIRMWARE_VERSION "\""
                     "},\"desired\":null}}",
                     getAhOffset(),
-                    getChgStartV(), getChgStopV(),
+                    getChgStartV(), getChgStopV(), getChgMinDiffV(),
                     getDebugLogEnabled() ? "true" : "false",
                     isCharging() ? "true" : "false",
                     overrideStr);
@@ -35,13 +36,14 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *ov
                   "\"ah_offset\":%d,"
                   "\"chg_start_v\":%.2f,"
                   "\"chg_stop_v\":%.2f,"
+                  "\"chg_min_diff_v\":%.2f,"
                   "\"debug_log\":%s,"
                   "\"charging\":%s,"
                   "\"override_next_mode\":%s,"
                   "\"fw_version\":\"" FIRMWARE_VERSION "\""
                   "}}}",
                   getAhOffset(),
-                  getChgStartV(), getChgStopV(),
+                  getChgStartV(), getChgStopV(), getChgMinDiffV(),
                   getDebugLogEnabled() ? "true" : "false",
                   isCharging() ? "true" : "false",
                   overrideStr);

@@ -99,6 +99,13 @@ bool shadowPollDelta(uint32_t timeoutMs)
     changed = true;
   }
 
+  if (state["chg_min_diff_v"].is<float>())
+  {
+    setChgMinDiffV(state["chg_min_diff_v"].as<float>());
+    logger.printf("[SHADOW] chg_min_diff_v → %.2f\n", getChgMinDiffV());
+    changed = true;
+  }
+
   if (state["charging"].is<bool>())
   {
     setCharging(state["charging"].as<bool>());

@@ -5,7 +5,7 @@
 #ifndef GIT_HASH
 #define GIT_HASH "00000000"
 #endif
-#define FIRMWARE_VERSION "1.16.2+" GIT_HASH
+#define FIRMWARE_VERSION "1.17.0+" GIT_HASH
 
 // 動作モード
 enum class OperationMode
@@ -67,6 +67,11 @@ float getChgStartV();
 void setChgStartV(float v);
 float getChgStopV();
 void setChgStopV(float v);
+
+// sub-main 電圧差しきい値の取得・保存（battery 用、デフォルト: 0.3V）
+// diff < minDiffV なら充電開始しない・充電中なら停止する
+float getChgMinDiffV();
+void setChgMinDiffV(float v);
 
 // 充電制御ピン
 #define CHG_ON_PIN 21

@@ -191,6 +191,8 @@ float getChgStartV() { return nvsGetFloat("chg_start_v", 11.7f); }
 void setChgStartV(float v) { nvsSetFloat("chg_start_v", v); }
 float getChgStopV() { return nvsGetFloat("chg_stop_v", 12.5f); }
 void setChgStopV(float v) { nvsSetFloat("chg_stop_v", v); }
+float getChgMinDiffV() { return nvsGetFloat("chg_min_diff_v", 0.3f); }
+void setChgMinDiffV(float v) { nvsSetFloat("chg_min_diff_v", v); }
 
 RTC_DATA_ATTR static bool s_charging = false;
 bool isCharging() { return s_charging; }
