@@ -90,6 +90,7 @@ class _BleHomeState extends State<BleHome> {
   final _logScroll = ScrollController();
 
   BluetoothDevice? _device;
+  bool _userDisconnected = false;
   final List<StreamSubscription> _notifySubs = [];
   StreamSubscription? _connSub;
 
@@ -233,8 +234,14 @@ class _BleHomeState extends State<BleHome> {
 
     _connSub = _device!.connectionState.listen((s) {
       if (s == BluetoothConnectionState.disconnected) {
-        _addLog('切断されました', _LogType.sys);
+        final autoReconnect = !_userDisconnected;
+        _userDisconnected = false;
+        _addLog(autoReconnect ? '予期しない切断: 自動再接続...' : '切断されました', _LogType.sys);
         _cleanup();
+        if (autoReconnect) {
+          // ESP32 の起動・アドバタイズ開始を待ってからスキャン
+          Future.delayed(const Duration(seconds: 3), _connect);
+        }
       }
     });
 
@@ -344,6 +351,7 @@ class _BleHomeState extends State<BleHome> {
   // ---------- 切断 ----------
 
   Future<void> _disconnect() async {
+    _userDisconnected = true;
     await _device?.disconnect();
     _addLog('手動切断', _LogType.sys);
     _cleanup();
