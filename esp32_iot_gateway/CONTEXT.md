@@ -653,3 +653,43 @@ MQTT 通信経路上のフィールド名を短縮し、送信バイト数を削
 `platformio.ini` の release env に `CONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED=1` / `CONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED=1` を追加。Flash **約16KB 削減**（696,693 → 680,165 bytes）。
 
 「BLE ダッシュボード表示器」「スマホ BLE 連携」TODO を実装する際は Peripheral が必要になるため、その時点で削除する。
+
+### TODO: バッテリー上がりアラート（未着手）
+
+**実装方針**: ingest Lambda 内で条件評価 → SNS 通知
+
+MsgPack decode が既に済んだ状態で全フィールドが展開されているため、条件判定を数行追加するだけで実装できる。SNS トピックを追加して通知先（メール等）を繋ぐ。
+
+アラート状態（OK / WARNING / CRITICAL）は **SSM パラメータストア**に保存し、状態変化（OK→ALARM）のときのみ SNS を発火する。条件解消時は回復通知も送る。5分ごとの read/write は月 720 回程度でスタンダードパラメータの無料枠（10,000 回/月）内に収まる（DynamoDB はコストが見合わないため不採用）。
+
+閾値も SSM パラメータストアで管理し、Lambda 環境変数 `ALERT_PROFILE`（`prod` / `test`）でプロファイルを切り替える。
+
+| パラメータ | prod | test（現在の実測値が発火するよう設定） |
+| --- | --- | --- |
+| `ah_low` | 20 | 195 |
+| `ah_high` | 40 | 200 |
+| `m_high` | 12.2 | 13.5 |
+| `m_low` | 12.0 | 13.0 |
+
+SSM パスの例: `/car-iot/alert/{profile}/ah_low`
+
+**発火条件**:
+
+| 条件 | レベル |
+| --- | --- |
+| `ah < 20` | 緊急 |
+| `ah < 40 AND m < 12.2 AND (s - m) >= 0` | 警告 |
+| `m < 12.0 AND (s - m) >= 0` | 緊急 |
+
+- `s - m >= 0`（= B V >= 0）はエンジンOFF状態の判定。エンジンON時はオルタネーター充電でmain電圧が14V台になるため誤検知を防ぐ
+- 警告条件（`ah < 40 AND m < 12.2`）は sub・main ともに低下中で緊急充電回路が diff 不足により機能していない可能性がある
+- 緊急条件（`m < 12.0`）は充電回路が機能しないまま main が警戒ライン（エンジン始動リスク）に達した状態
+- フィールド名は MsgPack キー（`m`=main電圧, `s`=sub電圧, `ah`=サブAh）
+
+**不採用案**:
+
+- Grafana Alerting：アラートチェックのたびに Athena クエリが発行されコストがかかる。Grafana の可用性依存も懸念
+- IoT Core ルールエンジン直接評価：MsgPack（バイナリ）を直接パースできないため不可
+- EventBridge Scheduler + 専用 Lambda + SNS：柔軟で既存コードと分離できるが、別 Lambda の実装コストがかかる
+
+**背景**: sub（LiFePO4）が深放電に至ると、v1.1.0基板のMOSFETボディダイオード経由でmain（鉛バッテリー）が12Vバスの負荷を供給し続け、mainが上がるリスクがある。梅雨期間の長期曇天でソーラー発電が途絶えた場合に現実的なリスクとなる。
