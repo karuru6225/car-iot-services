@@ -703,34 +703,60 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 ```text
 Sub(+) 12-13V
   │
-  ├── R1(100k) ──── P-ch FET [Gate] ──┬── [電源SW モーメンタリ] ── GND
-  │                                    └── [NPN C]
-  │                                        [NPN B] ── R2(10k) ── ESP32 GPIO(PWR_HOLD)
-  │                                        [NPN E] ── GND
+  ├─────────────────────── FET [S]
+  │                             ↓ (P-ch: G が S より低いと ON)
+  R1(100k)                 FET [D] ── VIN ── [LM2596S] ── 5V ── [ESP32]
+  │                                                                   │
+  ●──┬── FET [G]                                        GPIO(PWR_HOLD)
+  │  └── NPN [C]                                                      │
+  │      NPN [B] ──── R2(10k) ────────────────────────────────────── ┘
+  │      NPN [E]
+  │          │
+[電源SW]    GND
   │
-  └────────────── P-ch FET [Source]
-                          │
-                       [Drain] ── VIN ── [LM2596S] ── 5V ── [ESP32]
-GND
+ R3(100Ω)
+  │
+ C1(47μF)
+  │
+ GND
 ```
+
+> ●（ゲートノード）に R1・FET[G]・NPN[C]・電源 SW・C1 が合流する。
+> R3+C1 は SW 解放後のゲート上昇を遅延させ（τ≈5秒）、ESP32 が自己保持を確立するまでの時間を稼ぐ。R3 は C1 の急放電による SW 接点ダメージを防ぐ電流制限。
 
 **動作シーケンス**:
 
 ```text
-【起動】電源SW押下 → FET Gate が GND へ → Vgs=-12V → FET ON
-        → VIN供給 → LM2596S → 5V → ESP32起動
-        → ESP32 PWR_HOLD = LOW → NPN ON → Gate を GND に保持（自己保持）
-        → SW離しても FET ON 維持
+【起動】電源SW押下 → ●(Gate) が GND へ → FET ON → VIN供給 → LM2596S → 5V → ESP32起動
+        → setup() 冒頭で PWR_HOLD = HIGH → NPN 導通 → Gate を GND に保持（自己保持）
+        → SW 離してもゲートは NPN で GND に固定 → FET ON 維持
 
-【停止】ESP32 PWR_HOLD = HIGH → NPN OFF
-        → R1 が Gate を Sub(+) へ引き上げ → Vgs=0 → FET OFF
-        → VIN断 → LM2596S停止 → ESP32停止
-        → NPN も OFF → 状態維持（発振しない）
+【停止】PWR_HOLD = LOW → NPN オフ
+        → R1 が Gate を Sub(+) へ引き上げ → FET OFF → VIN断 → ESP32停止
+        → NPN も自然オフ → 状態維持（発振しない）
 
 【復帰】電源SW押下のみ（手動）
 ```
 
-> LM2596S の ON/OFF ピン制御は「ESP32が落ちると R101 でON/OFFピンが GND に戻り再起動する」発振問題があるため不採用。VIN 自体を FET で遮断するこの構成が正しい。
+> LM2596S の ON/OFF ピン制御は「ESP32が落ちると ON/OFF ピンが GND に戻り再起動する」発振問題があるため不採用。VIN 自体を FET で遮断するこの構成が正しい。
+
+**FET 選定条件**:
+
+| パラメータ | 要件 | 根拠 |
+| --- | --- | --- |
+| Vgs(max) | **±20V 以上**（または Zener クランプ） | LiFePO4 満充電時 Sub(+) ≈ 14.6V → Vgs = -14.6V。AO3401A の ±12V では破損する |
+| Id(cont.) | 1A 以上 | ボード全体のピーク消費：ESP32+SIM7080G TX+リレー ≈ 500mA |
+| Rds(on) | 問題にならない | 500mA × 0.1Ω = 50mW 程度。SOT-23 で十分放熱できる |
+| パッケージ | SOT-23 可 | 500mA 以下であれば SOT-23 の熱抵抗（500℃/W）でも問題ない |
+
+**候補 A（FET 変更）**: Vgs(max) = ±20V の P-ch FET（例: DMG3415U など）に変える。
+
+**候補 B（AO3401A 流用 + Zener クランプ）**: Gate-Source 間に 12V Zener（BZX84C12 等、SOT-23）を追加して Vgs を -12V に制限する。R1 = 100kΩ のためツェナー電流 ≈ (14.6-12)/100k = 26μA と微小で発熱なし。
+
+**実装上の注意**:
+
+- PWR_HOLD は RTC 対応ピン（ESP32-S3: GPIO 0〜21）を使う。deep sleep 前に `gpio_hold_en()` で HIGH を維持し、起動直後に `gpio_hold_dis()` で解除する（CHG_ON_PIN と同じパターン）
+- `digitalWrite(PWR_HOLD_PIN, HIGH)` を `setup()` 冒頭（`delay()` より前）に置き、C1 の遅延時間内に自己保持を確立する
 
 **目的**: DeepSleep では ESP32 の消費はほぼゼロになるが LM2596S は動き続けるため、ボディダイオード経由の電流パスが残る。完全電源断によって 12V バスへの消費を完全に止め、main バッテリーへの影響をゼロにする。
 
