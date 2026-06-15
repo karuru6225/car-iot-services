@@ -2,6 +2,7 @@
 #include <NimBLEDevice.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <atomic>
 #include "../config.h"
 #include "../domain/sensor_factory.h"
 
@@ -9,7 +10,7 @@ class BleScanner
 {
 public:
   QueueHandle_t queue = nullptr;
-  bool registrationMode = false; // true のとき bleTargets フィルタをスキップ
+  std::atomic<bool> registrationMode{false}; // true のとき bleTargets フィルタをスキップ
 
   void setup();
   void start(int seconds);

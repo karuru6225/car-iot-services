@@ -1,5 +1,6 @@
 #pragma once
 #include <NimBLEDevice.h>
+#include <atomic>
 
 class BlePeripheral {
 public:
@@ -17,8 +18,8 @@ private:
   NimBLECharacteristic* _pCurrChar     = nullptr;
   NimBLECharacteristic* _pPwrChar      = nullptr;
   NimBLECharacteristic* _pVoltSubChar  = nullptr;
-  bool     _connected    = false;
-  bool     _authComplete = false;
+  std::atomic<bool> _connected{false};
+  std::atomic<bool> _authComplete{false};
   uint32_t _passkey      = 0;
 
   friend class BlePeripheralServerCb;
