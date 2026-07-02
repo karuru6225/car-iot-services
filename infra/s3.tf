@@ -207,7 +207,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "main" {
       prefix = "athena-results/"
     }
     expiration {
-      days = 2
+      days = 1
     }
   }
 }
