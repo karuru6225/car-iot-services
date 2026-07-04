@@ -355,15 +355,19 @@ ESP32-S3-MINI-1 がディープスリープ、パワースイッチで LTE / Gro
 | J12 | Conn_01x02 | 2 | リレー ch1 外部スイッチ入力 |
 | J13 | Conn_01x02 | 2 | リレー ch2 外部スイッチ入力 |
 | J1 | USB_C_Receptacle_USB2.0_14P | 14 | USB-C 5V 受電（補助電源） |
-| J2 | GROVE-CONNECTOR | 4 | LTE モジュール（SIM7080G）5V/GND/TX/RX |
-| J9 | GROVE-CONNECTOR | 4 | Grove 2（Res0_0/Res0_1、+5V スイッチ） |
+| J2 | GROVE-CONNECTOR | 4 | LTE モジュール（SIM7080G）5V/GND/TX/RX（筐体都合によりGPIO7/8/9に接続。基板シルクのGU_0/1/ENラベルとは不一致） |
+| J9 | GROVE-CONNECTOR | 4 | Grove 2（未使用の予備コネクタ、GPIO4/5/6） |
 | J3 | Conn_01x04_Pin | 4 | UART デバッグ（TXD0/RXD0/3.3V/GND） |
+| J107 | Conn_01x04_Socket | 4 | I2C拡張コネクタ（v2のみ。GP11/GP12 + 3.3V/GND2） |
+| J108 | Conn_01x04_Socket | 4 | I2C拡張コネクタ（v2のみ。GP2/GP3 + 3.3V/GND1） |
 
 ---
 
 ## GPIO ピンアサイン（U103 ESP32-S3-MINI-1）
 
-### m5atom_power_adc（本基板）
+### m5atom_power_adc v1
+
+> 基板シルクのネットラベル（LTE_RX/TX/EN, GU_0/1/EN）は筐体都合の配線変更前のもので実配線と一致しない。下表はファームウェア（`board_pins_v1.cpp`）を正とする実際の接続。
 
 | GPIO | 信号名 | 方向 | 用途 |
 | ---- | ------ | ---- | ---- |
@@ -371,17 +375,17 @@ ESP32-S3-MINI-1 がディープスリープ、パワースイッチで LTE / Gro
 | IO1 | — | — | NC |
 | IO2 | — | — | NC |
 | IO3 | — | — | NC |
-| IO4 | LTE_RX | IN | SIM7080G UART TX → ESP32 RX |
-| IO5 | LTE_TX | OUT | ESP32 TX → SIM7080G UART RX |
-| IO6 | LTE_EN | OUT | SIM7080G パワースイッチ制御（HIGH = ON） |
-| IO7 | GU_0 | IN/OUT | Grove Unit 0 信号線 |
-| IO8 | GU_1 | IN/OUT | Grove Unit 1 信号線 |
-| IO9 | GU_EN | OUT | Grove Unit パワースイッチ制御（HIGH = ON） |
-| IO10 | RelaySense0 | IN | リレー ch0 外部スイッチ検出（負論理） |
+| IO4 | GU_0 | IN/OUT | Grove 2（J9、未使用の予備コネクタ）信号線 |
+| IO5 | GU_1 | IN/OUT | Grove 2（J9、未使用の予備コネクタ）信号線 |
+| IO6 | GU_EN | OUT | Grove 2（J9）パワースイッチ制御（HIGH = ON） |
+| IO7 | LTE_RX | IN | SIM7080G UART TX → ESP32 RX（J2経由） |
+| IO8 | LTE_TX | OUT | ESP32 TX → SIM7080G UART RX（J2経由） |
+| IO9 | LTE_EN | OUT | SIM7080G パワースイッチ制御（HIGH = ON） |
+| IO10 | RelaySense0 | IN | リレー ch0 外部スイッチ検出（負論理、J11） |
 | IO11 | Relay0 | OUT | リレー ch0 駆動（HIGH = ON） |
-| IO12 | RelaySense1 | IN | リレー ch1 外部スイッチ検出（負論理） |
+| IO12 | RelaySense1 | IN | リレー ch1 外部スイッチ検出（負論理、J12） |
 | IO13 | Relay1 | OUT | リレー ch1 駆動（HIGH = ON） |
-| IO14 | RelaySense2 | IN | リレー ch2 外部スイッチ検出（負論理） |
+| IO14 | RelaySense2 | IN | リレー ch2 外部スイッチ検出（負論理、J13） |
 | IO15 | Relay2 | OUT | リレー ch2 駆動（HIGH = ON） |
 | IO16 | ADC_READY | IN | ADS1115 ALERT/RDY（変換完了割り込み） |
 | IO17 | SDA | IN/OUT | I2C データ（ADS1115） |
@@ -389,9 +393,39 @@ ESP32-S3-MINI-1 がディープスリープ、パワースイッチで LTE / Gro
 | IO21 | CHG_ON | OUT | 充電制御 |
 | IO26 | Btn0 | IN | ボタン 0 |
 | IO33 | Btn1 | IN | ボタン 1 |
-| IO35 | SPEAKER | OUT | ブザー / スピーカー |
+| IO34 | SPEAKER | OUT | ブザー / スピーカー |
 | IO43 | TXD0 | OUT | UART0 デバッグ出力（J3） |
 | IO44 | RXD0 | IN | UART0 デバッグ入力（J3） |
+
+### m5atom_power_adc v2
+
+自己保持回路（PWR_HOLD）とI2C拡張コネクタ（J107/J108）を追加。リレー外部スイッチ検出（RelaySense0/1/2、v1のIO10/12/14）はGPIOでの直接検出を廃止し、削除した（J11/J12/J13コネクタ自体は存置）。
+
+| GPIO | 信号名 | 方向 | 用途 |
+| ---- | ------ | ---- | ---- |
+| IO0 | GPIO0/BOOT | IN | ブートモード切替（LOW でダウンロードモード） |
+| IO1 | — | — | NC |
+| IO2 | GP2 | IN/OUT | I2C拡張コネクタ（J108）信号線 |
+| IO3 | GP3 | IN/OUT | I2C拡張コネクタ（J108）信号線 |
+| IO4 | GU_0 | IN/OUT | Grove 2（J9、未使用の予備コネクタ）信号線 |
+| IO5 | GU_1 | IN/OUT | Grove 2（J9、未使用の予備コネクタ）信号線 |
+| IO6 | GU_EN | OUT | Grove 2（J9）パワースイッチ制御（HIGH = ON） |
+| IO7 | LTE_RX | IN | SIM7080G UART TX → ESP32 RX（J2経由） |
+| IO8 | LTE_TX | OUT | ESP32 TX → SIM7080G UART RX（J2経由） |
+| IO9 | LTE_EN | OUT | SIM7080G パワースイッチ制御（HIGH = ON） |
+| IO10 | PWR_HOLD | OUT | 自己保持回路の電源保持ピン |
+| IO11 | GP11 | IN/OUT | I2C拡張コネクタ（J107）信号線 |
+| IO12 | GP12 | IN/OUT | I2C拡張コネクタ（J107）信号線 |
+| IO13 | Relay0 | OUT | リレー ch0 駆動（HIGH = ON） |
+| IO14 | Relay1 | OUT | リレー ch1 駆動（HIGH = ON） |
+| IO15 | Relay2 | OUT | リレー ch2 駆動（HIGH = ON） |
+| IO16 | ADC_READY | IN | ADS1115 ALERT/RDY（変換完了割り込み） |
+| IO17 | SDA | IN/OUT | I2C データ（ADS1115） |
+| IO18 | SCL | OUT | I2C クロック（ADS1115） |
+| IO21 | CHG_ON | OUT | 充電制御（v1と同じ） |
+| IO26 | Btn0 | IN | ボタン 0（v1と同じ） |
+| IO33 | Btn1 | IN | ボタン 1（v1と同じ） |
+| IO34 | SPEAKER | OUT | ブザー / スピーカー（v1と同じ） |
 
 ### m5atom_iot_gateway（旧基板 / M5Atom S3）
 
