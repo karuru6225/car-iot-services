@@ -13,6 +13,7 @@
 
 #include <Arduino.h>
 #include "config.h"
+#include "board_pins.h"
 #include "device/lte.h"
 #include "service/logger.h"
 #include "service/ota.h"
@@ -46,14 +47,6 @@ static JsonTelemetryEncoder g_encoder;
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 
-#define RELAY_0_PIN 11
-#define RELAY_1_PIN 13
-#define RELAY_2_PIN 15
-
-#define GU0_0 4
-#define GU0_1 5
-#define GU0_EN 6
-
 // #define DEBUG_SKIP_NETWORK
 
 #ifdef DEBUG_MODE
@@ -69,7 +62,7 @@ static bool g_bleUpgradedToContinuous = false;
 void setup()
 {
   g_wakeupCause = esp_sleep_get_wakeup_cause();
-  gpio_hold_dis((gpio_num_t)CHG_ON_PIN);
+  gpio_hold_dis((gpio_num_t)boardPins().chgOnPin);
 
   logger.init();
   delay(1000);
@@ -145,16 +138,16 @@ void setup()
 
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
     playMelody(boot);
-  pinMode(RELAY_0_PIN, OUTPUT);
-  pinMode(RELAY_1_PIN, OUTPUT);
-  pinMode(RELAY_2_PIN, OUTPUT);
-  pinMode(CHG_ON_PIN, OUTPUT);
-  pinMode(GU0_EN, OUTPUT);
-  digitalWrite(RELAY_0_PIN, LOW);
-  digitalWrite(RELAY_1_PIN, LOW);
-  digitalWrite(RELAY_2_PIN, LOW);
-  digitalWrite(CHG_ON_PIN, isCharging() ? HIGH : LOW);
-  digitalWrite(GU0_EN, HIGH);
+  pinMode(boardPins().relay0Pin, OUTPUT);
+  pinMode(boardPins().relay1Pin, OUTPUT);
+  pinMode(boardPins().relay2Pin, OUTPUT);
+  pinMode(boardPins().chgOnPin, OUTPUT);
+  pinMode(boardPins().guEnPin, OUTPUT);
+  digitalWrite(boardPins().relay0Pin, LOW);
+  digitalWrite(boardPins().relay1Pin, LOW);
+  digitalWrite(boardPins().relay2Pin, LOW);
+  digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
+  digitalWrite(boardPins().guEnPin, HIGH);
 }
 
 // BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）
@@ -180,23 +173,23 @@ static uint32_t secsToNextBoundary()
 // 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）
 static void updateChargingState()
 {
-  float vMain   = g_lastResult.reading.main.voltage;
-  float vSub    = g_lastResult.reading.sub.voltage;
-  float startV  = getChgStartV();
-  float stopV   = getChgStopV();
+  float vMain = g_lastResult.reading.main.voltage;
+  float vSub = g_lastResult.reading.sub.voltage;
+  float startV = getChgStartV();
+  float stopV = getChgStopV();
   float minDiff = getChgMinDiffV();
-  float diff    = vSub - vMain;
+  float diff = vSub - vMain;
 
   if (vMain >= 10.0f && !isCharging() && vMain < startV && diff >= minDiff)
   {
     setCharging(true);
-    digitalWrite(CHG_ON_PIN, HIGH);
+    digitalWrite(boardPins().chgOnPin, HIGH);
     logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV diff=%.2fV\n", vMain, startV, diff);
   }
   else if (vMain >= 10.0f && isCharging() && (vMain >= stopV || diff < minDiff))
   {
     setCharging(false);
-    digitalWrite(CHG_ON_PIN, LOW);
+    digitalWrite(boardPins().chgOnPin, LOW);
     logger.printf("[MAIN] auto charge OFF vMain=%.2fV stopV=%.2fV diff=%.2fV minDiff=%.2fV\n",
                   vMain, stopV, diff, minDiff);
   }
@@ -218,7 +211,7 @@ static void enterDeepSleepMode()
 
   uint32_t sleepSec = secsToNextBoundary();
   if (isCharging())
-    gpio_hold_en((gpio_num_t)CHG_ON_PIN);
+    gpio_hold_en((gpio_num_t)boardPins().chgOnPin);
   rtc_gpio_init(GPIO_NUM_0);
   rtc_gpio_set_direction(GPIO_NUM_0, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en(GPIO_NUM_0);

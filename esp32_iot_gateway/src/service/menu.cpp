@@ -10,6 +10,7 @@
 #include "../domain/ble_targets.h"
 #include "../domain/sensor_factory.h"
 #include "../config.h"
+#include "../board_pins.h"
 #include <Arduino.h>
 
 // ---- 状態定義 ----
@@ -477,7 +478,7 @@ static MenuState tickCharging(ButtonEvent ev)
       needsInit = true;
       return MenuState::MENU_NAV;
     }
-    digitalWrite(CHG_ON_PIN, HIGH);
+    digitalWrite(boardPins().chgOnPin, HIGH);
     timeoutMs  = getChgTimeoutMin() * 60UL * 1000UL;
     startMs    = millis();
     lastReadMs = 0;
@@ -488,7 +489,7 @@ static MenuState tickCharging(ButtonEvent ev)
 
   // タイムアウト
   if (elapsed >= timeoutMs) {
-    digitalWrite(CHG_ON_PIN, LOW);
+    digitalWrite(boardPins().chgOnPin, LOW);
     oledShowMessage("Charge done", "");
     delay(1500);
     needsInit = true;
@@ -506,7 +507,7 @@ static MenuState tickCharging(ButtonEvent ev)
 
   // どのボタンでも終了
   if (ev != ButtonEvent::NONE) {
-    digitalWrite(CHG_ON_PIN, LOW);
+    digitalWrite(boardPins().chgOnPin, LOW);
     oledShowMessage("Charge stopped", "");
     delay(1000);
     needsInit = true;

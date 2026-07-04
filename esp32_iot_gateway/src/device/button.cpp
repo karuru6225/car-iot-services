@@ -1,20 +1,23 @@
 #include "button.h"
 #include "speaker.h"
+#include "../board_pins.h"
 
 Button button;
 
 void Button::begin() {
-  pinMode(BTN0_PIN, INPUT_PULLUP);
-  pinMode(BTN1_PIN, INPUT_PULLUP);
+  _btn0Pin = boardPins().btn0Pin;
+  _btn1Pin = boardPins().btn1Pin;
+  pinMode(_btn0Pin, INPUT_PULLUP);
+  pinMode(_btn1Pin, INPUT_PULLUP);
 }
 
 bool Button::isDown(uint8_t btn) {
-  return digitalRead(btn == 0 ? BTN0_PIN : BTN1_PIN) == LOW;
+  return digitalRead(btn == 0 ? _btn0Pin : _btn1Pin) == LOW;
 }
 
 ButtonEvent Button::read() {
-  bool btn0 = digitalRead(BTN0_PIN) == LOW;
-  bool btn1 = digitalRead(BTN1_PIN) == LOW;
+  bool btn0 = digitalRead(_btn0Pin) == LOW;
+  bool btn1 = digitalRead(_btn1Pin) == LOW;
   unsigned long now = millis();
   ButtonEvent ev = ButtonEvent::NONE;
 

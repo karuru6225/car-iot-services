@@ -10,8 +10,8 @@ public:
   bool isDown(uint8_t btn); // 0=BTN0, 1=BTN1
 
 private:
-  static const uint8_t BTN0_PIN = 26;
-  static const uint8_t BTN1_PIN = 33;
+  uint8_t _btn0Pin = 0;
+  uint8_t _btn1Pin = 0;
   static const uint32_t LONG_PRESS_MS = 1000;
 
   bool _btn0Prev = false;

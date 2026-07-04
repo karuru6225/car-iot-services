@@ -1,8 +1,13 @@
 #include "lte.h"
 #include "../service/logger.h"
 #include "../config.h"
+#include "../board_pins.h"
 #include <esp_rom_crc.h>
 #include <SPIFFS.h>
+
+static const uint8_t LTE_RX_PIN = boardPins().lteRxPin;
+static const uint8_t LTE_TX_PIN = boardPins().lteTxPin;
+static const uint8_t LTE_EN_PIN = boardPins().lteEnPin;
 
 Lte lte;
 

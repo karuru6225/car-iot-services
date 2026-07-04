@@ -8,9 +8,6 @@
 #define SerialAT Serial2
 #include <TinyGsmClient.h>
 
-static const uint8_t LTE_RX_PIN = 7;
-static const uint8_t LTE_TX_PIN = 8;
-static const uint8_t LTE_EN_PIN = 9;
 static const char *APN = "soracom.io";
 static const char *APN_USER = "sora";
 static const char *APN_PASS = "sora";

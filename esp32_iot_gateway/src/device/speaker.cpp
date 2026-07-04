@@ -1,6 +1,7 @@
 #include "speaker.h"
+#include "../board_pins.h"
 
-#define BUZZER_PIN 34
+static const uint8_t BUZZER_PIN = boardPins().buzzerPin;
 
 // きらきら星
 const Note melody[] = {

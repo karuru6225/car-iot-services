@@ -3,15 +3,13 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <qrcode.h>
-
-#define SDA_PIN 17
-#define SCL_PIN 18
+#include "../board_pins.h"
 
 static Adafruit_SSD1306 display(128, 64, &Wire, -1);
 
 void oledInit()
 {
-  Wire.begin(SDA_PIN, SCL_PIN);
+  Wire.begin(boardPins().sdaPin, boardPins().sclPin);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay();
   display.display();
