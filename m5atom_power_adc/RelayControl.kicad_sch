@@ -1204,12 +1204,6 @@
 		(uuid "79ccd29c-3933-4500-b946-95c3ad078dd4")
 	)
 	(junction
-		(at 118.11 111.76)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "7fbf31cd-7669-4add-828b-8dfcc902e993")
-	)
-	(junction
 		(at 121.92 105.41)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -1279,16 +1273,6 @@
 	)
 	(wire
 		(pts
-			(xy 111.76 111.76) (xy 118.11 111.76)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "77d49423-9254-44b5-9cd4-bdd1a74fdc99")
-	)
-	(wire
-		(pts
 			(xy 121.92 105.41) (xy 125.73 105.41)
 		)
 		(stroke
@@ -1309,16 +1293,6 @@
 	)
 	(wire
 		(pts
-			(xy 118.11 118.11) (xy 121.92 118.11)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a0aa8c12-f51b-4531-a89d-dccfaa7f31c8")
-	)
-	(wire
-		(pts
 			(xy 133.35 92.71) (xy 133.35 97.79)
 		)
 		(stroke
@@ -1326,16 +1300,6 @@
 			(type default)
 		)
 		(uuid "a332115d-90c5-4fb6-842b-222d0905dbb6")
-	)
-	(wire
-		(pts
-			(xy 118.11 110.49) (xy 118.11 111.76)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a81b3e20-4fc2-481d-b0ba-ee39bbce5ce2")
 	)
 	(wire
 		(pts
@@ -1366,26 +1330,6 @@
 			(type default)
 		)
 		(uuid "d4d3be32-c6e6-4b23-ad9e-7a533114d151")
-	)
-	(wire
-		(pts
-			(xy 118.11 105.41) (xy 121.92 105.41)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d6c790d2-146b-4a93-bd87-db94d4aef50f")
-	)
-	(wire
-		(pts
-			(xy 118.11 111.76) (xy 118.11 113.03)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "df8b301d-58ef-4f95-8bc6-ecc568a9e31d")
 	)
 	(wire
 		(pts
@@ -1427,17 +1371,6 @@
 			(justify left)
 		)
 		(uuid "bf116d81-a992-4951-a7e1-3779ea199c98")
-	)
-	(hierarchical_label "RelaySense"
-		(shape output)
-		(at 111.76 111.76 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "db77d08e-aaf3-40a2-8623-32a123e2b1cf")
 	)
 	(symbol
 		(lib_id "Connector:TestPoint")
@@ -1926,92 +1859,6 @@
 	)
 	(symbol
 		(lib_id "Device:R_Small")
-		(at 118.11 107.95 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "545f7efd-ba31-42a6-b624-be1936257d9e")
-		(property "Reference" "R201"
-			(at 113.792 107.188 0)
-			(effects
-				(font
-					(size 1.016 1.016)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "100k"
-			(at 113.03 105.156 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 118.11 107.95 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 118.11 107.95 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, small symbol"
-			(at 118.11 107.95 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "LCSC" "C25803"
-			(at 118.11 107.95 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "1276c3b0-3d52-454c-a5b9-4283e152df08")
-		)
-		(pin "1"
-			(uuid "334a95c9-70fc-410d-a0ee-8cddaff99238")
-		)
-		(instances
-			(project "m5atom_power_adc"
-				(path "/d0098cfc-b338-460c-a156-403456706079/4fe41e33-26ac-47dc-9ee5-c1e37f1f6521"
-					(reference "R201")
-					(unit 1)
-				)
-				(path "/d0098cfc-b338-460c-a156-403456706079/79f1d5f5-7707-41c1-9592-f01b6a759d9e"
-					(reference "R301")
-					(unit 1)
-				)
-				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
-					(reference "R401")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
 		(at 132.08 113.03 90)
 		(unit 1)
 		(exclude_from_sim no)
@@ -2391,92 +2238,6 @@
 				)
 				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
 					(reference "D401")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
-		(at 118.11 115.57 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "be4de28c-80d5-4642-84d8-8582469055e6")
-		(property "Reference" "R202"
-			(at 114.046 114.554 0)
-			(effects
-				(font
-					(size 1.016 1.016)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "27k"
-			(at 113.03 116.586 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 118.11 115.57 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 118.11 115.57 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, small symbol"
-			(at 118.11 115.57 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "LCSC" "C22967"
-			(at 118.11 115.57 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "c3485a40-553e-48c4-9244-d9f4352d4729")
-		)
-		(pin "1"
-			(uuid "f926dd79-7571-43d4-9d13-412bed58392f")
-		)
-		(instances
-			(project "m5atom_power_adc"
-				(path "/d0098cfc-b338-460c-a156-403456706079/4fe41e33-26ac-47dc-9ee5-c1e37f1f6521"
-					(reference "R202")
-					(unit 1)
-				)
-				(path "/d0098cfc-b338-460c-a156-403456706079/79f1d5f5-7707-41c1-9592-f01b6a759d9e"
-					(reference "R302")
-					(unit 1)
-				)
-				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
-					(reference "R402")
 					(unit 1)
 				)
 			)

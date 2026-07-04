@@ -4742,7 +4742,7 @@
 			"SUVORK5CYII="
 		)
 	)
-	(label "+12VA"
+	(label "+12VRAW"
 		(at 130.81 143.51 0)
 		(effects
 			(font
@@ -4752,7 +4752,7 @@
 		)
 		(uuid "25840ea0-392f-4873-96a7-23221f36c5ab")
 	)
-	(label "+12VA"
+	(label "+12VRAW"
 		(at 182.88 92.71 180)
 		(effects
 			(font
