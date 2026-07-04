@@ -299,7 +299,7 @@ DeepSleep 前に MQTT/GPRS 切断 → `lte.radioOff()` → `LTE_EN=LOW` の順�
 
 | namespace | キー | 用途 |
 | --- | --- | --- |
-| `"device"` | `mqtt_host`, `debug_log` | MQTT ホスト、デバッグログ有効フラグ |
+| `"device"` | `mqtt_host`, `board_version`, `debug_log` | MQTT ホスト、基板バージョン（provisioning時に書き込み、`getBoardVersion()`。未設定時は1）、デバッグログ有効フラグ |
 | `"lte"` | `cert_crc` | 証明書 CRC |
 | `"ota"` | `job_id` | 保留中 OTA ジョブ ID |
 | `"battery"` | `ah_offset`, `chg_timeout`, `chg_start_v`, `chg_stop_v`, `chg_min_diff_v` | Ah オフセット、充電タイムアウト（分）、充電開始電圧（V）、充電停止電圧（V）、最小 sub-main 電圧差（V） |

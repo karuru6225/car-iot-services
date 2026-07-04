@@ -123,9 +123,11 @@ cd ops
 .\provision_device.ps1 -Port COM3
 # AWS プロファイルを指定する場合
 .\provision_device.ps1 -Port COM3 -Profile myprofile
+# m5atom_power_adc v2 基板の場合（未指定時は v1 = 1）
+.\provision_device.ps1 -Port COM3 -BoardVersion 2
 ```
 
-スクリプトが MAC アドレスからデバイス ID（`esp32-gw-xxxxxxxxxxxx`）を生成し、AWS IoT Core に Thing を登録・証明書を発行・SPIFFS に書き込む。
+スクリプトが MAC アドレスからデバイス ID（`esp32-gw-xxxxxxxxxxxx`）を生成し、AWS IoT Core に Thing を登録・証明書を発行・SPIFFS に書き込む。基板バージョンは NVS（`device/board_version`）にも書き込まれる。
 
 その後、**AWS IoT Core コンソール → Thing グループ `ota-target-car-iot-gw` → デバイス ID を追加**することで OTA の配信対象になる。グループに入っていないデバイスには OTA ジョブが届かない。
 

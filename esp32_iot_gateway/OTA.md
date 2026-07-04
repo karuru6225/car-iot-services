@@ -172,6 +172,7 @@ MQTT 接続が確認できた = 証明書・ネットワークともに正常と
 | device cert | SPIFFS `/certs/device.crt` | デバイス証明書 |
 | device key | SPIFFS `/certs/device.key` | デバイス秘密鍵 |
 | MQTT ホスト | NVS `device/mqtt_host` | IoT Core エンドポイント |
+| 基板バージョン | NVS `device/board_version` | `provision_device.ps1 -BoardVersion` で指定（未設定時は1） |
 | device ID | 不要（MAC アドレスから起動時に生成） | `esp32-gw-aabbccddeeff` 形式 |
 
 ### SIM7080G へのアップロード判断

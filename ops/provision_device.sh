@@ -2,8 +2,9 @@
 # provision_device.sh - ESP32 デバイスの初回プロビジョニング
 #
 # 使い方:
-#   ./provision_device.sh <PORT>
+#   ./provision_device.sh <PORT> [BOARD_VERSION]
 #   例: ./provision_device.sh COM3
+#   例: ./provision_device.sh COM3 2
 #
 # 必要なもの:
 #   - AWS CLI（設定済み）
@@ -12,7 +13,12 @@
 
 set -euo pipefail
 
-PORT="${1:?使い方: $0 <PORT>}"
+PORT="${1:?使い方: $0 <PORT> [BOARD_VERSION]}"
+BOARD_VERSION="${2:-1}"
+if [[ "$BOARD_VERSION" != "1" && "$BOARD_VERSION" != "2" ]]; then
+  echo "エラー: BOARD_VERSION は 1 か 2 を指定してください（指定値: $BOARD_VERSION）"
+  exit 1
+fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../esp32_iot_gateway" && pwd)"
 PYTHON="$HOME/.platformio/penv/Scripts/python.exe"
@@ -25,9 +31,10 @@ POLICY_NAME=$(terraform output -raw iot_policy_name)
 cd "$PROJECT_DIR"
 
 echo "=== ESP32 プロビジョニング ==="
-echo "PORT:        $PORT"
-echo "MQTT_HOST:   $MQTT_HOST"
-echo "POLICY_NAME: $POLICY_NAME"
+echo "PORT:          $PORT"
+echo "MQTT_HOST:     $MQTT_HOST"
+echo "POLICY_NAME:   $POLICY_NAME"
+echo "BOARD_VERSION: $BOARD_VERSION"
 echo ""
 
 # ─── 1. MAC アドレスから device ID を生成 ─────────────────────────────────────
@@ -80,9 +87,9 @@ cd "$PROJECT_DIR"
 pio run -t uploadfs --upload-port "$PORT"
 echo "SPIFFS 書き込み完了"
 
-# ─── 7. NVS に mqtt_host を書き込む ──────────────────────────────────────────
+# ─── 7. NVS に mqtt_host / board_version を書き込む ──────────────────────────
 
-echo ">>> NVS に mqtt_host を書き込み中..."
+echo ">>> NVS に mqtt_host / board_version を書き込み中..."
 NVS_PARTITION_GEN="$HOME/.platformio/packages/framework-espidf/tools/nvs_flash/nvs_partition_generator/nvs_partition_generator.py"
 NVS_SIZE=0x5000  # partitions_two_ota.csv の nvs サイズ
 TMP_CSV=$(mktemp /tmp/nvs_XXXX.csv)
@@ -92,6 +99,7 @@ cat > "$TMP_CSV" <<EOF
 key,type,encoding,value
 device,namespace,,
 mqtt_host,data,string,$MQTT_HOST
+board_version,data,u8,$BOARD_VERSION
 EOF
 
 "$PYTHON" "$NVS_PARTITION_GEN" generate "$TMP_CSV" "$TMP_BIN" $NVS_SIZE
