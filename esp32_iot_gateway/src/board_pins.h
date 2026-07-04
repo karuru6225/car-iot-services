@@ -26,6 +26,11 @@ struct BoardPins
   uint8_t gu0Pin;
   uint8_t gu1Pin;
   uint8_t guEnPin;
+  uint8_t pwrHoldPin; // v2のみ。自己保持回路の電源保持ピン（PIN_UNUSED = 非搭載）
+  uint8_t gp2Pin;     // v2のみ。J108 I2C拡張コネクタ（PIN_UNUSED = 非搭載）
+  uint8_t gp3Pin;     // v2のみ。J108 I2C拡張コネクタ（PIN_UNUSED = 非搭載）
+  uint8_t gp11Pin;    // v2のみ。J107 I2C拡張コネクタ（PIN_UNUSED = 非搭載）
+  uint8_t gp12Pin;    // v2のみ。J107 I2C拡張コネクタ（PIN_UNUSED = 非搭載）
 };
 
 // 現在ビルド対象の基板バージョンに対応するピン配置を返す

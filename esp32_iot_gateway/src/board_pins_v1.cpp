@@ -19,6 +19,11 @@ const BoardPins &boardPinsV1()
       /* gu0Pin    */ 4,
       /* gu1Pin    */ 5,
       /* guEnPin   */ 6,
+      /* pwrHoldPin */ PIN_UNUSED,
+      /* gp2Pin     */ PIN_UNUSED,
+      /* gp3Pin     */ PIN_UNUSED,
+      /* gp11Pin    */ PIN_UNUSED,
+      /* gp12Pin    */ PIN_UNUSED,
   };
   return pins;
 }
