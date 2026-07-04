@@ -142,12 +142,12 @@ void setup()
   pinMode(boardPins().relay1Pin, OUTPUT);
   pinMode(boardPins().relay2Pin, OUTPUT);
   pinMode(boardPins().chgOnPin, OUTPUT);
-  pinMode(boardPins().gu1EnPin, OUTPUT);
+  pinMode(boardPins().gu0EnPin, OUTPUT);
   digitalWrite(boardPins().relay0Pin, LOW);
   digitalWrite(boardPins().relay1Pin, LOW);
   digitalWrite(boardPins().relay2Pin, LOW);
   digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
-  digitalWrite(boardPins().gu1EnPin, HIGH);
+  digitalWrite(boardPins().gu0EnPin, HIGH);
 }
 
 // BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）

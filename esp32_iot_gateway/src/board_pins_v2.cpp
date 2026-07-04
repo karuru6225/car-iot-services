@@ -4,9 +4,9 @@
 const BoardPins &boardPinsV2()
 {
   static const BoardPins pins = {
-      /* gu00Pin    */ 4,
-      /* gu01Pin    */ 5,
-      /* gu0EnPin   */ 6,
+      /* gu00Pin    */ 7,
+      /* gu01Pin    */ 8,
+      /* gu0EnPin   */ 9,
       /* btn0Pin    */ 26,
       /* btn1Pin    */ 33,
       /* buzzerPin  */ 34,
@@ -16,9 +16,9 @@ const BoardPins &boardPinsV2()
       /* relay0Pin  */ 13,
       /* relay1Pin  */ 14,
       /* relay2Pin  */ 15,
-      /* gu10Pin    */ 7,
-      /* gu11Pin    */ 8,
-      /* gu1EnPin   */ 9,
+      /* gu10Pin    */ 4,
+      /* gu11Pin    */ 5,
+      /* gu1EnPin   */ 6,
       /* pwrHoldPin */ 10,
       /* gp2Pin     */ 2,
       /* gp3Pin     */ 3,

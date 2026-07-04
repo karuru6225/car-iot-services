@@ -5,9 +5,9 @@
 #include <esp_rom_crc.h>
 #include <SPIFFS.h>
 
-static const uint8_t LTE_RX_PIN = boardPins().gu00Pin;
-static const uint8_t LTE_TX_PIN = boardPins().gu01Pin;
-static const uint8_t LTE_EN_PIN = boardPins().gu0EnPin;
+static const uint8_t LTE_RX_PIN = boardPins().gu10Pin;
+static const uint8_t LTE_TX_PIN = boardPins().gu11Pin;
+static const uint8_t LTE_EN_PIN = boardPins().gu1EnPin;
 
 Lte lte;
 
