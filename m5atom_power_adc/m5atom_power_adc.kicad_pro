@@ -740,6 +740,14 @@
     [
       "4c20b304-aca5-4013-abd5-7f2ebae4bd20",
       "VoltageSense1"
+    ],
+    [
+      "8092b316-29a8-4273-8fb2-696dcc8ee335",
+      "Power"
+    ],
+    [
+      "a6a3fc7a-bb89-425b-85e2-c80a63e17e40",
+      "Power_Simple"
     ]
   ],
   "text_variables": {}

@@ -2019,7 +2019,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "6093e53a-2d73-4240-8eb4-aa542b094174")
-		(property "Reference" "R205"
+		(property "Reference" "R204"
 			(at 134.366 109.474 90)
 			(effects
 				(font
@@ -2080,15 +2080,15 @@
 		(instances
 			(project "m5atom_power_adc"
 				(path "/d0098cfc-b338-460c-a156-403456706079/4fe41e33-26ac-47dc-9ee5-c1e37f1f6521"
-					(reference "R205")
+					(reference "R204")
 					(unit 1)
 				)
 				(path "/d0098cfc-b338-460c-a156-403456706079/79f1d5f5-7707-41c1-9592-f01b6a759d9e"
-					(reference "R305")
+					(reference "R304")
 					(unit 1)
 				)
 				(path "/d0098cfc-b338-460c-a156-403456706079/8c6723eb-7142-4bb9-950b-567c7b549316"
-					(reference "R405")
+					(reference "R404")
 					(unit 1)
 				)
 			)
