@@ -253,7 +253,7 @@ LED: Würth 150060YS75000（黄、Vf=2.1V typ）
 
 ## パワースイッチ回路
 
-LTE モジュール（SIM7080G / J2）と Grove 2（J9）への +5V 電源を ESP32 GPIO でスイッチ。2 系統独立。
+GU1（J2、筐体都合でLTEモジュール/SIM7080G）と GU0（J9、未使用の予備）への +5V 電源を ESP32 GPIO でスイッチ。2 系統独立。
 
 ### 回路構成（AO3401A + MMBT2222A）
 
@@ -263,14 +263,14 @@ LTE モジュール（SIM7080G / J2）と Grove 2（J9）への +5V 電源を ES
            Gate ── R(100kΩ) ── +5V   ← Gate プルアップ（FET OFF 方向）
               |
            MMBT2222A(C)
-           MMBT2222A(B) ── R(1kΩ?) ── ESP32 GPIO（LTE_EN / Res0_EN）
+           MMBT2222A(B) ── R(1kΩ?) ── ESP32 GPIO（GU1_EN / GU0_EN）
            MMBT2222A(E) → GND
 ```
 
 | ch | P-MOSFET | NPN | Gate R | 負荷 | GPIO 信号 |
 | -- | -------- | --- | ------ | ---- | --------- |
-| LTE | Q1 | Q6 | R18（100kΩ） | J2（LTE / SIM7080G） | LTE_EN |
-| Grove2 | Q5 | Q2 | R21（100kΩ） | J9（Grove 2） | Res0_EN |
+| GU1 | Q1 | Q6 | R18（100kΩ） | J2（GU1、筐体都合でLTE/SIM7080G） | GU1_EN |
+| GU0 | Q5 | Q2 | R21（100kΩ） | J9（GU0、未使用の予備） | GU0_EN |
 
 | GPIO | MMBT2222A | AO3401A Gate | FET | 出力 |
 | ---- | --------- | ------------ | --- | ---- |
@@ -285,10 +285,10 @@ LTE モジュール（SIM7080G / J2）と Grove 2（J9）への +5V 電源を ES
 
 | 部品 | 値 | 保護信号 |
 | ---- | -- | -------- |
-| D9 | SD03 | LTE_RX（J2 → U2） |
-| D10 | SD03 | LTE_TX（U2 → J2） |
-| D13 | SD03 | Res0_1（J9 ↔ U2） |
-| D14 | SD03 | Res0_0（J9 ↔ U2） |
+| D9 | SD03 | GU1_0（J2 → U2、筐体都合でLTE_RX） |
+| D10 | SD03 | GU1_1（U2 → J2、筐体都合でLTE_TX） |
+| D13 | SD03 | GU0_1（J9 ↔ U2） |
+| D14 | SD03 | GU0_0（J9 ↔ U2） |
 
 ---
 
@@ -355,8 +355,8 @@ ESP32-S3-MINI-1 がディープスリープ、パワースイッチで LTE / Gro
 | J12 | Conn_01x02 | 2 | リレー ch1 外部スイッチ入力 |
 | J13 | Conn_01x02 | 2 | リレー ch2 外部スイッチ入力 |
 | J1 | USB_C_Receptacle_USB2.0_14P | 14 | USB-C 5V 受電（補助電源） |
-| J2 | GROVE-CONNECTOR | 4 | LTE モジュール（SIM7080G）5V/GND/TX/RX（筐体都合によりGPIO7/8/9に接続。基板シルクのGU_0/1/ENラベルとは不一致） |
-| J9 | GROVE-CONNECTOR | 4 | Grove 2（未使用の予備コネクタ、GPIO4/5/6） |
+| J2 | GROVE-CONNECTOR | 4 | 基板シルク表記「GU1」。筐体都合でLTEモジュール（SIM7080G）5V/GND/TX/RXを接続（GPIO7/8/9） |
+| J9 | GROVE-CONNECTOR | 4 | 基板シルク表記「GU0」。未使用の予備コネクタ（GPIO4/5/6） |
 | J3 | Conn_01x04_Pin | 4 | UART デバッグ（TXD0/RXD0/3.3V/GND） |
 | J107 | Conn_01x04_Socket | 4 | I2C拡張コネクタ（v2のみ。GP11/GP12 + 3.3V/GND2） |
 | J108 | Conn_01x04_Socket | 4 | I2C拡張コネクタ（v2のみ。GP2/GP3 + 3.3V/GND1） |
@@ -367,7 +367,7 @@ ESP32-S3-MINI-1 がディープスリープ、パワースイッチで LTE / Gro
 
 ### m5atom_power_adc v1
 
-> 基板シルクのネットラベル（LTE_RX/TX/EN, GU_0/1/EN）は筐体都合の配線変更前のもので実配線と一致しない。下表はファームウェア（`board_pins_v1.cpp`）を正とする実際の接続。
+> 基板シルクは Grove コネクタを「GU0」「GU1」と表記する（`board_pins.h` の `gu00/gu01/gu0EnPin` = GU0、`gu10/gu11/gu1EnPin` = GU1 に対応）。GU1（J2）は筐体都合でLTEモジュール専用として使われており、GU0（J9）は未使用の予備。
 
 | GPIO | 信号名 | 方向 | 用途 |
 | ---- | ------ | ---- | ---- |
@@ -375,12 +375,12 @@ ESP32-S3-MINI-1 がディープスリープ、パワースイッチで LTE / Gro
 | IO1 | — | — | NC |
 | IO2 | — | — | NC |
 | IO3 | — | — | NC |
-| IO4 | GU_0 | IN/OUT | Grove 2（J9、未使用の予備コネクタ）信号線 |
-| IO5 | GU_1 | IN/OUT | Grove 2（J9、未使用の予備コネクタ）信号線 |
-| IO6 | GU_EN | OUT | Grove 2（J9）パワースイッチ制御（HIGH = ON） |
-| IO7 | LTE_RX | IN | SIM7080G UART TX → ESP32 RX（J2経由） |
-| IO8 | LTE_TX | OUT | ESP32 TX → SIM7080G UART RX（J2経由） |
-| IO9 | LTE_EN | OUT | SIM7080G パワースイッチ制御（HIGH = ON） |
+| IO4 | GU0_0 | IN/OUT | GU0（J9、未使用の予備コネクタ）信号線1 |
+| IO5 | GU0_1 | IN/OUT | GU0（J9、未使用の予備コネクタ）信号線2 |
+| IO6 | GU0_EN | OUT | GU0（J9）パワースイッチ制御（HIGH = ON） |
+| IO7 | GU1_0 | IN | GU1（J2）信号線1。LTE使用時: SIM7080G UART TX → ESP32 RX |
+| IO8 | GU1_1 | OUT | GU1（J2）信号線2。LTE使用時: ESP32 TX → SIM7080G UART RX |
+| IO9 | GU1_EN | OUT | GU1（J2）パワースイッチ制御。LTE使用時: SIM7080G電源制御（HIGH = ON） |
 | IO10 | RelaySense0 | IN | リレー ch0 外部スイッチ検出（負論理、J11） |
 | IO11 | Relay0 | OUT | リレー ch0 駆動（HIGH = ON） |
 | IO12 | RelaySense1 | IN | リレー ch1 外部スイッチ検出（負論理、J12） |
@@ -407,12 +407,12 @@ ESP32-S3-MINI-1 がディープスリープ、パワースイッチで LTE / Gro
 | IO1 | — | — | NC |
 | IO2 | GP2 | IN/OUT | I2C拡張コネクタ（J108）信号線 |
 | IO3 | GP3 | IN/OUT | I2C拡張コネクタ（J108）信号線 |
-| IO4 | GU_0 | IN/OUT | Grove 2（J9、未使用の予備コネクタ）信号線 |
-| IO5 | GU_1 | IN/OUT | Grove 2（J9、未使用の予備コネクタ）信号線 |
-| IO6 | GU_EN | OUT | Grove 2（J9）パワースイッチ制御（HIGH = ON） |
-| IO7 | LTE_RX | IN | SIM7080G UART TX → ESP32 RX（J2経由） |
-| IO8 | LTE_TX | OUT | ESP32 TX → SIM7080G UART RX（J2経由） |
-| IO9 | LTE_EN | OUT | SIM7080G パワースイッチ制御（HIGH = ON） |
+| IO4 | GU0_0 | IN/OUT | GU0（J9、未使用の予備コネクタ）信号線1 |
+| IO5 | GU0_1 | IN/OUT | GU0（J9、未使用の予備コネクタ）信号線2 |
+| IO6 | GU0_EN | OUT | GU0（J9）パワースイッチ制御（HIGH = ON） |
+| IO7 | GU1_0 | IN | GU1（J2）信号線1。LTE使用時: SIM7080G UART TX → ESP32 RX |
+| IO8 | GU1_1 | OUT | GU1（J2）信号線2。LTE使用時: ESP32 TX → SIM7080G UART RX |
+| IO9 | GU1_EN | OUT | GU1（J2）パワースイッチ制御。LTE使用時: SIM7080G電源制御（HIGH = ON） |
 | IO10 | PWR_HOLD | OUT | 自己保持回路の電源保持ピン |
 | IO11 | GP11 | IN/OUT | I2C拡張コネクタ（J107）信号線 |
 | IO12 | GP12 | IN/OUT | I2C拡張コネクタ（J107）信号線 |
