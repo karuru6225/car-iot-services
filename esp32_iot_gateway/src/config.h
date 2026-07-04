@@ -44,6 +44,10 @@ const char *getDeviceId();
 // NVS から MQTT ホストを返す。未設定の場合は nullptr
 const char *getMqttHost();
 
+// NVS から基板バージョンを返す（provisioning時に書き込み）。未設定の場合は1を返す
+// 現時点ではboardPins()の選択には使わず、取得のみ可能
+uint8_t getBoardVersion();
+
 // 証明書 CRC の取得・保存（lte 用）
 bool getCertCrc(uint32_t &out);
 void setCertCrc(uint32_t crc);

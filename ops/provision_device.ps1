@@ -2,6 +2,7 @@
 #
 # Usage:
 #   .\provision_device.ps1 -Port COM3
+#   .\provision_device.ps1 -Port COM3 -BoardVersion 2
 #
 # Requirements:
 #   - AWS CLI (configured)
@@ -10,7 +11,8 @@
 
 param(
   [Parameter(Mandatory)][string]$Port,
-  [string]$Profile = ''
+  [string]$Profile = '',
+  [ValidateSet(1, 2)][int]$BoardVersion = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,9 +44,10 @@ $PolicyName = terraform output -raw iot_policy_name
 Pop-Location
 
 Write-Host "=== ESP32 Provisioning ==="
-Write-Host "Port:        $Port"
-Write-Host "MQTT_HOST:   $MqttHost"
-Write-Host "POLICY_NAME: $PolicyName"
+Write-Host "Port:          $Port"
+Write-Host "MQTT_HOST:     $MqttHost"
+Write-Host "POLICY_NAME:   $PolicyName"
+Write-Host "BOARD_VERSION: $BoardVersion"
 Write-Host ""
 
 # --- 1. Generate device ID from MAC address ---
@@ -121,6 +124,7 @@ $content += "// このファイルは provision_device.ps1 が生成します。
 $content += "static const char PROV_MQTT_HOST[]   = `"$MqttHost`";`n"
 $content += "static const char PROV_DEVICE_CERT[] = `"$DevCertEsc`";`n"
 $content += "static const char PROV_DEVICE_KEY[]  = `"$DevKeyEsc`";`n"
+$content += "static const uint8_t PROV_BOARD_VERSION = $BoardVersion;`n"
 [System.IO.File]::WriteAllText($ConfigPath, $content, [System.Text.Encoding]::UTF8)
 
 Write-Host "provision_config.h written"

@@ -73,12 +73,14 @@ void setup()
     return;
   }
 
-  Serial.println("Writing mqtt_host to NVS...");
+  Serial.println("Writing mqtt_host / board_version to NVS...");
   Preferences prefs;
   prefs.begin("device", false);
   prefs.putString("mqtt_host", PROV_MQTT_HOST);
+  prefs.putUChar("board_version", PROV_BOARD_VERSION);
   prefs.end();
   Serial.printf("  mqtt_host = %s\n", PROV_MQTT_HOST);
+  Serial.printf("  board_version = %u\n", PROV_BOARD_VERSION);
 
   Serial.println("=== PROVISIONING COMPLETE ===");
 }

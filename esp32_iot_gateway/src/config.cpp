@@ -9,6 +9,7 @@ static constexpr char NVS_NS_LTE[] = "lte";
 static constexpr char NVS_NS_OTA[] = "ota";
 static constexpr char NVS_NS_BATTERY[] = "battery";
 static constexpr char NVS_MQTT_HOST[] = "mqtt_host";
+static constexpr char NVS_BOARD_VERSION[] = "board_version";
 static constexpr char NVS_CERT_CRC[] = "cert_crc";
 static constexpr char NVS_JOB_ID[] = "job_id";
 static constexpr char NVS_DEBUG_LOG[] = "debug_log";
@@ -40,6 +41,18 @@ const char *getMqttHost()
     nvs_close(nvs);
   }
   return host[0] != '\0' ? host : nullptr;
+}
+
+uint8_t getBoardVersion()
+{
+  nvs_handle_t nvs;
+  uint8_t val = 1;
+  if (nvs_open(NVS_NS_DEVICE, NVS_READONLY, &nvs) == ESP_OK)
+  {
+    nvs_get_u8(nvs, NVS_BOARD_VERSION, &val);
+    nvs_close(nvs);
+  }
+  return val;
 }
 
 bool getCertCrc(uint32_t &out)
