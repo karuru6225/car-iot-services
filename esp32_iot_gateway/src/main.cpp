@@ -64,6 +64,13 @@ void setup()
   g_wakeupCause = esp_sleep_get_wakeup_cause();
   gpio_hold_dis((gpio_num_t)boardPins().chgOnPin);
 
+#if BOARD_VERSION == 2
+  // 自己保持回路: C1の遅延時間内にHIGHを再アサートしないと電源が落ちるため最優先で行う
+  gpio_hold_dis((gpio_num_t)boardPins().pwrHoldPin);
+  pinMode(boardPins().pwrHoldPin, OUTPUT);
+  digitalWrite(boardPins().pwrHoldPin, HIGH);
+#endif
+
   logger.init();
   delay(1000);
   logger.printf("\n=== esp32_iot_gateway %s 起動 (wakeup=%d) ===\n",
@@ -212,6 +219,9 @@ static void enterDeepSleepMode()
   uint32_t sleepSec = secsToNextBoundary();
   if (isCharging())
     gpio_hold_en((gpio_num_t)boardPins().chgOnPin);
+#if BOARD_VERSION == 2
+  gpio_hold_en((gpio_num_t)boardPins().pwrHoldPin);
+#endif
   rtc_gpio_init(GPIO_NUM_0);
   rtc_gpio_set_direction(GPIO_NUM_0, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en(GPIO_NUM_0);
