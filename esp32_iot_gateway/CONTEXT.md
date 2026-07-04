@@ -26,8 +26,8 @@ SIM7080G（SORACOM Cat-M）経由で AWS IoT Core に MQTT over TLS で送信す
 | OLED | I2C 接続予定（コネクタ経由、SDA=GPIO17, SCL=GPIO18）※未実装 |
 | センサー | SwitchBot WoIOSensor（温湿度計）/ CO2センサー（BLE アドバタイズのみ、接続不要） |
 | LTE | M5Stack U128（SIM7080G CAT-M/NB-IoT）、SORACOM SIM |
-| LTE ピン | RX=GPIO4 ← U128 TXD、TX=GPIO5 → U128 RXD |
-| LTE 電源 | GPIO6（LTE_EN: HIGH=ON、AO3401A パワースイッチ経由） |
+| LTE ピン | RX=GPIO7 ← U128 TXD、TX=GPIO8 → U128 RXD（筐体都合によりGrove Unit 1経由。基板シルク上のLTE_RX/TX/ENラベルとは不一致） |
+| LTE 電源 | GPIO9（LTE_EN: HIGH=ON、AO3401A パワースイッチ経由） |
 | 電源 | 車載 12V バッテリー → LM2596（12V→5V）→ AMS1117-3.3（5V→3.3V）→ ESP32 |
 
 > **参照**: 回路詳細は `m5atom_power_adc/CIRCUIT.md`、部品・GPIO設計は `HARDWARE.md` を参照。
@@ -318,7 +318,6 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
 | `FIRMWARE_VERSION` | `"1.17.0+" GIT_HASH` | ファームウェアバージョン |
-| `CHG_ON_PIN` | `21` | メインバッテリー充電制御ピン（HIGH=ON） |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS`（動作モード） |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔 / CONTINUOUS モード待機間隔（秒） |
@@ -332,17 +331,27 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 | `MAX_TARGETS` | `10` | 監視対象 BLE デバイス最大数 |
 | `PAYLOAD_SENSOR_SIZE` | `256` | BLE センサーペイロードバッファ（バイト） |
 
-device/lte.h の定数:
+device/lte.h の定数（ピン番号は `board_pins.h` 経由、下記参照）:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `LTE_RX_PIN` | `7` | GPIO7 ← U128 TXD |
-| `LTE_TX_PIN` | `8` | GPIO8 → U128 RXD |
-| `LTE_EN_PIN` | `9` | GPIO9（AO3401A パワースイッチ制御） |
 | `APN` | `"soracom.io"` | SORACOM APN |
 | `APN_USER` | `"sora"` | SORACOM APN ユーザー |
 | `APN_PASS` | `"sora"` | SORACOM APN パスワード |
 | `SEND_INTERVAL_SEC` | `60` | デバッグモード送信間隔（秒） |
+
+## board_pins.h / 基板バージョン切り替え
+
+ピン番号は `src/board_pins.h` の `BoardPins` 構造体に集約し、`boardPins()` で取得する（`config.h` と同格で全層から参照可）。
+`m5atom_power_adc` の基板バージョン（v1/v2）ごとに `board_pins_v1.cpp` / `board_pins_v2.cpp` が実値を持ち、
+`board_pins.cpp` が `BOARD_VERSION`（`platformio.ini` の `build_flags` で指定、未指定時は `1`）で切り替える。
+
+| 基板 | gu0x系（未使用） | gu1x系（LTE接続） | Relay0/1/2 | PWR_HOLD | GP2/GP3・GP11/GP12 |
+| --- | --- | --- | --- | --- | --- |
+| v1 | GPIO4/5/6 | GPIO7/8/9 | GPIO11/13/15 | 非搭載（`PIN_UNUSED`） | 非搭載 |
+| v2 | GPIO4/5/6 | GPIO7/8/9 | GPIO13/14/15 | GPIO10 | GPIO2/3・GPIO11/12 |
+
+LTEモジュールは筐体都合で実際には gu1x 系ピン（GPIO7/8/9）に接続されており、回路図上の `LTE_RX`/`LTE_TX`/`LTE_EN` ラベル（IO4-6）とは一致しない。
 
 ## ビルド環境
 
@@ -352,6 +361,7 @@ device/lte.h の定数:
 | プラットフォーム | espressif32 |
 | ボード | esp32-s3-devkitc-1（ESP32-S3-MINI-1 互換） |
 | C++ 標準 | C++17（`-std=gnu++17`） |
+| env | `esp32-s3-devkitc-1-v1-develop` / `-v2-develop` / `esp32-s3-devkitc-1-release`（デフォルトは `v2-develop`） |
 | ビルドフック | `extra_scripts.py`（`pre:`）— git hash を `GIT_HASH` マクロとして注入 |
 | 主要ライブラリ | TinyGSM, ArduinoJson, Adafruit SSD1306, Adafruit GFX, Adafruit ADS1X15, NimBLE-Arduino, QRCode |
 
@@ -694,9 +704,11 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 
 **背景**: sub（LiFePO4）が深放電に至ると、v1.1.0基板のMOSFETボディダイオード経由でmain（鉛バッテリー）が12Vバスの負荷を供給し続け、mainが上がるリスクがある。梅雨期間の長期曇天でソーラー発電が途絶えた場合に現実的なリスクとなる。
 
-### TODO: v2.0.0 基板 — 電源ボタン＋自己保持回路（未着手）
+### v2.0.0 基板 — 電源ボタン＋自己保持回路（ファームウェア側は実装済み、電源断ロジックは未着手）
 
 緊急時（main 電圧が危機的水準に達したとき）に ESP32 から回路全体の電源を完全に断てるよう、次世代基板（v2.0.0）に自己保持回路を追加する。
+PWR_HOLD は `board_pins.h`（`BoardPins::pwrHoldPin`、v2 = GPIO10）で管理し、`main.cpp` の `setup()` 冒頭での HIGH アサート・`enterDeepSleepMode()` での `gpio_hold_en()` は実装済み（`BOARD_VERSION == 2` でのみ有効）。
+main 電圧低下時に PWR_HOLD を LOW にして能動的に電源を落とす判定ロジックは未実装。
 
 **回路構成（案）**:
 
@@ -750,9 +762,9 @@ Sub(+) 12-13V
 
 **候補 B（AO3401A 流用 + Zener クランプ）**: Gate-Source 間に 12V Zener（BZX84C12 等、SOT-23）を追加して Vgs を -12V に制限する。R1 = 100kΩ のためツェナー電流 ≈ (14.6-12)/100k = 26μA と微小で発熱なし。
 
-**実装上の注意**:
+**実装上の注意**（`main.cpp` に実装済み）:
 
-- PWR_HOLD は RTC 対応ピン（ESP32-S3: GPIO 0〜21）を使う。deep sleep 前に `gpio_hold_en()` で HIGH を維持し、起動直後に `gpio_hold_dis()` で解除する（CHG_ON_PIN と同じパターン）
+- PWR_HOLD は RTC 対応ピン（ESP32-S3: GPIO 0〜21、v2 = GPIO10）を使う。deep sleep 前に `gpio_hold_en()` で HIGH を維持し、起動直後に `gpio_hold_dis()` で解除する（CHG_ON_PIN と同じパターン）
 - `digitalWrite(PWR_HOLD_PIN, HIGH)` を `setup()` 冒頭（`delay()` より前）に置き、C1 の遅延時間内に自己保持を確立する
 
 **目的**: DeepSleep では ESP32 の消費はほぼゼロになるが LM2596S は動き続けるため、ボディダイオード経由の電流パスが残る。完全電源断によって 12V バスへの消費を完全に止め、main バッテリーへの影響をゼロにする。

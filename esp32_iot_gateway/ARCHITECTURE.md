@@ -9,6 +9,10 @@ src/
 ├── main.cpp          エントリポイント。各層を組み合わせてユースケースを実行する
 ├── config.h          全層から参照可能な定数・宣言（FIRMWARE_VERSION, SLEEP_INTERVAL_SEC 等）
 ├── config.cpp        config.h の実装（デバイスID取得, NVS アクセス等）
+├── board_pins.h      全層から参照可能なピン配置（BoardPins構造体、boardPins()）
+├── board_pins.cpp    boardPins()の実装（BOARD_VERSIONでv1/v2を切り替え）
+├── board_pins_v1.cpp m5atom_power_adc v1基板の実ピン値
+├── board_pins_v2.cpp m5atom_power_adc v2基板の実ピン値
 ├── provision.cpp     プロビジョニング専用（provision env のみビルド。通常ビルドから除外）
 ├── device/           ハードウェアドライバ層
 ├── domain/           ビジネスロジック層
@@ -33,7 +37,7 @@ src/
 | `ina228.h/.cpp` | `Ina228` クラス。INA228 I2Cドライバ（電流・電力・温度・積算電荷量の読み取り、電荷リセット） |
 | `oled.h/.cpp` | SSD1306 OLEDドライバ（表示制御） |
 | `speaker.h/.cpp` | ブザー / スピーカードライバ（tone PWM制御） |
-| `button.h/.cpp` | デバウンス・長押し検出（`ButtonEvent`: BTN0_SHORT / BTN0_LONG / BTN1_SHORT / BTN1_LONG）、ピン定数内包 |
+| `button.h/.cpp` | デバウンス・長押し検出（`ButtonEvent`: BTN0_SHORT / BTN0_LONG / BTN1_SHORT / BTN1_LONG）、ピンは`begin()`で`boardPins()`から取得 |
 
 ### domain/
 
@@ -82,7 +86,7 @@ service/  ←→  service/ （同層間は可）
    ↓
 device/
    ↓
-config.h  （全層から参照可）
+config.h / board_pins.h  （全層から参照可）
 
 domain/   （どこからでも参照可。自身は何にも依存しない）
 ```
