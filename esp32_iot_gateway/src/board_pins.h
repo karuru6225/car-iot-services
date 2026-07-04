@@ -11,9 +11,9 @@ static constexpr uint8_t PIN_UNUSED = 0xFF;
 
 struct BoardPins
 {
-  uint8_t lteRxPin;
-  uint8_t lteTxPin;
-  uint8_t lteEnPin;
+  uint8_t gu00Pin;
+  uint8_t gu01Pin;
+  uint8_t gu0EnPin;
   uint8_t btn0Pin;
   uint8_t btn1Pin;
   uint8_t buzzerPin;
@@ -23,9 +23,9 @@ struct BoardPins
   uint8_t relay0Pin;
   uint8_t relay1Pin;
   uint8_t relay2Pin;
-  uint8_t gu0Pin;
-  uint8_t gu1Pin;
-  uint8_t guEnPin;
+  uint8_t gu10Pin;
+  uint8_t gu11Pin;
+  uint8_t gu1EnPin;
   uint8_t pwrHoldPin; // v2のみ。自己保持回路の電源保持ピン（PIN_UNUSED = 非搭載）
   uint8_t gp2Pin;     // v2のみ。J108 I2C拡張コネクタ（PIN_UNUSED = 非搭載）
   uint8_t gp3Pin;     // v2のみ。J108 I2C拡張コネクタ（PIN_UNUSED = 非搭載）
