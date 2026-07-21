@@ -8,6 +8,10 @@
 #define MEAS_CURR_UUID       "f3a8b2c3-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define MEAS_PWR_UUID        "f3a8b2c4-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define MEAS_VSUB_UUID       "f3a8b2c5-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
+#define MEAS_TEMP_UUID       "f3a8b2c6-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
+#define MEAS_AH_UUID         "f3a8b2c7-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
+#define MEAS_TS_UUID         "f3a8b2c8-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
+#define MEAS_LTE_UUID        "f3a8b2c9-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 
 #define CFG_SERVICE_UUID     "f3a8b2d1-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define CFG_AH_OFFSET_UUID   "f3a8b2d2-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
@@ -112,6 +116,10 @@ void BlePeripheral::setup() {
   _pCurrChar     = pMeas->createCharacteristic(MEAS_CURR_UUID,  NIMBLE_PROPERTY::NOTIFY);
   _pPwrChar      = pMeas->createCharacteristic(MEAS_PWR_UUID,   NIMBLE_PROPERTY::NOTIFY);
   _pVoltSubChar  = pMeas->createCharacteristic(MEAS_VSUB_UUID,  NIMBLE_PROPERTY::NOTIFY);
+  _pTempChar     = pMeas->createCharacteristic(MEAS_TEMP_UUID,  NIMBLE_PROPERTY::NOTIFY);
+  _pAhChar       = pMeas->createCharacteristic(MEAS_AH_UUID,    NIMBLE_PROPERTY::NOTIFY);
+  _pTsChar       = pMeas->createCharacteristic(MEAS_TS_UUID,    NIMBLE_PROPERTY::NOTIFY);
+  _pLteChar      = pMeas->createCharacteristic(MEAS_LTE_UUID,   NIMBLE_PROPERTY::NOTIFY);
   pMeas->start();
 
   // 設定サービス（MITM 認証必要）
@@ -160,7 +168,8 @@ void BlePeripheral::disablePairing() {
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 }
 
-void BlePeripheral::notify(float vMain, float i, float p, float vSub) {
+void BlePeripheral::notify(float vMain, float i, float p, float vSub,
+                            float temp, float ah, uint32_t ts, bool lteConnected) {
   if (!_connected) return;
   auto notifyFloat = [](NimBLECharacteristic* pChar, float val) {
     pChar->setValue(reinterpret_cast<uint8_t*>(&val), sizeof(val));
@@ -170,6 +179,15 @@ void BlePeripheral::notify(float vMain, float i, float p, float vSub) {
   notifyFloat(_pCurrChar,     i);
   notifyFloat(_pPwrChar,      p);
   notifyFloat(_pVoltSubChar,  vSub);
+  notifyFloat(_pTempChar,     temp);
+  notifyFloat(_pAhChar,       ah);
+
+  _pTsChar->setValue(reinterpret_cast<uint8_t*>(&ts), sizeof(ts));
+  _pTsChar->notify();
+
+  uint8_t lteVal = lteConnected ? 1 : 0;
+  _pLteChar->setValue(&lteVal, sizeof(lteVal));
+  _pLteChar->notify();
 }
 
 void BlePeripheral::stop() {

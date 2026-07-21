@@ -284,7 +284,11 @@ static void runContinuousLoop()
           adsReadDiffMain(),
           ina228.readCurrent(),
           ina228.readPower(),
-          adsReadDiffSub());
+          adsReadDiffSub(),
+          ina228.readTemp(),
+          ina228.readCharge() + (float)getAhOffset(),
+          (uint32_t)time(nullptr),
+          lte.isConnected());
     }
 
     delay(50);
