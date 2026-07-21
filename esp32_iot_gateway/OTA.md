@@ -68,11 +68,11 @@ OTA 適用
   "operation": "ota",
   "version": "1.2.0",
   "board_version": 1,
-  "url": "https://your-bucket.s3.ap-northeast-1.amazonaws.com/firmware/v1/v1.2.0.bin"
+  "url": "https://your-bucket.s3.ap-northeast-1.amazonaws.com/firmware/v1.2.0.bin"
 }
 ```
 
-`board_version`（1 or 2）は基板ハードウェアバージョン。未指定（0扱い）の場合はチェックをスキップする（後方互換）。
+`board_version`（1 or 2）は基板ハードウェアバージョン。未指定（0扱い）の場合はチェックをスキップする（後方互換）。バージョン文字列のMAJOR桁が恒久的に基板シリーズを表す（1=v1基板、2=v2基板。`RELEASE.md`参照）ため、S3パスに基板別のサブディレクトリは不要（バージョン自体が基板を一意に表す）。
 
 ### デバイス側の MQTT トピック
 
@@ -115,20 +115,20 @@ IN_PROGRESS（更新に publish）
 
 ### AWS 側の操作手順
 
-基板バージョンごとに別Job・別Thing Groupを使う（`RELEASE.md`参照。CIでは`firmware-release.yml`が自動実行）。
+タグのMAJOR桁（1 or 2）が基板シリーズを表し、対応するThing Groupに配信する（`RELEASE.md`参照。CIでは`firmware-release.yml`が自動実行するため通常手動操作は不要）。
 
 ```bash
-# ジョブドキュメントを S3 にアップロード（basename にboard_versionを含める）
-aws s3 cp job.json s3://your-bucket/jobs/v1/v1.2.0.json
+# ジョブドキュメントを S3 にアップロード
+aws s3 cp job.json s3://your-bucket/jobs/v1.2.0.json
 
 # ファームバイナリをアップロード
-aws s3 cp firmware.bin s3://your-bucket/firmware/v1/v1.2.0.bin
+aws s3 cp firmware.bin s3://your-bucket/firmware/v1.2.0.bin
 
-# ジョブを作成（board_version=1 の場合、v1用Thing Groupを対象にする）
+# ジョブを作成（バージョン1.2.0 = v1基板シリーズなので、v1用Thing Groupを対象にする）
 aws iot create-job \
-  --job-id "ota-v1.2.0-v1" \
+  --job-id "ota-v1_2_0" \
   --targets "arn:aws:iot:ap-northeast-1:{accountId}:thinggroup/ota-target-car-iot-gw-v1" \
-  --document-source "https://your-bucket.s3.ap-northeast-1.amazonaws.com/jobs/v1/v1.2.0.json"
+  --document-source "https://your-bucket.s3.ap-northeast-1.amazonaws.com/jobs/v1.2.0.json"
 ```
 
 ---
