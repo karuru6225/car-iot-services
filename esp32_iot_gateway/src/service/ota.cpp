@@ -307,6 +307,15 @@ bool Ota::handleJob(const JobInfo &job)
     return false;
   }
 
+  // 基板バージョン不一致ならスキップ（Thing Group誤登録・手動Job作成ミスに対する保険）
+  int boardVer = doc["board_version"] | 0; // 0 = 未指定（後方互換）
+  if (boardVer != 0 && boardVer != getBoardVersion())
+  {
+    logger.printf("[OTA] 基板バージョン不一致 (device=%u, job=%d)、スキップ\n", getBoardVersion(), boardVer);
+    jobsReport(job.id, "FAILED", "board_version mismatch");
+    return false;
+  }
+
   // 同一バージョンならスキップ（force=true の場合は無視）
   bool force = doc["force"] | false;
   if (!force && version && strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0)
