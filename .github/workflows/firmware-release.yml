@@ -30,10 +30,16 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "board=$MAJOR" >> "$GITHUB_OUTPUT"
 
-      - name: config.h の FIRMWARE_VERSION を書き換え
+      - name: config.h のバージョンとタグの一致を検証
         run: |
-          sed -i 's/#define FIRMWARE_VERSION "[^"]*"/#define FIRMWARE_VERSION "${{ steps.ver.outputs.version }}+"/' \
-            esp32_iot_gateway/src/config.h
+          MAJOR=${{ steps.ver.outputs.board }}
+          VERSION=${{ steps.ver.outputs.version }}
+          SOURCE_VERSION=$(grep "FIRMWARE_VERSION_V${MAJOR}" esp32_iot_gateway/src/config.h | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "$SOURCE_VERSION" != "$VERSION" ]; then
+            echo "::error::config.hのFIRMWARE_VERSION_BASE ($SOURCE_VERSION) とタグ (v$VERSION) が一致しない。config.hを更新してから再タグしてください"
+            exit 1
+          fi
+          echo "config.h バージョン確認OK: $SOURCE_VERSION"
 
       - uses: actions/setup-python@v5
         with:
