@@ -129,7 +129,7 @@ cd ops
 
 スクリプトが MAC アドレスからデバイス ID（`esp32-gw-xxxxxxxxxxxx`）を生成し、AWS IoT Core に Thing を登録・証明書を発行・SPIFFS に書き込む。基板バージョンは NVS（`device/board_version`）にも書き込まれる。
 
-その後、**AWS IoT Core コンソール → Thing グループ `ota-target-car-iot-gw` → デバイス ID を追加**することで OTA の配信対象になる。グループに入っていないデバイスには OTA ジョブが届かない。
+同時に `-BoardVersion` に応じた Thing グループ（`ota-target-car-iot-gw-v1` または `-v2`）へも自動登録され、OTA の配信対象になる。グループに入っていないデバイスには OTA ジョブが届かない。
 
 ### OTA リリース
 

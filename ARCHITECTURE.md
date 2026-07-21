@@ -23,7 +23,7 @@ Terraform で管理。主要リソース：
 | リソース | 役割 |
 | --- | --- |
 | AWS IoT Core Thing + Policy | デバイス認証・MQTT エンドポイント（Thing はプロビジョニングスクリプトで作成、証明書は Terraform 管理外） |
-| IoT Thing Group `ota-target-car-iot-gw` | OTA 配信対象デバイスを管理（Console で手動追加） |
+| IoT Thing Group `ota-target-car-iot-gw-v1` / `-v2` | 基板バージョン別のOTA配信対象デバイス管理（`provision_device.ps1`が自動登録） |
 | IoT Topic Rule | MQTT メッセージを Lambda ingest に転送 |
 | AWS IoT Jobs | OTA・コマンド（ah_reset 等）のジョブキュー管理・状態追跡（QUEUED→IN_PROGRESS→SUCCEEDED/FAILED） |
 | Lambda `ingest` | JSON を S3 に保存（パーティション付き） |

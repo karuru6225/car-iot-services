@@ -361,7 +361,7 @@ LTEモジュールは筐体都合で実際には gu1x 系ピン（GPIO7/8/9）�
 | プラットフォーム | espressif32 |
 | ボード | esp32-s3-devkitc-1（ESP32-S3-MINI-1 互換） |
 | C++ 標準 | C++17（`-std=gnu++17`） |
-| env | `esp32-s3-devkitc-1-v1-develop` / `-v2-develop` / `esp32-s3-devkitc-1-release`（デフォルトは `v2-develop`） |
+| env | `esp32-s3-devkitc-1-v1-develop` / `-v2-develop` / `-v1-release` / `-v2-release`（デフォルトは `v2-develop`。release envはOTA配信もv1/v2で別パイプライン、`RELEASE.md`参照） |
 | ビルドフック | `extra_scripts.py`（`pre:`）— git hash を `GIT_HASH` マクロとして注入 |
 | 主要ライブラリ | TinyGSM, ArduinoJson, Adafruit SSD1306, Adafruit GFX, Adafruit ADS1X15, NimBLE-Arduino, QRCode |
 
