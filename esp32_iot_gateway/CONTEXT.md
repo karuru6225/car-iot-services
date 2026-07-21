@@ -343,8 +343,8 @@ device/lte.h の定数（ピン番号は `board_pins.h` 経由、下記参照）
 ## board_pins.h / 基板バージョン切り替え
 
 ピン番号は `src/board_pins.h` の `BoardPins` 構造体に集約し、`boardPins()` で取得する（`config.h` と同格で全層から参照可）。
-`m5atom_power_adc` の基板バージョン（v1/v2）ごとに `board_pins_v1.cpp` / `board_pins_v2.cpp` が実値を持ち、
-`board_pins.cpp` が `BOARD_VERSION`（`platformio.ini` の `build_flags` で指定、未指定時は `1`）で切り替える。
+`m5atom_power_adc` の基板バージョン（v1/v2）ごとに `board_pins_v1.h` / `board_pins_v2.h` が実値を持ち、
+`board_pins.h` が `BOARD_VERSION`（`platformio.ini` の `build_flags` で指定、未指定時は `1`）に応じて該当ヘッダを `#include` する（選ばれなかった方はコンパイラに一切渡らない）。
 
 | 基板 | gu0x系（未使用） | gu1x系（LTE接続） | Relay0/1/2 | PWR_HOLD | GP2/GP3・GP11/GP12 |
 | --- | --- | --- | --- | --- | --- |

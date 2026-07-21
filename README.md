@@ -54,7 +54,7 @@ car-iot-services/
 │   ├── manage.ps1         デプロイスクリプト（plan / apply）
 │   └── lambda_src/        Lambda ソースコード
 ├── ops/                   運用スクリプト
-│   ├── provision_device.ps1 / .sh  ESP32 初回プロビジョニング（証明書発行・SPIFFS 書き込み）
+│   ├── provision_device.ps1  ESP32 初回プロビジョニング（証明書発行・SPIFFS 書き込み）
 │   ├── gen_certs.ps1      証明書生成
 │   └── send_command.ps1   IoT Jobs コマンド送信
 ├── web/
@@ -132,7 +132,7 @@ cd ops
 
 ### OTA リリース
 
-`vX.Y.Z` タグを push すると GitHub Actions が自動でビルド・S3 アップロード・IoT Job 作成・GitHub Release を実行する。
+`vX.Y.Z` タグを push すると GitHub Actions が自動でビルド・S3 アップロード・IoT Job 作成・GitHub Release を実行する。MAJOR桁は基板シリーズ固定（1=v1基板、2=v2基板）。`src/config.h` の `FIRMWARE_VERSION_BASE` が正で、タグの数字と一致しないとビルドはエラーで停止する（先に `config.h` を更新してからタグを打つ）。
 
 ```powershell
 git tag v1.2.3
