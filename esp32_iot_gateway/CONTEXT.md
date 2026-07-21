@@ -564,6 +564,10 @@ ESP32-S3 を BLE Peripheral として動かし、スマホから設定・監視�
 | 電流 | `f3a8b2c3-...` | float32 | A（ina228.readCurrent） |
 | 電力 | `f3a8b2c4-...` | float32 | W（ina228.readPower） |
 | サブ電圧 | `f3a8b2c5-...` | float32 | V（adsReadDiffSub） |
+| 温度 | `f3a8b2c6-...` | float32 | °C（ina228.readTemp） |
+| Ah | `f3a8b2c7-...` | float32 | 積算電荷量（ina228.readCharge() + getAhOffset()） |
+| タイムスタンプ | `f3a8b2c8-...` | uint32 | UNIX時刻（秒） |
+| LTE接続状態 | `f3a8b2c9-...` | uint8 | 0=未接続, 1=接続中（lte.isConnected） |
 
 **設定サービス** — READ_AUTHEN / WRITE_AUTHEN（MITM ペアリング後のみ R/W 可）
 
@@ -578,7 +582,7 @@ ESP32-S3 を BLE Peripheral として動かし、スマホから設定・監視�
 #### 動作フロー
 
 - 通常起動: setup() で BLE アドバタイズ開始（認証なし接続 → 計測 Notify のみ）
-- スマホ接続 → CONTINUOUS モードに昇格（5分おきに measure + publish + notify）
+- スマホ接続 → CONTINUOUS モードに昇格（measure + publish は5分おき、BLE Notifyは1秒おきに独立して実行）
 - スマホ切断 → DEEP_SLEEP に戻る（手動 CONTINUOUS の場合は維持）
 - DeepSleep 前に `rtc_gpio_pullup_en(GPIO_NUM_0)` + `esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0)` を登録済み。BOOT ボタン押下で DeepSleep から即時復帰できる
 
