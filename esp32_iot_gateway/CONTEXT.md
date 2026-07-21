@@ -454,7 +454,7 @@ zlib_finish_block(&comp);             // end-of-block + バイト境界フラッ
 
 ### ~~OTA ファームウェアの gzip 圧縮~~ **v1.13.0 で実装済み**
 
-`deploy_ota.ps1 -Compress` で `firmware.bin.gz` を S3 にアップロード。
+CIが`firmware.bin.gz`を生成しS3にアップロード（`deploy_ota.ps1`は使われなくなり削除済み）。
 `ota.apply()` が URL 末尾 `.gz` を検出し、uzlib ストリーミング解凍しながら書き込む。
 `ota.handleJob()` に `force=true` フラグを追加（バージョン一致でも強制更新）。
 

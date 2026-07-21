@@ -55,7 +55,6 @@ car-iot-services/
 │   └── lambda_src/        Lambda ソースコード
 ├── ops/                   運用スクリプト
 │   ├── provision_device.ps1 / .sh  ESP32 初回プロビジョニング（証明書発行・SPIFFS 書き込み）
-│   ├── deploy_ota.ps1 / .sh        OTA 手動デプロイ（GitHub Actions 利用推奨）
 │   ├── gen_certs.ps1      証明書生成
 │   └── send_command.ps1   IoT Jobs コマンド送信
 ├── web/
