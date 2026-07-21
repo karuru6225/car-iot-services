@@ -7,12 +7,11 @@
 ```
 src/
 ├── main.cpp          エントリポイント。各層を組み合わせてユースケースを実行する
-├── config.h          全層から参照可能な定数・宣言（FIRMWARE_VERSION, SLEEP_INTERVAL_SEC 等）
+├── config.h          全層から参照可能な定数・宣言（FIRMWARE_VERSION, SLEEP_INTERVAL_SEC 等。FIRMWARE_VERSIONはBOARD_VERSIONで基板シリーズ別に分岐）
 ├── config.cpp        config.h の実装（デバイスID取得, NVS アクセス等）
-├── board_pins.h      全層から参照可能なピン配置（BoardPins構造体、boardPins()）
-├── board_pins.cpp    boardPins()の実装（BOARD_VERSIONでv1/v2を切り替え）
-├── board_pins_v1.cpp m5atom_power_adc v1基板の実ピン値
-├── board_pins_v2.cpp m5atom_power_adc v2基板の実ピン値
+├── board_pins.h      全層から参照可能なピン配置（BoardPins構造体、boardPins()）。BOARD_VERSIONに応じてboard_pins_v1.h/v2.hをinclude
+├── board_pins_v1.h   m5atom_power_adc v1基板の実ピン値
+├── board_pins_v2.h   m5atom_power_adc v2基板の実ピン値
 ├── provision.cpp     プロビジョニング専用（provision env のみビルド。通常ビルドから除外）
 ├── device/           ハードウェアドライバ層
 ├── domain/           ビジネスロジック層

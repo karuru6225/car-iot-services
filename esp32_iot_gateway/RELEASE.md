@@ -12,6 +12,8 @@
 
 v1系とv2系は独立してバージョンが進む（例: v1系が `1.19.0` の頃にv2系は `2.4.0` ということがあり得る）。これにより「v1は保守モードでリリース頻度を落とす、v2は新機能を出し続ける」といった独立したリリースサイクルが可能になる。
 
+**`config.h`（ソース）が正、gitタグは単なるトリガー**: `src/config.h` の `FIRMWARE_VERSION_BASE`（`#if BOARD_VERSION == 1/2` で分岐、[src/config.h](src/config.h)参照）が実際にビルドされる版数の唯一の情報源。gitタグはGitHub Actionsを発火させ、GitHub Releaseの表示名になるだけの役割で、ビルドされる版数を決めるものではない。タグの数字と`config.h`の値が一致しない場合、CIは検証エラーで停止する（後述）。
+
 ---
 
 ## リリース手順
@@ -31,13 +33,19 @@ v1系とv2系は独立してバージョンが進む（例: v1系が `1.19.0` �
 
 ### 2. `config.h` のバージョンを更新
 
-[src/config.h](src/config.h) の `FIRMWARE_VERSION` を新バージョンに書き換える（MAJORは変更しない）。
+[src/config.h](src/config.h) の `FIRMWARE_VERSION_BASE` を、変更対象のシリーズの分岐だけ書き換える（MAJORは変更しない。もう片方のシリーズの行はそのまま）。
 
 ```c
-#define FIRMWARE_VERSION "1.19.0+" GIT_HASH  // ← MINOR/PATCHのみ変更
+#if BOARD_VERSION == 1
+#define FIRMWARE_VERSION_BASE "1.19.0" // FIRMWARE_VERSION_V1  ← ここだけ変更（v1系の変更の場合）
+#elif BOARD_VERSION == 2
+#define FIRMWARE_VERSION_BASE "2.0.0" // FIRMWARE_VERSION_V2
+#endif
 ```
 
 ### 3. コミットしてタグを付ける
+
+**この後に付けるタグの数字は、必ず上記で書いた `FIRMWARE_VERSION_BASE` と一字一句一致させる**（一致しないとCIが検証エラーで停止する）。
 
 **片方のシリーズのみの変更**（例: v1固有のバグ修正）:
 
@@ -48,7 +56,7 @@ git tag v1.19.0
 git push origin main --tags
 ```
 
-**両シリーズ共通の変更**（例: MQTT処理の共通バグ修正）— 各シリーズの次バージョンをそれぞれ決めて、同一コミットに両方のタグを付ける:
+**両シリーズ共通の変更**（例: MQTT処理の共通バグ修正）— 各シリーズの次バージョンをそれぞれ決めて`config.h`の両方の分岐を更新し、同一コミットに両方のタグを付ける:
 
 ```bash
 git add esp32_iot_gateway/src/config.h esp32_iot_gateway/CONTEXT.md esp32_iot_gateway/ARCHITECTURE.md
@@ -66,14 +74,15 @@ git push origin main --tags
 
 [.github/workflows/firmware-release.yml](../.github/workflows/firmware-release.yml) はタグのMAJOR桁から基板バージョンを判定し（1でも2でもなければエラーで停止）、以下を実行する:
 
-1. `config.h` の `FIRMWARE_VERSION` をタグのバージョンに書き換えてビルド
-   - `esp32-s3-devkitc-1-v{MAJOR}-release` env（`DEBUG_MODE` なし = `DEEP_SLEEP` モード）
-2. `firmware.bin` を `gzip -9` で圧縮して `firmware.bin.gz` を生成
-3. `firmware.bin.gz` を S3 にアップロード（`firmware/vX.Y.Z.bin.gz`）
-4. OTA Job ドキュメントを生成して S3 にアップロード（`jobs/vX.Y.Z.json`）
+1. `config.h` の該当シリーズの `FIRMWARE_VERSION_BASE` を読み取り、タグの数字と一致するか検証する
+   - **一致しない場合はここでエラー停止**（ビルドされない）。「config.hを更新し忘れたままタグを打った」ミスを検出する
+2. `esp32-s3-devkitc-1-v{MAJOR}-release` env でビルド（`DEBUG_MODE` なし = `DEEP_SLEEP` モード）。`config.h` の値はCIが書き換えることはなく、コミットされている値がそのまま使われる
+3. `firmware.bin` を `gzip -9` で圧縮して `firmware.bin.gz` を生成
+4. `firmware.bin.gz` を S3 にアップロード（`firmware/vX.Y.Z.bin.gz`）
+5. OTA Job ドキュメントを生成して S3 にアップロード（`jobs/vX.Y.Z.json`）
    - `url` フィールドは `.bin.gz` の S3 URL、`board_version` フィールドにMAJOR桁（1 or 2）を含む
-5. `ota-target-car-iot-gw-v{MAJOR}` Thing グループに OTA ジョブを作成
-6. GitHub Release を作成して該当基板の `firmware.bin` / `firmware.bin.gz` を添付
+6. `ota-target-car-iot-gw-v{MAJOR}` Thing グループに OTA ジョブを作成
+7. GitHub Release を作成して該当基板の `firmware.bin` / `firmware.bin.gz` を添付
 
 デバイスは自分が所属する Thing Group 宛の Job しか受け取らない。さらに `ota.cpp::handleJob()` が Job ドキュメントの `board_version` と NVS の `getBoardVersion()` を比較し、不一致なら `FAILED` として適用をスキップする（Thing Group誤登録に対する保険）。
 

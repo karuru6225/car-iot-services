@@ -317,7 +317,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.17.0+" GIT_HASH` | ファームウェアバージョン。MAJOR桁は基板シリーズ固定（1=v1基板、2=v2基板）の不変条件。詳細は`RELEASE.md`参照 |
+| `FIRMWARE_VERSION` | `FIRMWARE_VERSION_BASE "+" GIT_HASH` | ファームウェアバージョン。`FIRMWARE_VERSION_BASE`はBOARD_VERSIONで基板シリーズ別に分岐（1=v1基板、2=v2基板）し、ソースが正。gitタグはCI発火・GitHub Release表示用のみ。詳細は`RELEASE.md`参照 |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS`（動作モード） |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔 / CONTINUOUS モード待機間隔（秒） |
