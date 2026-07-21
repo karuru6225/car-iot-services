@@ -2,17 +2,21 @@
 #
 # Usage:
 #   .\deploy_ota.ps1 -Version 1.2.0
+#   .\deploy_ota.ps1 -Version 1.2.0 -BoardVersion 2
 #   .\deploy_ota.ps1 -Version 1.2.0 -ThingName esp32-gw-aabbccddeeff
 #   .\deploy_ota.ps1 -Version 1.2.0 -Compress          # gzip firmware before upload
 #   .\deploy_ota.ps1 -Version 1.2.0 -Force             # skip version check on device
 #
+# -BoardVersion selects the release env (v1/v2) and S3 path (デフォルト1)
 # Omitting ThingName targets all Things matching esp32-gw-*
+#   (デバイス側のboard_versionチェックが誤配信を防ぐ保険になる)
 # -Compress uploads firmware.bin.gz and sets the job URL to the .gz path
 # -Force adds force=true to the job document, bypassing the version check on device
 # Run from the ops\ directory
 
 param(
   [Parameter(Mandatory)][string]$Version,
+  [ValidateSet(1, 2)][int]$BoardVersion = 1,
   [string]$ThingName = "",
   [string]$Profile = '',
   [switch]$Compress,
@@ -36,7 +40,8 @@ if ($Profile) {
 
 $ScriptDir   = $PSScriptRoot
 $ProjectDir  = Resolve-Path "$ScriptDir\..\esp32_iot_gateway"
-$BuildDir    = "$ProjectDir\.pio\build\esp32-s3-devkitc-1-release"
+$PioEnv      = "esp32-s3-devkitc-1-v$BoardVersion-release"
+$BuildDir    = "$ProjectDir\.pio\build\$PioEnv"
 $FirmwareBin = "$BuildDir\firmware.bin"
 $FirmwareGz  = "$BuildDir\firmware.bin.gz"
 $Pio         = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
@@ -50,29 +55,30 @@ $Region  = "ap-northeast-1"
 Pop-Location
 
 if ($Compress) {
-  $FirmwareKey   = "firmware/v$Version.bin.gz"
+  $FirmwareKey   = "firmware/v$BoardVersion/v$Version.bin.gz"
   $FirmwareLocal = $FirmwareGz
 } else {
-  $FirmwareKey   = "firmware/v$Version.bin"
+  $FirmwareKey   = "firmware/v$BoardVersion/v$Version.bin"
   $FirmwareLocal = $FirmwareBin
 }
 $FirmwareUrl = "$BaseUrl/$FirmwareKey"
-$JobDocKey   = "jobs/v$Version.json"
+$JobDocKey   = "jobs/v$BoardVersion/v$Version.json"
 $Timestamp   = Get-Date -Format "yyyyMMddHHmmss"
-$BaseJobId   = "ota-v$($Version -replace '\.', '_')"
+$BaseJobId   = "ota-v$($Version -replace '\.', '_')-v$BoardVersion"
 $JobId       = "$BaseJobId-$Timestamp"
 
 Write-Host "=== OTA Deploy ==="
-Write-Host "VERSION:  $Version"
-Write-Host "BUCKET:   $Bucket"
-Write-Host "JOB_ID:   $JobId"
+Write-Host "VERSION:       $Version"
+Write-Host "BOARD_VERSION: $BoardVersion"
+Write-Host "BUCKET:        $Bucket"
+Write-Host "JOB_ID:        $JobId"
 Write-Host ""
 
 # ─── 1. Build ─────────────────────────────────────────────────────────────────
 
-Write-Host ">>> Building firmware..."
+Write-Host ">>> Building firmware ($PioEnv)..."
 Push-Location $ProjectDir
-& $Pio run -e esp32-s3-devkitc-1-release
+& $Pio run -e $PioEnv
 Pop-Location
 Write-Host "Build complete: $FirmwareBin"
 
@@ -99,7 +105,7 @@ Write-Host "Upload complete: $FirmwareUrl"
 # ─── 4. Generate and upload job document ──────────────────────────────────────
 
 Write-Host ">>> Generating job document..."
-$jobDocObj = @{ operation = "ota"; version = $Version; url = $FirmwareUrl }
+$jobDocObj = @{ operation = "ota"; version = $Version; board_version = $BoardVersion; url = $FirmwareUrl }
 if ($Force) { $jobDocObj["force"] = $true }
 $JobDoc = $jobDocObj | ConvertTo-Json
 $TmpJson = [System.IO.Path]::GetTempFileName() + ".json"

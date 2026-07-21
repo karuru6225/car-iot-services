@@ -38,10 +38,15 @@ resource "aws_iot_policy" "device" {
   })
 }
 
-# ─── Thing Group ──────────────────────────────────────────────────────────────
+# ─── Thing Group（基板バージョン別）────────────────────────────────────────────
+# v1/v2 でファームウェアが別ビルドのため、OTA配信対象もハードウェアごとに分離する
 
-resource "aws_iot_thing_group" "ota_target" {
-  name = "ota-target-car-iot-gw"
+resource "aws_iot_thing_group" "ota_target_v1" {
+  name = "ota-target-car-iot-gw-v1"
+}
+
+resource "aws_iot_thing_group" "ota_target_v2" {
+  name = "ota-target-car-iot-gw-v2"
 }
 
 # ─── Topic Rule: sensors/+/data → Lambda ingest ───────────────────────────────

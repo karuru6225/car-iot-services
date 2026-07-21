@@ -7,11 +7,13 @@ on:
 
 env:
   AWS_REGION: ap-northeast-1
-  PIO_ENV: esp32-s3-devkitc-1-release
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: [1, 2]
     permissions:
       contents: write      # GitHub Release 作成
       id-token: write      # OIDC トークン取得（AWS assume role に必要）
@@ -43,15 +45,16 @@ jobs:
       - name: PlatformIO インストール
         run: pip install platformio
 
-      - name: ファームウェアビルド（release env）
-        run: pio run -e ${{ env.PIO_ENV }}
+      - name: ファームウェアビルド（v${{ matrix.board }}-release env）
+        run: pio run -e esp32-s3-devkitc-1-v${{ matrix.board }}-release
         working-directory: esp32_iot_gateway
 
       - name: firmware.bin.gz を生成
         run: |
-          gzip -k -9 esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin
-          BIN=$(stat -c%s esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin)
-          GZ=$(stat  -c%s esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz)
+          BUILD_DIR=esp32_iot_gateway/.pio/build/esp32-s3-devkitc-1-v${{ matrix.board }}-release
+          gzip -k -9 "$BUILD_DIR/firmware.bin"
+          BIN=$(stat -c%s "$BUILD_DIR/firmware.bin")
+          GZ=$(stat  -c%s "$BUILD_DIR/firmware.bin.gz")
           echo "Compressed: ${BIN} bytes -> ${GZ} bytes ($(( GZ * 100 / BIN ))%)"
 
       - uses: aws-actions/configure-aws-credentials@v4
@@ -62,25 +65,27 @@ jobs:
       - name: firmware.bin.gz を S3 にアップロード
         run: |
           VERSION=${{ steps.ver.outputs.version }}
+          BUILD_DIR=esp32_iot_gateway/.pio/build/esp32-s3-devkitc-1-v${{ matrix.board }}-release
           aws s3 cp \
-            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz \
-            "s3://${{ secrets.FIRMWARE_BUCKET }}/firmware/v${VERSION}.bin.gz"
+            "$BUILD_DIR/firmware.bin.gz" \
+            "s3://${{ secrets.FIRMWARE_BUCKET }}/firmware/v${{ matrix.board }}/v${VERSION}.bin.gz"
 
       - name: IoT Job ドキュメントを S3 にアップロード
         run: |
           VERSION=${{ steps.ver.outputs.version }}
-          FIRMWARE_URL="https://${{ secrets.FIRMWARE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/firmware/v${VERSION}.bin.gz"
-          printf '{"operation":"ota","version":"%s","url":"%s"}' "$VERSION" "$FIRMWARE_URL" > job.json
-          aws s3 cp job.json "s3://${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
+          FIRMWARE_URL="https://${{ secrets.FIRMWARE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/firmware/v${{ matrix.board }}/v${VERSION}.bin.gz"
+          printf '{"operation":"ota","version":"%s","board_version":%s,"url":"%s"}' \
+            "$VERSION" "${{ matrix.board }}" "$FIRMWARE_URL" > job.json
+          aws s3 cp job.json "s3://${{ secrets.FIRMWARE_BUCKET }}/jobs/v${{ matrix.board }}/v${VERSION}.json"
 
       - name: IoT OTA ジョブを作成
         run: |
           VERSION=${{ steps.ver.outputs.version }}
-          JOB_ID="ota-v$(echo "$VERSION" | tr '.' '_')-$(date +%Y%m%d%H%M%S)"
+          JOB_ID="ota-v$(echo "$VERSION" | tr '.' '_')-v${{ matrix.board }}-$(date +%Y%m%d%H%M%S)"
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          GROUP_ARN="arn:aws:iot:${{ env.AWS_REGION }}:${ACCOUNT_ID}:thinggroup/ota-target-car-iot-gw"
+          GROUP_ARN="arn:aws:iot:${{ env.AWS_REGION }}:${ACCOUNT_ID}:thinggroup/ota-target-car-iot-gw-v${{ matrix.board }}"
 
-          DOC_URL="https://s3.${{ env.AWS_REGION }}.amazonaws.com/${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
+          DOC_URL="https://s3.${{ env.AWS_REGION }}.amazonaws.com/${{ secrets.FIRMWARE_BUCKET }}/jobs/v${{ matrix.board }}/v${VERSION}.json"
           aws iot create-job \
             --job-id "$JOB_ID" \
             --targets "$GROUP_ARN" \
@@ -94,6 +99,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin
-            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz
+            esp32_iot_gateway/.pio/build/esp32-s3-devkitc-1-v${{ matrix.board }}-release/firmware.bin
+            esp32_iot_gateway/.pio/build/esp32-s3-devkitc-1-v${{ matrix.board }}-release/firmware.bin.gz
           generate_release_notes: true
