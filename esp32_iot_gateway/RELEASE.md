@@ -2,17 +2,21 @@
 
 ## バージョン命名規則
 
-セマンティックバージョニング（`MAJOR.MINOR.PATCH`）を使用する。
+`MAJOR.MINOR.PATCH` 形式だが、**MAJORは基板シリーズを恒久的に表す** — 標準的なsemverの「MAJOR=破壊的変更」とは異なる、本プロジェクト独自の規約:
 
-| 変更の種類 | 上げるフィールド |
+| フィールド | 意味 |
 |---|---|
-| 後方互換性のない変更 | MAJOR |
-| 機能追加（後方互換あり） | MINOR |
-| バグ修正・小改善 | PATCH |
+| MAJOR | 基板シリーズ固定。`1` = v1基板、`2` = v2基板。**変更に関わらず一切上げない** |
+| MINOR | シリーズ内の機能追加（後方互換あり） |
+| PATCH | シリーズ内のバグ修正・小改善 |
+
+v1系とv2系は独立してバージョンが進む（例: v1系が `1.19.0` の頃にv2系は `2.4.0` ということがあり得る）。これにより「v1は保守モードでリリース頻度を落とす、v2は新機能を出し続ける」といった独立したリリースサイクルが可能になる。
 
 ---
 
 ## リリース手順
+
+まず変更が **片方のシリーズのみに影響するか、両シリーズ共通か** を判断する。
 
 ### 1. ドキュメントを更新
 
@@ -27,42 +31,49 @@
 
 ### 2. `config.h` のバージョンを更新
 
-[src/config.h](src/config.h) の `FIRMWARE_VERSION` を新バージョンに書き換える。
+[src/config.h](src/config.h) の `FIRMWARE_VERSION` を新バージョンに書き換える（MAJORは変更しない）。
 
 ```c
-#define FIRMWARE_VERSION "1.16.0+" GIT_HASH  // ← 数字部分を変更
+#define FIRMWARE_VERSION "1.19.0+" GIT_HASH  // ← MINOR/PATCHのみ変更
 ```
 
 ### 3. コミットしてタグを付ける
 
+**片方のシリーズのみの変更**（例: v1固有のバグ修正）:
+
 ```bash
 git add esp32_iot_gateway/src/config.h esp32_iot_gateway/CONTEXT.md esp32_iot_gateway/ARCHITECTURE.md
-git commit -m "chore: FIRMWARE_VERSION を X.Y.Z に更新"
-git tag vX.Y.Z
-```
-
-### 4. push する
-
-```bash
+git commit -m "chore: FIRMWARE_VERSION を 1.19.0 に更新"
+git tag v1.19.0
 git push origin main --tags
 ```
 
-タグの push が GitHub Actions をトリガーする。
+**両シリーズ共通の変更**（例: MQTT処理の共通バグ修正）— 各シリーズの次バージョンをそれぞれ決めて、同一コミットに両方のタグを付ける:
+
+```bash
+git add esp32_iot_gateway/src/config.h esp32_iot_gateway/CONTEXT.md esp32_iot_gateway/ARCHITECTURE.md
+git commit -m "chore: FIRMWARE_VERSION を更新（v1: 1.19.0, v2: 2.4.0）"
+git tag v1.19.0
+git tag v2.4.0
+git push origin main --tags
+```
+
+タグのpushが（タグごとに独立して）GitHub Actions をトリガーする。1タグ = 1基板のビルド・リリースになる。
 
 ---
 
 ## GitHub Actions が自動でやること
 
-[.github/workflows/firmware-release.yml](../.github/workflows/firmware-release.yml) が **v1/v2 基板それぞれ**に対して以下を順に実行する（`strategy.matrix` で `board: [1, 2]` を並列実行）:
+[.github/workflows/firmware-release.yml](../.github/workflows/firmware-release.yml) はタグのMAJOR桁から基板バージョンを判定し（1でも2でもなければエラーで停止）、以下を実行する:
 
 1. `config.h` の `FIRMWARE_VERSION` をタグのバージョンに書き換えてビルド
-   - `esp32-s3-devkitc-1-v{board}-release` env（`DEBUG_MODE` なし = `DEEP_SLEEP` モード）
+   - `esp32-s3-devkitc-1-v{MAJOR}-release` env（`DEBUG_MODE` なし = `DEEP_SLEEP` モード）
 2. `firmware.bin` を `gzip -9` で圧縮して `firmware.bin.gz` を生成
-3. `firmware.bin.gz` を S3 にアップロード（`firmware/v{board}/vX.Y.Z.bin.gz`）
-4. OTA Job ドキュメントを生成して S3 にアップロード（`jobs/v{board}/vX.Y.Z.json`）
-   - `url` フィールドは `.bin.gz` の S3 URL、`board_version` フィールドに基板番号（1 or 2）を含む
-5. `ota-target-car-iot-gw-v{board}` Thing グループに OTA ジョブを作成（基板ごとに別Job）
-6. GitHub Release を作成して両基板分の `firmware.bin` / `firmware.bin.gz`（計4ファイル）を添付
+3. `firmware.bin.gz` を S3 にアップロード（`firmware/vX.Y.Z.bin.gz`）
+4. OTA Job ドキュメントを生成して S3 にアップロード（`jobs/vX.Y.Z.json`）
+   - `url` フィールドは `.bin.gz` の S3 URL、`board_version` フィールドにMAJOR桁（1 or 2）を含む
+5. `ota-target-car-iot-gw-v{MAJOR}` Thing グループに OTA ジョブを作成
+6. GitHub Release を作成して該当基板の `firmware.bin` / `firmware.bin.gz` を添付
 
 デバイスは自分が所属する Thing Group 宛の Job しか受け取らない。さらに `ota.cpp::handleJob()` が Job ドキュメントの `board_version` と NVS の `getBoardVersion()` を比較し、不一致なら `FAILED` として適用をスキップする（Thing Group誤登録に対する保険）。
 
