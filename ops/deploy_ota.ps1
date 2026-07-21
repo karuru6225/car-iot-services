@@ -2,12 +2,12 @@
 #
 # Usage:
 #   .\deploy_ota.ps1 -Version 1.2.0
-#   .\deploy_ota.ps1 -Version 1.2.0 -BoardVersion 2
+#   .\deploy_ota.ps1 -Version 2.4.0                    # MAJORが基板バージョン(v2基板)
 #   .\deploy_ota.ps1 -Version 1.2.0 -ThingName esp32-gw-aabbccddeeff
 #   .\deploy_ota.ps1 -Version 1.2.0 -Compress          # gzip firmware before upload
 #   .\deploy_ota.ps1 -Version 1.2.0 -Force             # skip version check on device
 #
-# -BoardVersion selects the release env (v1/v2) and S3 path (デフォルト1)
+# -Version の MAJOR桁が基板バージョン(1=v1基板, 2=v2基板)を表す。この不変条件はRELEASE.md参照
 # Omitting ThingName targets all Things matching esp32-gw-*
 #   (デバイス側のboard_versionチェックが誤配信を防ぐ保険になる)
 # -Compress uploads firmware.bin.gz and sets the job URL to the .gz path
@@ -16,12 +16,16 @@
 
 param(
   [Parameter(Mandatory)][string]$Version,
-  [ValidateSet(1, 2)][int]$BoardVersion = 1,
   [string]$ThingName = "",
   [string]$Profile = '',
   [switch]$Compress,
   [switch]$Force
 )
+
+$BoardVersion = ($Version -split '\.')[0]
+if ($BoardVersion -ne '1' -and $BoardVersion -ne '2') {
+  throw "VersionのMAJOR桁は基板バージョン(1 or 2)を表す。不正な値: $BoardVersion (Version: $Version)"
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -55,16 +59,16 @@ $Region  = "ap-northeast-1"
 Pop-Location
 
 if ($Compress) {
-  $FirmwareKey   = "firmware/v$BoardVersion/v$Version.bin.gz"
+  $FirmwareKey   = "firmware/v$Version.bin.gz"
   $FirmwareLocal = $FirmwareGz
 } else {
-  $FirmwareKey   = "firmware/v$BoardVersion/v$Version.bin"
+  $FirmwareKey   = "firmware/v$Version.bin"
   $FirmwareLocal = $FirmwareBin
 }
 $FirmwareUrl = "$BaseUrl/$FirmwareKey"
-$JobDocKey   = "jobs/v$BoardVersion/v$Version.json"
+$JobDocKey   = "jobs/v$Version.json"
 $Timestamp   = Get-Date -Format "yyyyMMddHHmmss"
-$BaseJobId   = "ota-v$($Version -replace '\.', '_')-v$BoardVersion"
+$BaseJobId   = "ota-v$($Version -replace '\.', '_')"
 $JobId       = "$BaseJobId-$Timestamp"
 
 Write-Host "=== OTA Deploy ==="
