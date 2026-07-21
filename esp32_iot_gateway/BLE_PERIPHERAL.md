@@ -54,15 +54,21 @@
 **デバイス名**: `car-iot-ble`
 **アドバタイズ UUID**: 計測サービス（ユニークなので誤検出しない）
 
-### 計測サービス — Notify のみ / 全値 float32 little-endian
+### 計測サービス — Notify のみ / 認証不要
 
-| Characteristic | UUID | 内容 |
-|---|---|---|
-| Service | `f3a8b2c1-d4e5-4f6a-7b8c-9d0e1f2a3b4c` | — |
-| 電圧 | `f3a8b2c2-...` | V（INA228） |
-| 電流 | `f3a8b2c3-...` | A（INA228） |
-| 電力 | `f3a8b2c4-...` | W（INA228） |
-| 温度 | `f3a8b2c5-...` | °C（INA228 ダイ温度） |
+実装（`device/ble_peripheral.cpp`）は以下の構成（設計時からUUID割り当てが変更されている）:
+
+| Characteristic | UUID | 型 | 内容 |
+|---|---|---|---|
+| Service | `f3a8b2c1-d4e5-4f6a-7b8c-9d0e1f2a3b4c` | — | — |
+| メイン電圧 | `f3a8b2c2-...` | float32 LE | V（ADS1115、adsReadDiffMain） |
+| サブ電流 | `f3a8b2c3-...` | float32 LE | A（INA228、readCurrent） |
+| サブ電力 | `f3a8b2c4-...` | float32 LE | W（INA228、readPower） |
+| サブ電圧 | `f3a8b2c5-...` | float32 LE | V（ADS1115、adsReadDiffSub） |
+| 温度 | `f3a8b2c6-...` | float32 LE | °C（INA228 ダイ温度、readTemp） |
+| Ah | `f3a8b2c7-...` | float32 LE | 積算電荷量（readCharge() + Ahオフセット、monitor.cppと同じ計算式） |
+| タイムスタンプ | `f3a8b2c8-...` | uint32 LE | UNIX時刻（秒） |
+| LTE接続状態 | `f3a8b2c9-...` | uint8 | 0=未接続, 1=接続中（lte.isConnected()） |
 
 ### 設定サービス — Read / Write with response / 暗号化必須
 
