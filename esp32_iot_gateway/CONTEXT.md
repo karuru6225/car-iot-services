@@ -708,6 +708,16 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 
 **背景**: sub（LiFePO4）が深放電に至ると、v1.1.0基板のMOSFETボディダイオード経由でmain（鉛バッテリー）が12Vバスの負荷を供給し続け、mainが上がるリスクがある。梅雨期間の長期曇天でソーラー発電が途絶えた場合に現実的なリスクとなる。
 
+### TODO: OTA中のBLE無効化（IPCタスクスタックオーバーフロー対策・未着手）
+
+現状、OTA（`ota.handleJob()` → `apply()`）中も BLE（`blePeripheral` / `bleScanner`）は動いたまま。`esp_ota_write` によるフラッシュ書き込みとBLEスタックが同時に動くと、ESP32/ESP32-S3で知られる "IPC task has overflowed its stack" の要因になり得る。
+
+**実装方針**:
+
+- `service/ota.cpp` の `handleJob()` 冒頭（`jobsReport(job.id, "IN_PROGRESS")` 直後あたり）で `blePeripheral.stop()` / `bleScanner.deinit()` を呼び、OTA中はBLEを完全停止する
+- 両APIは既に実装済みだが現状どこからも呼ばれていない（`device/ble_peripheral.h` / `device/ble_scan.h`）
+- OTA成功時は `esp_restart()` するため再開処理は不要。失敗時に呼び出し元へ処理が戻るケースでBLEを再開すべきか要検討
+
 ### v2.0.0 基板 — 電源ボタン＋自己保持回路（ファームウェア側は実装済み、電源断ロジックは未着手）
 
 緊急時（main 電圧が危機的水準に達したとき）に ESP32 から回路全体の電源を完全に断てるよう、次世代基板（v2.0.0）に自己保持回路を追加する。
