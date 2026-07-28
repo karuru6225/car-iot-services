@@ -57,7 +57,8 @@ resource "aws_lambda_function" "ingest" {
 
   environment {
     variables = {
-      S3_BUCKET = aws_s3_bucket.main.bucket
+      S3_BUCKET        = aws_s3_bucket.main.bucket
+      CORRUPTED_BUCKET = aws_s3_bucket.corrupted.bucket
     }
   }
 }

@@ -69,6 +69,11 @@ resource "aws_iam_role_policy" "lambda_ingest" {
         Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.main.arn}/raw/*"
       },
+      {
+        Effect   = "Allow"
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.corrupted.arn}/*"
+      },
     ]
   })
 }
