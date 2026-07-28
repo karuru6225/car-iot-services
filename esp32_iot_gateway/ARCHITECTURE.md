@@ -46,12 +46,13 @@ device / service を include してはいけない。標準ライブラリのみ
 | ファイル            | 役割                                                           |
 |---------------------|----------------------------------------------------------------|
 | `measurement.h`     | 計測値の構造体（VoltageReading, PowerReading）                 |
-| `telemetry.h/.cpp`  | JSON シリアライズ（buildBatteryPayload / buildConfigPayload / buildThermometerPayload / buildCo2Payload）|
+| `telemetry.h/.cpp`  | `buildConfigPayload`（Shadow reported用JSON）+ `ITelemetryEncoder`（テンプレートメソッド。`JsonTelemetryEncoder`/`MsgPackTelemetryEncoder`が`encodeBattery`/`encodeThermometer`/`encodeCo2`を提供）。MsgPack版は`[magic 0xC1][version][本体][CRC32 4B]`でラップしパケット破損を検知する |
 | `sensor.h`          | BLE センサー共通構造体（SensorBase）                          |
 | `thermometer.h/.cpp`| SwitchBot 温湿度計パーサー（ThermometerData / ThermometerParser）|
 | `co2meter.h/.cpp`   | SwitchBot CO2センサーパーサー（Co2MeterData / Co2MeterParser）|
 | `sensor_factory.h/.cpp` | センサー種別振り分け（SensorVariant = std::variant）      |
 | `ble_targets.h/.cpp`| 監視対象 BLE アドレスの NVS 永続化（BleTargets、NS: "switchbot"）|
+| `sensor_filter.h/.cpp` | BLE センサー値のメディアンフィルタ（`BLE_MEDIAN_FILTER`ビルドフラグ時のみ有効、直近3件のアドレス別履歴を保持）|
 
 ### service/
 
@@ -70,6 +71,7 @@ device / service を include してはいけない。標準ライブラリのみ
 | `menu.h/.cpp` | OLED + 2ボタン設定メニュー、`enterMenuMode()` → `OperationMode` を返す |
 | `menu_util.h/.cpp` | メニュー用パスユーティリティ（pathPush / pathPop / pathTitle 等） |
 | `pubqueue.h/.cpp` | オフラインバッファ（RTC メモリ + SPIFFS）・MQTT publish キュー管理 |
+| `log_storage.h/.cpp` | デバッグログの SPIFFS 保存（起動ごと1ファイル、最大12ファイルのリングバッファ） |
 | `logger.h/.cpp` | シリアルデバッグ出力（横断的関心事） |
 
 ---

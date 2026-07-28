@@ -101,11 +101,12 @@ esp32_iot_gateway/
     │   └── button.h/.cpp              デバウンス・長押し検出（BTN0/BTN1 ピン定数内包、フィードバック音内蔵）
     ├── domain/
     │   ├── measurement.h              計測値構造体（VoltageReading, PowerReading）
-    │   ├── telemetry.h/.cpp           ペイロード JSON 組み立て（Shadow / Thermometer / CO2）
+    │   ├── telemetry.h/.cpp           Shadow設定ペイロード組み立て + ITelemetryEncoder（Json/MsgPack、MsgPackはmagic+CRC32付与）
     │   ├── sensor.h                   BLE センサー共通構造体（SensorBase）
     │   ├── thermometer.h/.cpp         SwitchBot 温湿度計パーサー
     │   ├── co2meter.h/.cpp            SwitchBot CO2センサーパーサー
     │   ├── sensor_factory.h/.cpp      センサー種別振り分け（SensorVariant）
+    │   ├── sensor_filter.h/.cpp       BLE センサー値のメディアンフィルタ（BLE_MEDIAN_FILTER時のみ）
     │   └── ble_targets.h/.cpp         監視対象 BLE アドレスの NVS 永続化
     └── service/
         ├── mqtt.h/.cpp                MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用）
@@ -236,6 +237,9 @@ shadow publish はスリープ直前に1回だけ行う（起動時は行わな�
 | `ThermometerData` | SwitchBot 温湿度計データ（SensorBase + temp/humidity/battery） |
 | `Co2MeterData` | SwitchBot CO2センサーデータ（ThermometerData + co2） |
 | `SensorVariant` | `std::variant<ThermometerData, Co2MeterData>` |
+| `ITelemetryEncoder` | テレメトリエンコーダ基底クラス（`encodeBattery`/`encodeThermometer`/`encodeCo2`を実装、`serialize`は派生クラスに委譲） |
+| `JsonTelemetryEncoder` | JSON形式エンコーダ（トピック`data`） |
+| `MsgPackTelemetryEncoder` | MessagePack形式エンコーダ（トピック`data_bin`）。`[magic 0xC1][version][本体][CRC32 4B]`でラップ |
 
 ## 重要な設計決定
 
