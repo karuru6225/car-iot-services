@@ -59,6 +59,43 @@ resource "aws_s3_bucket_policy" "firmware" {
   })
 }
 
+# ─── 破損テレメトリ保存バケット（CRC32検証NG時の生データ保存、診断用） ──────────
+# raw/ バケットのAthenaスキーマには影響させず、生バイナリのまま調査用に退避する
+
+resource "aws_s3_bucket" "corrupted" {
+  bucket = "${var.project}-corrupted-${data.aws_caller_identity.current.account_id}"
+}
+
+resource "aws_s3_bucket_public_access_block" "corrupted" {
+  bucket                  = aws_s3_bucket.corrupted.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "corrupted" {
+  bucket = aws_s3_bucket.corrupted.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "corrupted" {
+  bucket = aws_s3_bucket.corrupted.id
+
+  rule {
+    id     = "expire-corrupted-payloads"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 30
+    }
+  }
+}
+
 # ─── Glue Database ────────────────────────────────────────────────────────────
 
 resource "aws_glue_catalog_database" "main" {
