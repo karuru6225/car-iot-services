@@ -165,12 +165,26 @@ ESP32-S3-MINI-1
 | `ah` | `ah` | float | 積算電荷量（Ah）= INA228 積算値 + Ah オフセット（NVS） |
 | `ts` | `ts` | int | UNIX タイムスタンプ（秒） |
 
+#### バイナリフレーミング（v1.18.0以降・パケット破損対策）
+
+`sensors/{device_id}/data_bin` の実際の送信バイト列は、上記 MessagePack map をさらに以下でラップする:
+
+```text
+[magic 1B: 0xC1][version 1B][MessagePack本体（上記map）][CRC32 4B（little-endian、magic~本体まで）]
+```
+
+- **背景**: ESP32↔SIM7080G間のUARTにパリティ・CRCが無く、稀に1ビット化けがそのままクラウドまで届く問題があった。Shadow reportedのキー名が化けて大量蓄積する形で発覚（Shadow設定値は本節で後述の通りJSONテキストのため同種の対策は未実装。破損が疑われる場合はDevice Shadowを一度`delete-thing-shadow`すれば次サイクルで自動再構築される）
+- **magic 0xC1**: MessagePack仕様で「未使用」と規定されたバイト値。本体（常にfixmap: `0x80`-`0x8F`始まり）と衝突しないため、`ingest` Lambda はこのバイトの有無だけで新旧フォーマットを自動判別できる（**ファーム/Lambdaのデプロイ順序に依存しない**）
+- **旧フォーマット（v1.17.0以前）**: ヘッダ無し、MessagePack本体のみ。`ingest` Lambda は今後も後方互換としてサポートし続ける
+- **CRC不一致時**: `raw/`（Athenaスキーマ）には保存せず、生バイナリのまま専用バケット（`corrupted`、30日で自動削除）に退避する。`ingest` Lambda のログに `[CORRUPT]` として理由を出力
+- S3保存JSONには検出したフォーマットバージョンを `"ver"`（0=旧形式、1=新形式）として追加する
+
 ### Shadow 設定値（reported / desired）
 
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"fw_version":"1.17.0+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"fw_version":"1.18.0+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
@@ -317,7 +331,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.17.0+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `"1.18.0+" GIT_HASH` | ファームウェアバージョン |
 | `CHG_ON_PIN` | `21` | メインバッテリー充電制御ピン（HIGH=ON） |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
 | `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS`（動作モード） |
@@ -635,6 +649,16 @@ MQTT 通信経路上のフィールド名を短縮し、送信バイト数を削
 | MessagePack + フィールド名短縮（現行） | **59 bytes**（約 38% 削減） |
 
 **確認済み**（2026-05-26）: `AT+SMPUB` バイナリ送信、Lambda でのデコード、管理画面でのデータ表示すべて正常動作。
+
+### ~~TODO: data_bin パケット破損検知（CRC32 + マジックナンバー）~~ **v1.18.0 で実装完了**
+
+ESP32↔SIM7080G間のUARTにパリティ・CRCが無く、稀な1ビット化けがそのままクラウドまで届く問題が発覚（Shadow reportedのキー名が化けて大量蓄積する形で顕在化）。`sensors/{device_id}/data_bin` に以下の対策を実装（詳細は「MQTT ペイロード形式」節のバイナリフレーミング参照）:
+
+- ファーム側 (`domain/telemetry.cpp::MsgPackTelemetryEncoder::serialize`): `[magic 0xC1][version][MessagePack本体][CRC32 4B]` でラップ
+- `ingest` Lambda (`infra/lambda_src/ingest/index.py`): magicバイトの有無で新旧フォーマットを自動判別（デプロイ順序に依存しない）、CRC不一致時は専用バケット `corrupted`（30日で自動削除、`infra/s3.tf`）に生バイナリを退避し `raw/` のAthenaスキーマは無傷に保つ
+- S3保存JSONとログにフォーマットバージョン（`"ver"`: 0=旧形式, 1=新形式）を出力し、破損率の実測・監視を可能にした
+
+Shadow（JSON テキスト）側は同種の対策は未実装。破損が疑われる場合は `aws iot-data delete-thing-shadow` で一度リセットすれば次サイクルで自動再構築される（`reported` はマージ方式で蓄積し続けるため）。
 
 ### TODO: ストリーミング OTA（塩漬け）
 
