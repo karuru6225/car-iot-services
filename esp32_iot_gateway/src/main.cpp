@@ -324,6 +324,11 @@ static void continuousLoopCore(const ContinuousLoopHooks &hooks)
       lastNotify = now;
       updateChargingState();
 
+#ifndef DEBUG_SKIP_NETWORK
+      // 継続モード中は5分待機ループに留まり続けるため、1秒ティックでもShadow deltaを確認する
+      shadowPollDelta();
+#endif
+
       if (hooks.onTick)
         hooks.onTick();
 
