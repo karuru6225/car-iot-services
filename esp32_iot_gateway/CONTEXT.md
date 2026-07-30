@@ -748,6 +748,23 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 
 **背景**: sub（LiFePO4）が深放電に至ると、v1.1.0基板のMOSFETボディダイオード経由でmain（鉛バッテリー）が12Vバスの負荷を供給し続け、mainが上がるリスクがある。梅雨期間の長期曇天でソーラー発電が途絶えた場合に現実的なリスクとなる。
 
+### TODO: OTA中のBLE無効化（IPCタスクスタックオーバーフロー対策・未着手）
+
+現状、OTA（`ota.handleJob()` → `apply()`）中も BLE（`blePeripheral` / `bleScanner`）は動いたまま。`esp_ota_write` によるフラッシュ書き込みとBLEスタックが同時に動くと、ESP32/ESP32-S3で知られる "IPC task has overflowed its stack" の要因になり得る。
+
+**実装方針**:
+
+- `blePeripheral.stop()`（`NimBLEDevice::stopAdvertising()` のみ、`device/ble_peripheral.cpp`）と
+  `bleScanner.deinit()`（Peripheral と共存するため no-op、`device/ble_scan.cpp`）は、
+  どちらも NimBLE ホストタスク・コントローラ自体は停止しないため、この対策には**使えない**（レビュー指摘済み）
+- 実際に BLE スタックを完全停止するには `NimBLEDevice::deinit(true)`（引数 true でコントローラも解放）を呼ぶ必要がある。
+  `service/ota.cpp` の `handleJob()` 冒頭（`jobsReport(job.id, "IN_PROGRESS")` 直後あたり）で呼ぶ想定
+- `NimBLEDevice::deinit(true)` の後に BLE を再開するには `BleScanner::setup()` 相当
+  （`NimBLEDevice::init()` からのアドバタイズコールバック再設定を含む）をやり直す必要がある。
+  現状の `setup()` は起動時 1 回のみの呼び出しを想定した作りのため、再入可能にする見直しが必要
+- OTA成功時は `esp_restart()` するため再開処理は不要。失敗時に呼び出し元へ処理が戻るケースでBLEを再開すべきか、
+  その場合の再初期化方法が検討課題として残る
+
 ### v2.0.0 基板 — 電源ボタン＋自己保持回路（ファームウェア側は実装済み、電源断ロジックは未着手）
 
 緊急時（main 電圧が危機的水準に達したとき）に ESP32 から回路全体の電源を完全に断てるよう、次世代基板（v2.0.0）に自己保持回路を追加する。
