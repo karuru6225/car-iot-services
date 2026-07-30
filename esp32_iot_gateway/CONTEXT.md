@@ -714,9 +714,16 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 
 **実装方針**:
 
-- `service/ota.cpp` の `handleJob()` 冒頭（`jobsReport(job.id, "IN_PROGRESS")` 直後あたり）で `blePeripheral.stop()` / `bleScanner.deinit()` を呼び、OTA中はBLEを完全停止する
-- 両APIは既に実装済みだが現状どこからも呼ばれていない（`device/ble_peripheral.h` / `device/ble_scan.h`）
-- OTA成功時は `esp_restart()` するため再開処理は不要。失敗時に呼び出し元へ処理が戻るケースでBLEを再開すべきか要検討
+- `blePeripheral.stop()`（`NimBLEDevice::stopAdvertising()` のみ、`device/ble_peripheral.cpp`）と
+  `bleScanner.deinit()`（Peripheral と共存するため no-op、`device/ble_scan.cpp`）は、
+  どちらも NimBLE ホストタスク・コントローラ自体は停止しないため、この対策には**使えない**（レビュー指摘済み）
+- 実際に BLE スタックを完全停止するには `NimBLEDevice::deinit(true)`（引数 true でコントローラも解放）を呼ぶ必要がある。
+  `service/ota.cpp` の `handleJob()` 冒頭（`jobsReport(job.id, "IN_PROGRESS")` 直後あたり）で呼ぶ想定
+- `NimBLEDevice::deinit(true)` の後に BLE を再開するには `BleScanner::setup()` 相当
+  （`NimBLEDevice::init()` からのアドバタイズコールバック再設定を含む）をやり直す必要がある。
+  現状の `setup()` は起動時 1 回のみの呼び出しを想定した作りのため、再入可能にする見直しが必要
+- OTA成功時は `esp_restart()` するため再開処理は不要。失敗時に呼び出し元へ処理が戻るケースでBLEを再開すべきか、
+  その場合の再初期化方法が検討課題として残る
 
 ### v2.0.0 基板 — 電源ボタン＋自己保持回路（ファームウェア側は実装済み、電源断ロジックは未着手）
 
