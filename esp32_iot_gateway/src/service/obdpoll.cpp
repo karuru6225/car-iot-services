@@ -90,16 +90,35 @@ OBDReading obdPoll()
 
   uint8_t data[8];
   uint8_t dlc;
+  int okCount = 0, sendFailCount = 0, recvFailCount = 0, decodeFailCount = 0;
 
   for (const auto &p : kPids)
   {
     // 28PIDに増えたため異常時（IGN OFF等）の最悪サイクル時間を抑える目的でタイムアウトを短縮
     // （実車では正常応答は数十msで返る実績があるため、50msでも正常系には影響しない）
-    if (canSendObdRequest(p.pid) && canReceiveObdResponse(data, &dlc, 50))
-      if (p.decode(data, dlc, r))
-        r.valid = true;
+    if (!canSendObdRequest(p.pid))
+    {
+      sendFailCount++;
+      continue;
+    }
+    if (!canReceiveObdResponse(data, &dlc, 50))
+    {
+      recvFailCount++;
+      continue;
+    }
+    if (p.decode(data, dlc, r))
+    {
+      r.valid = true;
+      okCount++;
+    }
+    else
+    {
+      decodeFailCount++;
+    }
   }
 
+  logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d\n",
+                okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount);
   finalizeAndLog(r);
   return r;
 }
@@ -111,23 +130,31 @@ OBDReading obdPollBulk()
 
   uint8_t data[8];
   uint8_t dlc;
+  int groupIndex = 0, sendFailGroups = 0, respTotal = 0;
 
   for (int base = 0; base < kPidCount; base += kBulkGroupSize)
   {
     int groupCount = (kPidCount - base < kBulkGroupSize) ? (kPidCount - base) : kBulkGroupSize;
+    groupIndex++;
 
     uint8_t pids[kBulkGroupSize];
     for (int i = 0; i < groupCount; i++)
       pids[i] = kPids[base + i].pid;
 
     if (!canSendObdRequestBulk(pids, (uint8_t)groupCount))
+    {
+      sendFailGroups++;
+      logger.printf("[OBD] バルクグループ%d: 送信失敗（PID%d個）\n", groupIndex, groupCount);
       continue; // 送信失敗時はこのグループを諦めて次へ
+    }
 
     // グループ内PID数だけ応答を試みる。ECUが複数フレームで個別に返す想定（未検証）
+    int respCount = 0;
     for (int i = 0; i < groupCount; i++)
     {
       if (!canReceiveObdResponse(data, &dlc, 50))
         break; // タイムアウトしたらこのグループは打ち切り、次のグループへ
+      respCount++;
 
       uint8_t respPid = data[2];
       for (int j = 0; j < groupCount; j++)
@@ -140,9 +167,12 @@ OBDReading obdPollBulk()
         }
       }
     }
+    respTotal += respCount;
+    logger.printf("[OBD] バルクグループ%d: PID%d個送信 → 応答%d個\n", groupIndex, groupCount, respCount);
   }
 
-  logger.println("[OBD] バルクポーリング実行");
+  logger.printf("[OBD] バルクポーリング完了: %dグループ中送信失敗%d、応答合計%d/%d\n",
+                groupIndex, sendFailGroups, respTotal, kPidCount);
   finalizeAndLog(r);
   return r;
 }
