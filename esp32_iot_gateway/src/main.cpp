@@ -348,7 +348,8 @@ static void continuousLoopCore(const ContinuousLoopHooks &hooks)
 }
 
 // CONTINUOUS_OBD の1秒ティック追加処理。AWSへの送信方法は別途検討、現状はログ+OLED表示のみ
-static void obdTick() { oledShowObdData(obdPoll()); }
+// obdPollTick() がバルクテスト中かどうかを内部で判定し、obdPoll()/obdPollBulk() を切り替える
+static void obdTick() { oledShowObdData(obdPollTick()); }
 
 static void runContinuousMode() { continuousLoopCore({nullptr, true, OperationMode::CONTINUOUS}); }
 static void runContinuousObdMode() { continuousLoopCore({obdTick, false, OperationMode::CONTINUOUS_OBD}); }

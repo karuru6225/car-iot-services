@@ -456,6 +456,52 @@ SSD1306 128×64、TextSize=1（6×8px、最大 21 文字/行）。当初ドラ�
 
 ---
 
+## OBDバルクリクエスト（実験機能・実車未検証）
+
+`CONTINUOUS_OBD`モード実行中に、Shadowまたはメニューから一時的に「バルクポーリング」へ
+切り替えられる実験機能。ISO 15765-4 Single Frameの制約上、1フレームには最大6PID詰め込める
+仕様（SAE J1979）だが、Honda N-VANでの対応は未検証。既存の`OperationMode`は増やさず、
+`CONTINUOUS_OBD`モード内部の一時的な動作切り替えとして実装した。
+
+### リクエストフォーマット
+
+```
+送信フレーム（CAN ID=0x18DB33F1, DLC=8）:
+  Byte 0: PCI  = 1 + count （Single Frame、データ長 = Mode(1) + PID数）
+  Byte 1: Mode = 0x01
+  Byte 2〜(1+count): PID1, PID2, ..., PIDn（最大6個）
+  残り: 0x00（パディング）
+
+受信フレーム（複数フレームで個別に返る想定、未検証）:
+  各PIDにつき通常のMode01応答（0x41 [PID] [A] [B]...）が個別のCANフレームで届く
+```
+
+### 実装
+
+- `device/can.h/.cpp`: `canSendObdRequestBulk(pids, count)`（count>6はfalseを返す）
+- `service/obdpoll.h/.cpp`:
+  - `obdPollBulk()` — 既存28PID（`kPids[]`）を6個ずつ5グループに分割し、グループごとに
+    1回バルク送信 → グループ内PID数だけ`canReceiveObdResponse()`を試行 → 各応答の`data[2]`
+    （PIDエコー）でデコーダを検索して呼ぶ。タイムアウトしたグループは打ち切って次へ進む
+  - `requestObdBulkTest(cycles=5)` — 次の5サイクル分`obdPollTick()`が`obdPollBulk()`を
+    返すようにする。Shadowの`obd_bulk_test:true`デルタ、またはメニューの
+    `"OBD Bulk Test"`から呼ばれる
+  - `obdPollTick()` — `main.cpp`の`obdTick()`から呼ばれるラッパー。残りサイクルがあれば
+    `obdPollBulk()`、無ければ通常の`obdPoll()`を返す。5サイクル終了後は自動的に通常の
+    シングルPID逐次ポーリングに復帰する
+- `service/shadow.h/.cpp`: `obd_bulk_test`デルタ検知（ACK reportedへの反映はしない、
+  一時的なトリガーのため）
+- `service/menu.cpp`: `"OBD Bulk Test"`メニュー項目（確認ダイアログ経由）
+
+### 期待される結果と判定
+
+- 複数PID分の応答フレームが返ってくれば対応している（`[OBD]`/`[OBD2]`ログで通常時と
+  同様に値が埋まっているか確認）
+- 応答が来ない、または各グループの最初の1PIDしか返らない場合は非対応と判断できる
+  （`obdPollBulk()`はタイムアウトで打ち切り次グループへ進むため、応答なしでもクラッシュしない）
+
+---
+
 ## 実装順序（完了）
 
 各ステップで `pio run -e esp32-s3-devkitc-1-v2-develop` のビルドが通ることを確認してから
@@ -471,6 +517,9 @@ SSD1306 128×64、TextSize=1（6×8px、最大 21 文字/行）。当初ドラ�
 | 6 | `service/shadow.h/.cpp` | `override_next_mode="continuous_obd"` 対応 | 完了 |
 | 7 | `service/menu.cpp` | `"Continuous OBD"` メニュー項目 | 完了 |
 | 8 | `device/oled.h/.cpp` | `oledShowObdData()`（1画面） | 完了 |
+| 9 | `device/can.h/.cpp` | `canSendObdRequestBulk()`追加 | 完了 |
+| 10 | `service/obdpoll.h/.cpp` | `obdPollBulk()`・トリガー管理・`obdPollTick()` | 完了 |
+| 11 | `service/shadow.h/.cpp` + `service/menu.cpp` | `obd_bulk_test`トリガー（Shadow/メニュー） | 完了 |
 
 **未実装（今回のスコープ外）**: AWS への publish（`domain/telemetry`・`service/pubqueue`
 統合）。送信方法は別途検討する。

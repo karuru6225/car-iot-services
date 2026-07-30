@@ -102,6 +102,39 @@ bool canSendObdRequest(uint8_t pid)
   return ok;
 }
 
+bool canSendObdRequestBulk(const uint8_t *pids, uint8_t count)
+{
+  if (!s_ready || count == 0 || count > 6)
+    return false;
+
+  recoverIfBusOff();
+
+  twai_message_t tx = {};
+  tx.identifier = CAN_REQ_ID;
+  tx.extd = 1;
+  tx.data_length_code = 8;
+  tx.data[0] = 1 + count; // PCI: Single Frame, length = Mode(1) + count
+  tx.data[1] = 0x01;      // Mode 01
+  for (uint8_t i = 0; i < count; i++)
+    tx.data[2 + i] = pids[i];
+  // 残り（data[2+count..7]）は0（ISO 15765-4 パディング、tx={}で初期化済み）
+
+  bool ok = twai_transmit(&tx, pdMS_TO_TICKS(10)) == ESP_OK;
+  if (!ok)
+  {
+    if (++s_failCount >= CAN_FAIL_ESCALATE_THRESHOLD)
+    {
+      canDeinit();
+      canInit();
+    }
+  }
+  else
+  {
+    s_failCount = 0;
+  }
+  return ok;
+}
+
 bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs)
 {
   if (!s_ready)

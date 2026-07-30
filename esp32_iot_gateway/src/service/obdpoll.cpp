@@ -42,25 +42,12 @@ const PidDecoder kPids[] = {
     {0x55, obdDecodeSecO2TrimShortTerm},
     {0x56, obdDecodeSecO2TrimLongTerm},
 };
-} // namespace
+const int kPidCount = sizeof(kPids) / sizeof(kPids[0]);
+const int kBulkGroupSize = 6; // ISO 15765-4 Single Frame: 8 - PCI(1) - Mode(1) = 6バイト
 
-OBDReading obdPoll()
+// boost/燃費の派生値計算とログ出力。obdPoll()/obdPollBulk()共通
+void finalizeAndLog(OBDReading &r)
 {
-  OBDReading r = {};
-  r.ts = time(nullptr);
-
-  uint8_t data[8];
-  uint8_t dlc;
-
-  for (const auto &p : kPids)
-  {
-    // 28PIDに増えたため異常時（IGN OFF等）の最悪サイクル時間を抑える目的でタイムアウトを短縮
-    // （実車では正常応答は数十msで返る実績があるため、50msでも正常系には影響しない）
-    if (canSendObdRequest(p.pid) && canReceiveObdResponse(data, &dlc, 50))
-      if (p.decode(data, dlc, r))
-        r.valid = true;
-  }
-
   if (r.valid)
   {
     // boost = MAP - Baro（Baro未取得時は標準大気圧101kPaで代用）
@@ -91,6 +78,87 @@ OBDReading obdPoll()
   {
     logger.println("[OBD] 応答なし（IGN OFF または CAN 未接続）");
   }
+}
 
+int s_bulkTestCyclesRemaining = 0;
+} // namespace
+
+OBDReading obdPoll()
+{
+  OBDReading r = {};
+  r.ts = time(nullptr);
+
+  uint8_t data[8];
+  uint8_t dlc;
+
+  for (const auto &p : kPids)
+  {
+    // 28PIDに増えたため異常時（IGN OFF等）の最悪サイクル時間を抑える目的でタイムアウトを短縮
+    // （実車では正常応答は数十msで返る実績があるため、50msでも正常系には影響しない）
+    if (canSendObdRequest(p.pid) && canReceiveObdResponse(data, &dlc, 50))
+      if (p.decode(data, dlc, r))
+        r.valid = true;
+  }
+
+  finalizeAndLog(r);
   return r;
+}
+
+OBDReading obdPollBulk()
+{
+  OBDReading r = {};
+  r.ts = time(nullptr);
+
+  uint8_t data[8];
+  uint8_t dlc;
+
+  for (int base = 0; base < kPidCount; base += kBulkGroupSize)
+  {
+    int groupCount = (kPidCount - base < kBulkGroupSize) ? (kPidCount - base) : kBulkGroupSize;
+
+    uint8_t pids[kBulkGroupSize];
+    for (int i = 0; i < groupCount; i++)
+      pids[i] = kPids[base + i].pid;
+
+    if (!canSendObdRequestBulk(pids, (uint8_t)groupCount))
+      continue; // 送信失敗時はこのグループを諦めて次へ
+
+    // グループ内PID数だけ応答を試みる。ECUが複数フレームで個別に返す想定（未検証）
+    for (int i = 0; i < groupCount; i++)
+    {
+      if (!canReceiveObdResponse(data, &dlc, 50))
+        break; // タイムアウトしたらこのグループは打ち切り、次のグループへ
+
+      uint8_t respPid = data[2];
+      for (int j = 0; j < groupCount; j++)
+      {
+        if (kPids[base + j].pid == respPid)
+        {
+          if (kPids[base + j].decode(data, dlc, r))
+            r.valid = true;
+          break;
+        }
+      }
+    }
+  }
+
+  logger.println("[OBD] バルクポーリング実行");
+  finalizeAndLog(r);
+  return r;
+}
+
+void requestObdBulkTest(int cycles)
+{
+  s_bulkTestCyclesRemaining = cycles;
+  logger.printf("[OBD] バルクテスト開始（%d サイクル）\n", cycles);
+}
+
+OBDReading obdPollTick()
+{
+  if (s_bulkTestCyclesRemaining > 0)
+  {
+    s_bulkTestCyclesRemaining--;
+    return obdPollBulk();
+  }
+  return obdPoll();
 }

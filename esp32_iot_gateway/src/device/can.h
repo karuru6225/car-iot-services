@@ -14,5 +14,10 @@ void canDeinit();
 // Mode 01 PID リクエストを送信する
 bool canSendObdRequest(uint8_t pid);
 
+// Mode 01 マルチプルPIDリクエストを1フレームで送信する（最大6PID、ISO 15765-4 Single Frameの制約）。
+// 1リクエストに複数PIDを詰められる仕様自体はSAE J1979にあるが、Honda N-VANでの対応は未検証（実験用）。
+// count が 6 を超える場合は false を返す
+bool canSendObdRequestBulk(const uint8_t *pids, uint8_t count);
+
 // 応答を受信する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）。timeoutMs 内に届かなければ false
 bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100);

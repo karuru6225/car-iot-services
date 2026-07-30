@@ -1,6 +1,7 @@
 #include "shadow.h"
 #include "mqtt.h"
 #include "logger.h"
+#include "obdpoll.h"
 #include "../config.h"
 #include "../domain/telemetry.h"
 #include <ArduinoJson.h>
@@ -125,6 +126,13 @@ bool shadowPollDelta(uint32_t timeoutMs)
   {
     setCharging(state["charging"].as<bool>());
     logger.printf("[SHADOW] charging → %s\n", isCharging() ? "on" : "off");
+    changed = true;
+  }
+
+  if (state["obd_bulk_test"].is<bool>() && state["obd_bulk_test"].as<bool>())
+  {
+    requestObdBulkTest();
+    logger.println("[SHADOW] obd_bulk_test → トリガー");
     changed = true;
   }
 

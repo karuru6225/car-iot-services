@@ -11,6 +11,7 @@
 #include "../domain/sensor_factory.h"
 #include "../config.h"
 #include "../board_pins.h"
+#include "obdpoll.h"
 #include <Arduino.h>
 
 // ---- 状態定義 ----
@@ -59,6 +60,15 @@ static void doAhReset()
   delay(1000);
 }
 
+// OBDバルクリクエスト（1フレームに最大6PID詰めて送信）を5サイクル試す実験機能
+// Honda N-VANでの対応は未検証（OBD.md参照）。CONTINUOUS_OBDモード中の1秒ティックで実行される
+static void doObdBulkTest()
+{
+  requestObdBulkTest();
+  oledShowMessage("OBD Bulk Test", "Started (5 cycles)");
+  delay(1000);
+}
+
 // ---- メニュー定義 ----
 
 struct MenuItem
@@ -78,6 +88,7 @@ static const MenuItem ITEMS[] = {
     {"System",       "/",             MenuState::MENU_NAV,        {}},
     {"Continuous",   "/",             MenuState::DONE_CONTINUOUS, {}},
     {"Continuous OBD","/",            MenuState::DONE_CONTINUOUS_OBD, {}},
+    {"OBD Bulk Test","/",             MenuState::CONFIRM,         {"OBD Bulk Test?", "Try 5 cycles", doObdBulkTest}},
     {"Restart",      "/",             MenuState::RESTART,         {}},
     // path="/BLE Settings"
     {"Register",     "/BLE Settings", MenuState::BLE_SCAN,        {}},
