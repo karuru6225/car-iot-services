@@ -102,6 +102,8 @@ Honda ECU が variant 共通のビットマスクを返しているが、この�
 
 **確定した取得可能データ一覧（フェーズ2 実装対象・新基板 2026-06-01 実機確認済み）:**
 
+**全28PID実装済み**（`domain/obd.h/.cpp`・`service/obdpoll.cpp`、実装差分は本ドキュメント後半の「domain/obd.h データ構造・デコード関数」参照）。
+
 | PID | 名称 | デコード式 | 備考 |
 |-----|------|-----------|------|
 | 0x04 | Engine Load | A×100/255 % | 負荷監視 |
@@ -333,12 +335,13 @@ install/uninstall・GPIO 電源トグルのオーバーヘッドが大きいた�
 
 ---
 
-## domain/obd.h データ構造・デコード関数（実装済み）
+## domain/obd.h データ構造・デコード関数（実装済み・全28PID対応）
 
-**実車スキャン結果を反映。非対応 PID（冷却水温・MAF・燃料流量等）は除外。**
+**実車スキャン結果を反映。非対応 PID（0x05水温・0x10 MAF・0x5E燃料流量等）は除外。**
 
 ```cpp
 struct OBDReading {
+  // 初期実装分（10PID）
   uint16_t rpm;           // 0x0C: (A*256+B)/4 [rpm]
   uint8_t  speed_kmh;     // 0x0D: A [km/h]
   uint8_t  load_pct;      // 0x04: A*100/255 [%]
@@ -352,28 +355,52 @@ struct OBDReading {
   int16_t  coolant_c;     // 0x67 Sensor1: B-40 [°C]（0x05 非対応のため代替）
   float    fuel_rate_lph; // MAF 推算: maf_gs / (14.7×0.745) × 3.6 [L/h]（obdpoll.cpp で計算）
 
+  // 追加実装分（18PID・20フィールド。デコード式は「確定した取得可能データ一覧」参照）
+  float    stft_pct, ltft_pct;                          // 0x06, 0x07
+  float    o2_b1s2_v, o2_b1s2_trim_pct;                 // 0x15
+  uint16_t engine_run_time_sec;                         // 0x1F
+  uint16_t mil_distance_km;                             // 0x21
+  float    o2_s1_ratio, o2_s1_voltage;                  // 0x24
+  uint8_t  evap_purge_pct;                              // 0x2E
+  uint8_t  warmups_since_cleared;                       // 0x30
+  uint16_t distance_since_cleared_km;                   // 0x31
+  float    catalyst_temp_c;                             // 0x3C
+  float    absolute_load_pct;                           // 0x43
+  float    commanded_afr;                               // 0x44
+  uint8_t  throttle_b_pct;                              // 0x47
+  uint8_t  accel_pedal_d_pct, accel_pedal_e_pct;        // 0x49, 0x4A
+  uint8_t  fuel_type;                                   // 0x51
+  float    sec_o2_trim_st_pct, sec_o2_trim_lt_pct;      // 0x55, 0x56
+
   bool     valid;
   time_t   ts;
 };
 ```
 
-デコード関数（`obdDecodeRpm`/`obdDecodeSpeed`/`obdDecodeLoad`/`obdDecodeMap`/`obdDecodeBaro`/
-`obdDecodeThrottle`/`obdDecodeTiming`/`obdDecodeEcuVoltage`/`obdDecodeMafAlt`/
-`obdDecodeCoolantAlt`）は device/service に依存しない純粋関数。共通ルール:
-`data[1] != 0x41` または `data[2] != 要求PID` または `dlc` が必要バイト数未満なら false。
+デコード関数は28個（PIDごとに1関数、0x15と0x24のみ1関数で2フィールドを埋める）。
+device/service に依存しない純粋関数。共通ルール:
+`data[1] != 0x41` または `data[2] != 要求PID` または `dlc` が必要バイト数未満なら false
+（`obd.cpp` 内 `checkHeader()` ヘルパーで共通化）。
 
 ---
 
 ## service/obdpoll.h ポーリング関数（実装済み）
 
 ```cpp
-OBDReading obdPoll(); // 全PID逐次問い合わせ（canInit()済み前提）
+OBDReading obdPoll(); // 全28PID逐次問い合わせ（canInit()済み前提）
 ```
 
 `measure()`/`publish()`（5分周期前提）とは呼び出し契約が異なるため、`service/monitor.h/.cpp`
-に混在させず独立ファイルにした。タイムアウトは実車での応答実測（数十ms）を踏まえ 100ms
-（旧ドラフトの 200ms から短縮）。取得結果は `logger.printf()` でのログ出力と
-`oledShowObdData()` にのみ使う。
+に混在させず独立ファイルにした。タイムアウトは **50ms**（10PID時代の100msから短縮）。
+実車では正常応答が数十msで返る実績があるため正常系には影響せず、28PID化に伴い
+IGN OFF等の異常時の最悪サイクル時間（28×タイムアウト）を28×50ms=1.4秒程度に抑える狙い。
+ECUへの負荷は読み取り専用のMode01のみで、市販スキャンツールと同程度の頻度のため問題ない
+という前提（実車でのフェーズ1スキャンで多数PID問い合わせ済みだが異常は確認されていない）。
+
+取得結果は `logger.printf()` でのログ出力と `oledShowObdData()` にのみ使う。
+追加18PID分は既存の10PIDサマリ行とは別に `[OBD2]` タグの行でログ出力する
+（1行が長大になるのを避けるため）。OLED表示（`oledShowObdData()`）は初期実装の10項目のみを
+表示し、追加18項目はログ出力のみで表示は行わない。
 
 **AWS への送信は今回のスコープ外**（`queue.pushObd()` 相当は未実装）。将来的に既存
 パイプラインへ統合する場合は、`domain/telemetry.h/.cpp` の `ITelemetryEncoder` に

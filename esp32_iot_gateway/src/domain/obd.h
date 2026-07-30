@@ -18,6 +18,28 @@ struct OBDReading
   int16_t  coolant_c;     // 0x67 Sensor1: B-40 [°C]（0x05 水温 非対応のため代替）
   float    fuel_rate_lph; // MAF 推算: maf_gs / (14.7*0.745) * 3.6 [L/h]（呼び出し側で計算）
 
+  // 追加確定PID（OBD.md「確定した取得可能データ一覧」参照）
+  float    stft_pct;                 // 0x06: (A-128)*100/128 [%]
+  float    ltft_pct;                 // 0x07: (A-128)*100/128 [%]
+  float    o2_b1s2_v;                // 0x15: A/200 [V]
+  float    o2_b1s2_trim_pct;         // 0x15: (B-128)*100/128 [%]
+  uint16_t engine_run_time_sec;      // 0x1F: A*256+B [秒]
+  uint16_t mil_distance_km;          // 0x21: A*256+B [km]
+  float    o2_s1_ratio;              // 0x24: (A*256+B)*2/65536
+  float    o2_s1_voltage;            // 0x24: (C*256+D)*8/65536 [V]
+  uint8_t  evap_purge_pct;           // 0x2E: A*100/255 [%]
+  uint8_t  warmups_since_cleared;    // 0x30: A [回]
+  uint16_t distance_since_cleared_km;// 0x31: A*256+B [km]
+  float    catalyst_temp_c;          // 0x3C: (A*256+B)/10-40 [°C]
+  float    absolute_load_pct;        // 0x43: (A*256+B)*100/255 [%]
+  float    commanded_afr;            // 0x44: (A*256+B)*2/65536
+  uint8_t  throttle_b_pct;           // 0x47: A*100/255 [%]
+  uint8_t  accel_pedal_d_pct;        // 0x49: A*100/255 [%]
+  uint8_t  accel_pedal_e_pct;        // 0x4A: A*100/255 [%]
+  uint8_t  fuel_type;                // 0x51: A（1=ガソリン）
+  float    sec_o2_trim_st_pct;       // 0x55: (A-128)*100/128 [%]
+  float    sec_o2_trim_lt_pct;       // 0x56: (A-128)*100/128 [%]
+
   bool     valid;
   time_t   ts;
 };
@@ -38,3 +60,23 @@ bool obdDecodeMafAlt(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
 // PID 0x67: bitmap=data[3]（0x03=S1+S2）, Sensor1温度=data[4]-40 °C
 bool obdDecodeCoolantAlt(const uint8_t *data, uint8_t dlc, OBDReading &out);
+
+// 追加確定PID（OBD.md「確定した取得可能データ一覧」参照）
+bool obdDecodeShortTermFuelTrim(const uint8_t *data, uint8_t dlc, OBDReading &out);   // 0x06
+bool obdDecodeLongTermFuelTrim(const uint8_t *data, uint8_t dlc, OBDReading &out);    // 0x07
+bool obdDecodeO2SensorB1S2(const uint8_t *data, uint8_t dlc, OBDReading &out);        // 0x15（電圧+燃料トリムの2値）
+bool obdDecodeEngineRunTime(const uint8_t *data, uint8_t dlc, OBDReading &out);       // 0x1F
+bool obdDecodeMilDistance(const uint8_t *data, uint8_t dlc, OBDReading &out);         // 0x21
+bool obdDecodeO2Sensor1WideBand(const uint8_t *data, uint8_t dlc, OBDReading &out);   // 0x24（ratio+電圧の2値）
+bool obdDecodeEvapPurge(const uint8_t *data, uint8_t dlc, OBDReading &out);           // 0x2E
+bool obdDecodeWarmupsSinceCleared(const uint8_t *data, uint8_t dlc, OBDReading &out); // 0x30
+bool obdDecodeDistanceSinceCleared(const uint8_t *data, uint8_t dlc, OBDReading &out);// 0x31
+bool obdDecodeCatalystTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);        // 0x3C
+bool obdDecodeAbsoluteLoad(const uint8_t *data, uint8_t dlc, OBDReading &out);        // 0x43
+bool obdDecodeCommandedAfr(const uint8_t *data, uint8_t dlc, OBDReading &out);        // 0x44
+bool obdDecodeThrottleB(const uint8_t *data, uint8_t dlc, OBDReading &out);           // 0x47
+bool obdDecodeAccelPedalD(const uint8_t *data, uint8_t dlc, OBDReading &out);         // 0x49
+bool obdDecodeAccelPedalE(const uint8_t *data, uint8_t dlc, OBDReading &out);         // 0x4A
+bool obdDecodeFuelType(const uint8_t *data, uint8_t dlc, OBDReading &out);            // 0x51
+bool obdDecodeSecO2TrimShortTerm(const uint8_t *data, uint8_t dlc, OBDReading &out);  // 0x55
+bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &out);   // 0x56
