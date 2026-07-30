@@ -6,6 +6,9 @@
 //   DEEP_SLEEP          : measure() + publish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
 //   CONTINUOUS          : measure() + publish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
 //   ONE_SHOT_CONTINUOUS : Shadow ble_mode から指定。1サイクルだけ CONTINUOUS → 自動で DEEP_SLEEP
+//   CONTINUOUS_OBD      : CONTINUOUS + OBD-II(CAN)を1秒間隔でポーリング（メニュー選択 or Shadow
+//                         override_next_mode から指定。自動で DEEP_SLEEP には戻らない。BTN1 長押しで
+//                         DEEP_SLEEP に切り替え）
 //
 // デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
 
@@ -30,12 +33,14 @@
 #include "device/ble_scan.h"
 #include "device/ble_peripheral.h"
 #include "device/button.h"
+#include "device/can.h"
 
 #include "domain/ble_targets.h"
 #include "domain/telemetry.h"
 #include "service/menu.h"
 #include "service/pubqueue.h"
 #include "service/log_storage.h"
+#include "service/obdpoll.h"
 
 #ifdef USE_MSGPACK
 static MsgPackTelemetryEncoder g_encoder;
@@ -58,6 +63,16 @@ static OperationMode g_mode = OperationMode::DEEP_SLEEP;
 static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
 static MeasureResult g_lastResult = {};
 static bool g_bleUpgradedToContinuous = false;
+
+// モード遷移を一箇所に集約し、CONTINUOUS_OBD への出入りで CAN の init/deinit を確実に行う
+static void setOperationMode(OperationMode newMode)
+{
+  if (g_mode == OperationMode::CONTINUOUS_OBD && newMode != OperationMode::CONTINUOUS_OBD)
+    canDeinit();
+  if (newMode == OperationMode::CONTINUOUS_OBD && g_mode != OperationMode::CONTINUOUS_OBD)
+    canInit();
+  g_mode = newMode;
+}
 
 void setup()
 {
@@ -99,8 +114,9 @@ void setup()
   if (button.isDown(0))
   {
     oledPrint("Menu Mode");
-    g_mode = enterMenuMode();
-    if (g_mode == OperationMode::CONTINUOUS && blePeripheral.isConnected())
+    setOperationMode(enterMenuMode());
+    if ((g_mode == OperationMode::CONTINUOUS || g_mode == OperationMode::CONTINUOUS_OBD) &&
+        blePeripheral.isConnected())
       g_bleUpgradedToContinuous = true;
   }
 
@@ -126,7 +142,7 @@ void setup()
 
   // Shadow override_next_mode を確認
   if (auto override = getShadowOverrideMode())
-    g_mode = *override;
+    setOperationMode(*override);
 
   oledPrint("Job checking...");
   jobsSetup();
@@ -149,12 +165,11 @@ void setup()
   pinMode(boardPins().relay1Pin, OUTPUT);
   pinMode(boardPins().relay2Pin, OUTPUT);
   pinMode(boardPins().chgOnPin, OUTPUT);
-  pinMode(boardPins().gu0EnPin, OUTPUT);
   digitalWrite(boardPins().relay0Pin, LOW);
   digitalWrite(boardPins().relay1Pin, LOW);
   digitalWrite(boardPins().relay2Pin, LOW);
   digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
-  digitalWrite(boardPins().gu0EnPin, HIGH);
+  canDeinit(); // GU0(CANトランシーバ電源)を確実にOFFにしておく。CONTINUOUS_OBD突入時にcanInit()する
 }
 
 // BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）
@@ -162,7 +177,7 @@ static void updateBleReconnectState()
 {
   if (g_bleUpgradedToContinuous && !blePeripheral.isConnected())
   {
-    g_mode = OperationMode::DEEP_SLEEP;
+    setOperationMode(OperationMode::DEEP_SLEEP);
     g_bleUpgradedToContinuous = false;
   }
 }
@@ -244,8 +259,9 @@ static void runContinuousLoop()
     ButtonEvent ev = button.read();
     if (ev == ButtonEvent::BTN0_SHORT)
     {
-      g_mode = enterMenuMode();
-      if (g_mode == OperationMode::CONTINUOUS && blePeripheral.isConnected())
+      setOperationMode(enterMenuMode());
+      if ((g_mode == OperationMode::CONTINUOUS || g_mode == OperationMode::CONTINUOUS_OBD) &&
+          blePeripheral.isConnected())
         g_bleUpgradedToContinuous = true;
       int curRemain = (int)((waitMs - (millis() - waitStart)) / 1000);
       oledShowSensorData(g_lastResult.reading);
@@ -258,20 +274,22 @@ static void runContinuousLoop()
       {
         logger.println("[MAIN] BTN1 長押し → CONTINUOUS モードへ切り替え");
         oledPrint("Switching continuous...");
-        g_mode = OperationMode::CONTINUOUS;
+        setOperationMode(OperationMode::CONTINUOUS);
       }
-      else if (g_mode == OperationMode::CONTINUOUS)
+      else if (g_mode == OperationMode::CONTINUOUS || g_mode == OperationMode::CONTINUOUS_OBD)
       {
         logger.println("[MAIN] BTN1 長押し → DEEP_SLEEP モードへ切り替え");
         oledPrint("Switching sleep...");
-        g_mode = OperationMode::DEEP_SLEEP;
+        setOperationMode(OperationMode::DEEP_SLEEP);
       }
     }
 
     int remain = (int)((waitMs - (millis() - waitStart)) / 1000);
     if (remain != lastRemain)
     {
-      oledUpdateCountdown(remain);
+      // CONTINUOUS_OBD 中は画面全体を OBD 表示が占有するためカウントダウン更新はスキップ
+      if (g_mode != OperationMode::CONTINUOUS_OBD)
+        oledUpdateCountdown(remain);
       lastRemain = remain;
     }
 
@@ -280,6 +298,10 @@ static void runContinuousLoop()
     {
       lastNotify = now;
       updateChargingState();
+
+      if (g_mode == OperationMode::CONTINUOUS_OBD)
+        oledShowObdData(obdPoll()); // AWSへの送信方法は別途検討、現状はログ+OLED表示のみ
+
       blePeripheral.notify(
           adsReadDiffMain(),
           ina228.readCurrent(),
@@ -316,7 +338,7 @@ void loop()
   // BLE 接続 → CONTINUOUS 昇格
   if (blePeripheral.isConnected() && g_mode == OperationMode::DEEP_SLEEP)
   {
-    g_mode = OperationMode::CONTINUOUS;
+    setOperationMode(OperationMode::CONTINUOUS);
     g_bleUpgradedToContinuous = true;
   }
 
@@ -324,8 +346,8 @@ void loop()
     enterDeepSleepMode(); // 戻らない
   else if (g_mode == OperationMode::ONE_SHOT_CONTINUOUS)
   {
-    runContinuousLoop();                // 1サイクル CONTINUOUS（BLE アドバタイズ継続）
-    g_mode = OperationMode::DEEP_SLEEP; // 次ループで DeepSleep へ
+    runContinuousLoop();                    // 1サイクル CONTINUOUS（BLE アドバタイズ継続）
+    setOperationMode(OperationMode::DEEP_SLEEP); // 次ループで DeepSleep へ
   }
   else
     runContinuousLoop();

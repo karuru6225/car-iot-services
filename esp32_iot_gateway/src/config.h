@@ -25,6 +25,7 @@ enum class OperationMode
   DEEP_SLEEP,
   CONTINUOUS,
   ONE_SHOT_CONTINUOUS, // Shadow ble_mode から指定。1サイクル CONTINUOUS → 自動で DEEP_SLEEP
+  CONTINUOUS_OBD,      // CONTINUOUS + OBD-II(CAN)ポーリング。メニュー選択 or Shadow override_next_mode から指定。自動で DEEP_SLEEP には戻らない
 };
 
 // DeepSleep

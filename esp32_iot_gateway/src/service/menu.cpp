@@ -32,6 +32,7 @@ enum class MenuState
   RESTART,
   BLE_PHONE,
   DONE_CONTINUOUS,
+  DONE_CONTINUOUS_OBD,
 };
 
 // ---- 確認ダイアログ定義 ----
@@ -76,6 +77,7 @@ static const MenuItem ITEMS[] = {
     {"Sensor View",  "/",             MenuState::SENSOR,          {}},
     {"System",       "/",             MenuState::MENU_NAV,        {}},
     {"Continuous",   "/",             MenuState::DONE_CONTINUOUS, {}},
+    {"Continuous OBD","/",            MenuState::DONE_CONTINUOUS_OBD, {}},
     {"Restart",      "/",             MenuState::RESTART,         {}},
     // path="/BLE Settings"
     {"Register",     "/BLE Settings", MenuState::BLE_SCAN,        {}},
@@ -573,12 +575,15 @@ OperationMode enterMenuMode()
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;
+    case MenuState::DONE_CONTINUOUS_OBD: break;
     }
 
-    if (next == MenuState::DONE_CONTINUOUS)
+    if (next == MenuState::DONE_CONTINUOUS || next == MenuState::DONE_CONTINUOUS_OBD)
     {
       oledClear();
-      return OperationMode::CONTINUOUS;
+      return next == MenuState::DONE_CONTINUOUS_OBD
+                 ? OperationMode::CONTINUOUS_OBD
+                 : OperationMode::CONTINUOUS;
     }
 
     if (next != state)
