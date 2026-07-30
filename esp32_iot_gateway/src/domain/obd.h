@@ -44,6 +44,54 @@ struct OBDReading
   time_t   ts;
 };
 
+// BLE Notify 送信用（パディングなしで詰めた固定レイアウト）。
+// OBDReading をそのまま memcpy するとコンパイラのパディング/アライメントに依存してしまうため、
+// BLE経由で送る際はこの構造体に変換してから使う（device/ble_peripheral.cpp 参照）。
+#pragma pack(push, 1)
+struct ObdBlePacket
+{
+  uint16_t rpm;
+  uint8_t  speed_kmh;
+  uint8_t  load_pct;
+  uint8_t  map_kpa;
+  uint8_t  baro_kpa;
+  int8_t   boost_kpa;
+  uint8_t  throttle_pct;
+  float    timing_deg;
+  float    ecu_voltage;
+  float    maf_gs;
+  int16_t  coolant_c;
+  float    fuel_rate_lph;
+
+  float    stft_pct;
+  float    ltft_pct;
+  float    o2_b1s2_v;
+  float    o2_b1s2_trim_pct;
+  uint16_t engine_run_time_sec;
+  uint16_t mil_distance_km;
+  float    o2_s1_ratio;
+  float    o2_s1_voltage;
+  uint8_t  evap_purge_pct;
+  uint8_t  warmups_since_cleared;
+  uint16_t distance_since_cleared_km;
+  float    catalyst_temp_c;
+  float    absolute_load_pct;
+  float    commanded_afr;
+  uint8_t  throttle_b_pct;
+  uint8_t  accel_pedal_d_pct;
+  uint8_t  accel_pedal_e_pct;
+  uint8_t  fuel_type;
+  float    sec_o2_trim_st_pct;
+  float    sec_o2_trim_lt_pct;
+
+  uint8_t  valid; // bool を1バイト固定で送る
+  uint32_t ts;    // time_t は環境依存サイズのため uint32_t に固定
+};
+#pragma pack(pop)
+
+// OBDReading → ObdBlePacket 変換
+void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out);
+
 // デコード共通ルール: data[1]!=0x41 または data[2]!=要求PID または dlc不足の場合は false を返す
 
 bool obdDecodeRpm(const uint8_t *data, uint8_t dlc, OBDReading &out);

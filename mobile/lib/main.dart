@@ -12,6 +12,7 @@ const _kVoltMainChar = 'f3a8b2c2-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
 const _kCurrChar     = 'f3a8b2c3-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, A
 const _kPwrChar      = 'f3a8b2c4-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, W
 const _kVoltSubChar  = 'f3a8b2c5-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
+const _kObdChar      = 'f3a8b2ca-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // OBD-II（チャンク分割、OBD.md参照）
 
 // 設定サービス（ペアリング認証必要）
 const _kCfgService      = 'f3a8b2d1-d4e5-4f6a-7b8c-9d0e1f2a3b4c';
@@ -20,10 +21,10 @@ const _kChgTimeoutChar  = 'f3a8b2d3-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // uint32, �
 const _kChgStartVChar   = 'f3a8b2d4-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
 const _kChgStopVChar    = 'f3a8b2d5-d4e5-4f6a-7b8c-9d0e1f2a3b4c';  // float32, V
 
-void main() => runApp(const _App());
+void main() => runApp(const App());
 
-class _App extends StatelessWidget {
-  const _App();
+class App extends StatelessWidget {
+  const App({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +55,82 @@ class _LogEntry {
   _LogEntry(this.msg, this.type) : time = DateTime.now();
 }
 
+// OBDReading（esp32_iot_gateway/src/domain/obd.h の ObdBlePacket）のDart側パース結果。
+// フィールド順・オフセットは ObdBlePacket と完全一致させること。
+class _ObdReading {
+  final int rpm, speedKmh, loadPct, mapKpa, baroKpa, boostKpa, throttlePct;
+  final double timingDeg, ecuVoltage, mafGs;
+  final int coolantC;
+  final double fuelRateLph;
+  final double stftPct, ltftPct, o2B1s2V, o2B1s2TrimPct;
+  final int engineRunTimeSec, milDistanceKm;
+  final double o2S1Ratio, o2S1Voltage;
+  final int evapPurgePct, warmupsSinceCleared, distanceSinceClearedKm;
+  final double catalystTempC, absoluteLoadPct, commandedAfr;
+  final int throttleBPct, accelPedalDPct, accelPedalEPct, fuelType;
+  final double secO2TrimStPct, secO2TrimLtPct;
+  final bool valid;
+  final int ts;
+
+  _ObdReading._({
+    required this.rpm, required this.speedKmh, required this.loadPct,
+    required this.mapKpa, required this.baroKpa, required this.boostKpa,
+    required this.throttlePct, required this.timingDeg, required this.ecuVoltage,
+    required this.mafGs, required this.coolantC, required this.fuelRateLph,
+    required this.stftPct, required this.ltftPct, required this.o2B1s2V,
+    required this.o2B1s2TrimPct, required this.engineRunTimeSec,
+    required this.milDistanceKm, required this.o2S1Ratio, required this.o2S1Voltage,
+    required this.evapPurgePct, required this.warmupsSinceCleared,
+    required this.distanceSinceClearedKm, required this.catalystTempC,
+    required this.absoluteLoadPct, required this.commandedAfr,
+    required this.throttleBPct, required this.accelPedalDPct,
+    required this.accelPedalEPct, required this.fuelType,
+    required this.secO2TrimStPct, required this.secO2TrimLtPct,
+    required this.valid, required this.ts,
+  });
+
+  factory _ObdReading.fromBytes(Uint8List bytes) {
+    final d = ByteData.sublistView(bytes);
+    const e = Endian.little;
+    return _ObdReading._(
+      rpm: d.getUint16(0, e),
+      speedKmh: d.getUint8(2),
+      loadPct: d.getUint8(3),
+      mapKpa: d.getUint8(4),
+      baroKpa: d.getUint8(5),
+      boostKpa: d.getInt8(6),
+      throttlePct: d.getUint8(7),
+      timingDeg: d.getFloat32(8, e),
+      ecuVoltage: d.getFloat32(12, e),
+      mafGs: d.getFloat32(16, e),
+      coolantC: d.getInt16(20, e),
+      fuelRateLph: d.getFloat32(22, e),
+      stftPct: d.getFloat32(26, e),
+      ltftPct: d.getFloat32(30, e),
+      o2B1s2V: d.getFloat32(34, e),
+      o2B1s2TrimPct: d.getFloat32(38, e),
+      engineRunTimeSec: d.getUint16(42, e),
+      milDistanceKm: d.getUint16(44, e),
+      o2S1Ratio: d.getFloat32(46, e),
+      o2S1Voltage: d.getFloat32(50, e),
+      evapPurgePct: d.getUint8(54),
+      warmupsSinceCleared: d.getUint8(55),
+      distanceSinceClearedKm: d.getUint16(56, e),
+      catalystTempC: d.getFloat32(58, e),
+      absoluteLoadPct: d.getFloat32(62, e),
+      commandedAfr: d.getFloat32(66, e),
+      throttleBPct: d.getUint8(70),
+      accelPedalDPct: d.getUint8(71),
+      accelPedalEPct: d.getUint8(72),
+      fuelType: d.getUint8(73),
+      secO2TrimStPct: d.getFloat32(74, e),
+      secO2TrimLtPct: d.getFloat32(78, e),
+      valid: d.getUint8(82) != 0,
+      ts: d.getUint32(83, e),
+    );
+  }
+}
+
 class BleHome extends StatefulWidget {
   const BleHome({super.key});
 
@@ -67,6 +144,11 @@ class _BleHomeState extends State<BleHome> {
 
   // 計測値
   double? _vMain, _curr, _pwr, _vSub;
+
+  // OBD-II（チャンク分割で受信・再構成）
+  _ObdReading? _obdReading;
+  final Map<int, Uint8List> _obdChunks = {};
+  int? _obdTotal;
 
   // 設定値
   int?    _ahOffset;
@@ -217,6 +299,13 @@ class _BleHomeState extends State<BleHome> {
         }
       }
       _addLog('計測サービス: Notify 開始', _LogType.sys);
+
+      // OBD-II: チャンク分割データのため専用ハンドラで再構成する
+      final obdChar = _findChar(measSvc, _kObdChar);
+      if (obdChar != null) {
+        await obdChar.setNotifyValue(true);
+        _notifySubs.add(obdChar.onValueReceived.listen(_onObdChunk));
+      }
     }
 
     // 設定サービス: Characteristic 取得 + 初期値 Read
@@ -247,6 +336,40 @@ class _BleHomeState extends State<BleHome> {
 
     setState(() => _state = _ConnState.connected);
     _addLog('接続完了', _LogType.sys);
+  }
+
+  // ---------- OBD-II チャンク受信 ----------
+
+  // ESP32側 device/ble_peripheral.cpp の notifyObd() と対になる受信処理。
+  // [seq:1][total:1][payload] 形式のチャンクを seq==0 から集め、total個揃ったら結合してパースする。
+  // 総数が食い違う（取りこぼし等）場合は今回の seq==0 から集め直す（次サイクルで自然に復帰する想定）。
+  void _onObdChunk(List<int> v) {
+    if (v.length < 2) return;
+    final seq = v[0];
+    final total = v[1];
+    final payload = Uint8List.fromList(v.sublist(2));
+
+    if (seq == 0 || _obdTotal != total) {
+      _obdChunks.clear();
+      _obdTotal = total;
+    }
+    _obdChunks[seq] = payload;
+
+    if (_obdChunks.length == total) {
+      final builder = BytesBuilder();
+      for (var i = 0; i < total; i++) {
+        final chunk = _obdChunks[i];
+        if (chunk == null) return; // 途中が欠けていれば揃うまで待つ
+        builder.add(chunk);
+      }
+      _obdChunks.clear();
+      try {
+        final reading = _ObdReading.fromBytes(builder.toBytes());
+        setState(() => _obdReading = reading);
+      } catch (e) {
+        _addLog('OBDデータ解析エラー: $e', _LogType.err);
+      }
+    }
   }
 
   // ---------- 設定 Read ----------
@@ -363,10 +486,13 @@ class _BleHomeState extends State<BleHome> {
     _connSub?.cancel();
     _connSub = null;
     _cAhOffset = _cChgTimeout = _cChgStartV = _cChgStopV = null;
+    _obdChunks.clear();
+    _obdTotal = null;
     setState(() {
       _state = _ConnState.disconnected;
       _deviceName = '';
       _vMain = _curr = _pwr = _vSub = null;
+      _obdReading = null;
       _ahOffset = _chgTimeout = null;
       _chgStartV = _chgStopV = null;
     });
@@ -429,6 +555,8 @@ class _BleHomeState extends State<BleHome> {
           ),
           const SizedBox(height: 12),
           _MeasCard(vMain: _vMain, curr: _curr, pwr: _pwr, vSub: _vSub),
+          const SizedBox(height: 12),
+          _ObdCard(reading: _obdReading),
           const SizedBox(height: 12),
           _ConfigCard(
             enabled: isConn,
@@ -585,6 +713,92 @@ class _MeasCard extends StatelessWidget {
               Text(unit, style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ],
           ],
+        ),
+      ],
+    );
+  }
+}
+
+// ---------- OBD-II カード ----------
+
+class _ObdCard extends StatelessWidget {
+  final _ObdReading? reading;
+  const _ObdCard({this.reading});
+
+  @override
+  Widget build(BuildContext context) {
+    final r = reading;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _cardLabel('OBD-II'),
+            const SizedBox(height: 12),
+            if (r == null)
+              const Text('—', style: TextStyle(color: Colors.grey))
+            else if (!r.valid)
+              const Text('応答なし（IGN OFF または CAN 未接続）',
+                  style: TextStyle(color: Colors.grey))
+            else
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                childAspectRatio: 2.8,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 12,
+                children: [
+                  _obdItem('RPM', '${r.rpm}', 'rpm'),
+                  _obdItem('速度', '${r.speedKmh}', 'km/h'),
+                  _obdItem('負荷', '${r.loadPct}', '%'),
+                  _obdItem('MAP', '${r.mapKpa}', 'kPa'),
+                  _obdItem('大気圧', '${r.baroKpa}', 'kPa'),
+                  _obdItem('ブースト', '${r.boostKpa}', 'kPa'),
+                  _obdItem('スロットル', '${r.throttlePct}', '%'),
+                  _obdItem('点火時期', r.timingDeg.toStringAsFixed(1), '°BTDC'),
+                  _obdItem('ECU電圧', r.ecuVoltage.toStringAsFixed(2), 'V'),
+                  _obdItem('MAF', r.mafGs.toStringAsFixed(2), 'g/s'),
+                  _obdItem('水温', '${r.coolantC}', '°C'),
+                  _obdItem('燃費推算', r.fuelRateLph.toStringAsFixed(2), 'L/h'),
+                  _obdItem('短期燃調', r.stftPct.toStringAsFixed(1), '%'),
+                  _obdItem('長期燃調', r.ltftPct.toStringAsFixed(1), '%'),
+                  _obdItem('O2 B1S2電圧', r.o2B1s2V.toStringAsFixed(2), 'V'),
+                  _obdItem('O2 B1S2燃調', r.o2B1s2TrimPct.toStringAsFixed(1), '%'),
+                  _obdItem('稼働時間', '${r.engineRunTimeSec}', '秒'),
+                  _obdItem('MIL点灯距離', '${r.milDistanceKm}', 'km'),
+                  _obdItem('O2 WBratio', r.o2S1Ratio.toStringAsFixed(3), ''),
+                  _obdItem('O2 WB電圧', r.o2S1Voltage.toStringAsFixed(2), 'V'),
+                  _obdItem('エバパージ', '${r.evapPurgePct}', '%'),
+                  _obdItem('暖機回数', '${r.warmupsSinceCleared}', '回'),
+                  _obdItem('消去後距離', '${r.distanceSinceClearedKm}', 'km'),
+                  _obdItem('触媒温度', r.catalystTempC.toStringAsFixed(0), '°C'),
+                  _obdItem('絶対負荷', r.absoluteLoadPct.toStringAsFixed(1), '%'),
+                  _obdItem('目標AFR', r.commandedAfr.toStringAsFixed(2), ''),
+                  _obdItem('スロットルB', '${r.throttleBPct}', '%'),
+                  _obdItem('アクセルD', '${r.accelPedalDPct}', '%'),
+                  _obdItem('アクセルE', '${r.accelPedalEPct}', '%'),
+                  _obdItem('燃料種別', '${r.fuelType}', ''),
+                  _obdItem('副O2短期', r.secO2TrimStPct.toStringAsFixed(1), '%'),
+                  _obdItem('副O2長期', r.secO2TrimLtPct.toStringAsFixed(1), '%'),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _obdItem(String label, String value, String unit) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        Text(
+          unit.isEmpty ? value : '$value $unit',
+          style: const TextStyle(
+              fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF4F8EF7)),
         ),
       ],
     );

@@ -502,6 +502,52 @@ SSD1306 128×64、TextSize=1（6×8px、最大 21 文字/行）。当初ドラ�
 
 ---
 
+## BLE Notify送信（実装済み・スマホアプリ表示用）
+
+CONTINUOUS_OBDの1秒ティックで取得した`OBDReading`（28項目・約87バイト）を、既存のBLE
+Peripheral（`device/ble_peripheral.h/.cpp`）経由でスマホアプリ（`mobile/lib/main.dart`）に
+表示する。デフォルトBLE ATT MTU（23バイト、ペイロード20バイト）ではデータが収まらないため、
+MTU拡張には頼らず、OBDバルクリクエストと同じ「制約に収まる分だけ詰めて複数回に分けて送る」
+発想でチャンク分割する。
+
+### 送信データレイアウト（`domain/obd.h`の`ObdBlePacket`、`#pragma pack(push,1)`）
+
+`OBDReading`をそのまま`memcpy`するとコンパイラのパディングに依存してしまうため、送信専用の
+パディングなし構造体に変換してから送る（`obdReadingToBlePacket()`、`domain/obd.cpp`）。
+フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`に固定。
+合計87バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/main.dart`の
+`_ObdReading.fromBytes()`のオフセットと完全一致させること）。
+
+### チャンクフォーマット
+
+```text
+[0]     : seq   (uint8, 0-indexed)
+[1]     : total (uint8, 総チャンク数)
+[2..]   : payload（最大18バイト、87バイトを18バイトずつ5チャンクに分割）
+```
+
+`device/ble_peripheral.cpp`の`BlePeripheral::notifyObd()`が`MEAS_OBD_UUID`
+（Notify、認証不要、既存の計測サービスに相乗り）へ`total`回連続で`notify()`する。
+
+### アプリ側の再構成（`mobile/lib/main.dart`）
+
+- `_onObdChunk()`が`seq`ごとに`Map<int, Uint8List>`へ格納。`seq==0`または`total`が前回と
+  食い違ったら前回分を破棄して集め直す（パケット取りこぼし時は次サイクルで自然に復帰する想定、
+  タイムアウト等の複雑なリトライ処理はあえて入れていない）
+- `total`個揃ったら結合して`_ObdReading.fromBytes()`でパースし、`_ObdCard`（既存の
+  `_MeasCard`と同じ`GridView.count`パターン）で28項目を表示
+
+### 注意点
+
+- `obdTick()`内でCANポーリング（最大1.4秒）→OLED表示→BLE Notify呼び出しが全て同期・
+  シングルタスクで実行される（`main.cpp`参照）。BLE Notifyの呼び出し自体はNimBLEの送信
+  キューに積むだけの軽い処理だが、5回連続で呼ぶ分メインループの占有時間はわずかに伸びる
+- 既存の`onConnect`でのコネクションパラメータ（400-800×1.25ms=500-1000ms）はBLEスキャンとの
+  共存のために設定されたもので、OBD用に変更していない。1秒間隔の送信と大きくズレてはいないが、
+  厳密な同期は保証されない
+
+---
+
 ## 実装順序（完了）
 
 各ステップで `pio run -e esp32-s3-devkitc-1-v2-develop` のビルドが通ることを確認してから
@@ -520,6 +566,10 @@ SSD1306 128×64、TextSize=1（6×8px、最大 21 文字/行）。当初ドラ�
 | 9 | `device/can.h/.cpp` | `canSendObdRequestBulk()`追加 | 完了 |
 | 10 | `service/obdpoll.h/.cpp` | `obdPollBulk()`・トリガー管理・`obdPollTick()` | 完了 |
 | 11 | `service/shadow.h/.cpp` + `service/menu.cpp` | `obd_bulk_test`トリガー（Shadow/メニュー） | 完了 |
+| 12 | `domain/obd.h/.cpp` | `ObdBlePacket`構造体・変換関数 | 完了 |
+| 13 | `device/ble_peripheral.h/.cpp` | `MEAS_OBD_UUID`・`notifyObd()`（チャンク分割） | 完了 |
+| 14 | `main.cpp` | `obdTick()`に`notifyObd()`呼び出し追加 | 完了 |
+| 15 | `mobile/lib/main.dart` | チャンク受信・再構成・`_ObdCard`表示 | 完了 |
 
 **未実装（今回のスコープ外）**: AWS への publish（`domain/telemetry`・`service/pubqueue`
 統合）。送信方法は別途検討する。

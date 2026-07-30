@@ -12,6 +12,7 @@
 #define MEAS_AH_UUID         "f3a8b2c7-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define MEAS_TS_UUID         "f3a8b2c8-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define MEAS_LTE_UUID        "f3a8b2c9-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
+#define MEAS_OBD_UUID        "f3a8b2ca-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 
 #define CFG_SERVICE_UUID     "f3a8b2d1-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define CFG_AH_OFFSET_UUID   "f3a8b2d2-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
@@ -120,6 +121,7 @@ void BlePeripheral::setup() {
   _pAhChar       = pMeas->createCharacteristic(MEAS_AH_UUID,    NIMBLE_PROPERTY::NOTIFY);
   _pTsChar       = pMeas->createCharacteristic(MEAS_TS_UUID,    NIMBLE_PROPERTY::NOTIFY);
   _pLteChar      = pMeas->createCharacteristic(MEAS_LTE_UUID,   NIMBLE_PROPERTY::NOTIFY);
+  _pObdChar      = pMeas->createCharacteristic(MEAS_OBD_UUID,   NIMBLE_PROPERTY::NOTIFY);
   pMeas->start();
 
   // 設定サービス（MITM 認証必要）
@@ -188,6 +190,32 @@ void BlePeripheral::notify(float vMain, float i, float p, float vSub,
   uint8_t lteVal = lteConnected ? 1 : 0;
   _pLteChar->setValue(&lteVal, sizeof(lteVal));
   _pLteChar->notify();
+}
+
+// OBDバルクリクエスト（service/obdpoll.cpp）と同じ発想: デフォルトMTU(23バイト、ペイロード20バイト)を
+// 超える87バイトのデータを、[seq:1][total:1][payload:最大18バイト]のチャンクに分けて複数回Notifyする
+void BlePeripheral::notifyObd(const OBDReading &r) {
+  if (!_connected) return;
+
+  ObdBlePacket packet;
+  obdReadingToBlePacket(r, packet);
+
+  const uint8_t *raw = reinterpret_cast<const uint8_t*>(&packet);
+  const size_t totalLen = sizeof(packet);
+  const size_t chunkPayload = 18;
+  const uint8_t total = (uint8_t)((totalLen + chunkPayload - 1) / chunkPayload);
+
+  uint8_t buf[2 + chunkPayload];
+  for (uint8_t seq = 0; seq < total; seq++) {
+    size_t offset = seq * chunkPayload;
+    size_t remain = totalLen - offset;
+    size_t len = (chunkPayload < remain) ? chunkPayload : remain;
+    buf[0] = seq;
+    buf[1] = total;
+    memcpy(buf + 2, raw + offset, len);
+    _pObdChar->setValue(buf, 2 + len);
+    _pObdChar->notify();
+  }
 }
 
 void BlePeripheral::stop() {

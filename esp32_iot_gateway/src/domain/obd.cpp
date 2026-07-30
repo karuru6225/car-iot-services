@@ -235,3 +235,43 @@ bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &ou
   out.sec_o2_trim_lt_pct = ((int)data[3] - 128) * 100.0f / 128.0f;
   return true;
 }
+
+void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
+{
+  out.rpm = r.rpm;
+  out.speed_kmh = r.speed_kmh;
+  out.load_pct = r.load_pct;
+  out.map_kpa = r.map_kpa;
+  out.baro_kpa = r.baro_kpa;
+  out.boost_kpa = r.boost_kpa;
+  out.throttle_pct = r.throttle_pct;
+  out.timing_deg = r.timing_deg;
+  out.ecu_voltage = r.ecu_voltage;
+  out.maf_gs = r.maf_gs;
+  out.coolant_c = r.coolant_c;
+  out.fuel_rate_lph = r.fuel_rate_lph;
+
+  out.stft_pct = r.stft_pct;
+  out.ltft_pct = r.ltft_pct;
+  out.o2_b1s2_v = r.o2_b1s2_v;
+  out.o2_b1s2_trim_pct = r.o2_b1s2_trim_pct;
+  out.engine_run_time_sec = r.engine_run_time_sec;
+  out.mil_distance_km = r.mil_distance_km;
+  out.o2_s1_ratio = r.o2_s1_ratio;
+  out.o2_s1_voltage = r.o2_s1_voltage;
+  out.evap_purge_pct = r.evap_purge_pct;
+  out.warmups_since_cleared = r.warmups_since_cleared;
+  out.distance_since_cleared_km = r.distance_since_cleared_km;
+  out.catalyst_temp_c = r.catalyst_temp_c;
+  out.absolute_load_pct = r.absolute_load_pct;
+  out.commanded_afr = r.commanded_afr;
+  out.throttle_b_pct = r.throttle_b_pct;
+  out.accel_pedal_d_pct = r.accel_pedal_d_pct;
+  out.accel_pedal_e_pct = r.accel_pedal_e_pct;
+  out.fuel_type = r.fuel_type;
+  out.sec_o2_trim_st_pct = r.sec_o2_trim_st_pct;
+  out.sec_o2_trim_lt_pct = r.sec_o2_trim_lt_pct;
+
+  out.valid = r.valid ? 1 : 0;
+  out.ts = (uint32_t)r.ts;
+}
