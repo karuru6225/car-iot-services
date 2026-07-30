@@ -4,11 +4,12 @@
 //
 // loop() の動作モード:
 //   DEEP_SLEEP          : measure() + publish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
-//   CONTINUOUS          : measure() + publish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
+//   CONTINUOUS          : measure() + publish() + OBD-II(CAN)ポーリングを1秒間隔で実行 → 5分待機 →
+//                         繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
 //   ONE_SHOT_CONTINUOUS : Shadow ble_mode から指定。1サイクルだけ CONTINUOUS → 自動で DEEP_SLEEP
-//   CONTINUOUS_OBD      : CONTINUOUS + OBD-II(CAN)を1秒間隔でポーリング（メニュー選択 or Shadow
-//                         override_next_mode から指定。自動で DEEP_SLEEP には戻らない。BTN1 長押しで
-//                         DEEP_SLEEP に切り替え）
+//
+// CAN(GU0)は起動直後に canInit() し、モードに関わらず常時起動しておく。
+// 停止するのは enterDeepSleepMode() での canDeinit() のみ。
 //
 // デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
 
@@ -65,20 +66,16 @@ static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
 static MeasureResult g_lastResult = {};
 static bool g_bleUpgradedToContinuous = false;
 
-// モード遷移を一箇所に集約し、CONTINUOUS_OBD への出入りで CAN の init/deinit を確実に行う
+// モード遷移を一箇所に集約する。CAN は DeepSleep 突入時のみ deinit するため、
+// ここではモードの切り替えのみ行う（init/deinit には関与しない）
 static void setOperationMode(OperationMode newMode)
 {
-  if (g_mode == OperationMode::CONTINUOUS_OBD && newMode != OperationMode::CONTINUOUS_OBD)
-    canDeinit();
-  if (newMode == OperationMode::CONTINUOUS_OBD && g_mode != OperationMode::CONTINUOUS_OBD)
-    canInit();
   g_mode = newMode;
 }
 
 // モードごとの実行関数（setup() で modeManager に登録するため前方宣言）
 static void enterDeepSleepMode();
 static void runContinuousMode();
-static void runContinuousObdMode();
 static void runOneShotContinuousMode();
 
 void setup()
@@ -101,6 +98,7 @@ void setup()
   oledInit();
   adsInit();
   ina228.init();
+  canInit(); // CAN通信は起動直後から常時試みる。停止するのはDeepSleep突入時のみ（enterDeepSleepMode参照）
   oledPrint("FW: " FIRMWARE_VERSION);
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
   {
@@ -122,8 +120,7 @@ void setup()
   {
     oledPrint("Menu Mode");
     setOperationMode(enterMenuMode());
-    if ((g_mode == OperationMode::CONTINUOUS || g_mode == OperationMode::CONTINUOUS_OBD) &&
-        blePeripheral.isConnected())
+    if (g_mode == OperationMode::CONTINUOUS && blePeripheral.isConnected())
       g_bleUpgradedToContinuous = true;
   }
 
@@ -176,11 +173,9 @@ void setup()
   digitalWrite(boardPins().relay1Pin, LOW);
   digitalWrite(boardPins().relay2Pin, LOW);
   digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
-  canDeinit(); // GU0(CANトランシーバ電源)を確実にOFFにしておく。CONTINUOUS_OBD突入時にcanInit()する
 
   modeManager.registerMode(OperationMode::DEEP_SLEEP, enterDeepSleepMode);
   modeManager.registerMode(OperationMode::CONTINUOUS, runContinuousMode);
-  modeManager.registerMode(OperationMode::CONTINUOUS_OBD, runContinuousObdMode);
   modeManager.registerMode(OperationMode::ONE_SHOT_CONTINUOUS, runOneShotContinuousMode);
 }
 
@@ -241,6 +236,7 @@ static void enterDeepSleepMode()
   lte.disconnect();
   lte.radioOff();
 #endif
+  canDeinit(); // CANはDeepSleep突入時のみ停止する（それ以外は常時起動しておく）
   oledClear();
 
   uint32_t sleepSec = secsToNextBoundary();
@@ -262,8 +258,7 @@ static void enterDeepSleepMode()
 static void handleMenuButton()
 {
   setOperationMode(enterMenuMode());
-  if ((g_mode == OperationMode::CONTINUOUS || g_mode == OperationMode::CONTINUOUS_OBD) &&
-      blePeripheral.isConnected())
+  if (g_mode == OperationMode::CONTINUOUS && blePeripheral.isConnected())
     g_bleUpgradedToContinuous = true;
 }
 
@@ -347,17 +342,15 @@ static void continuousLoopCore(const ContinuousLoopHooks &hooks)
   }
 }
 
-// CONTINUOUS_OBD の1秒ティック追加処理。AWSへの送信は未実装、OLED表示とBLE Notifyにのみ使う
-// obdPollTick() がバルクテスト中かどうかを内部で判定し、obdPoll()/obdPollBulk() を切り替える
+// CONTINUOUS の1秒ティック追加処理。OLED は電圧/電流画面を優先するため OBD 結果は出さず、
+// ログ出力と BLE Notify にのみ使う。AWSへの送信は未実装
 static void obdTick()
 {
-  OBDReading r = obdPollTick();
-  oledShowObdData(r);
+  OBDReading r = obdPoll();
   blePeripheral.notifyObd(r);
 }
 
-static void runContinuousMode() { continuousLoopCore({nullptr, true, OperationMode::CONTINUOUS}); }
-static void runContinuousObdMode() { continuousLoopCore({obdTick, false, OperationMode::CONTINUOUS_OBD}); }
+static void runContinuousMode() { continuousLoopCore({obdTick, true, OperationMode::CONTINUOUS}); }
 
 static void runOneShotContinuousMode()
 {

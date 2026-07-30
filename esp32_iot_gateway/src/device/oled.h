@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 #include "../domain/measurement.h"
-#include "../domain/obd.h"
 
 void oledInit();
 void oledPrint(const char *text);
@@ -15,7 +14,6 @@ void oledShowMenu(const char *title, const char *items[], int count, int cursor)
 void oledShowMessage(const char *line1, const char *line2 = nullptr);
 void oledShowConfirm(const char *message, const char *item, int yesNoCursor);
 void oledShowSensorData(const SensorReading &reading);
-void oledShowObdData(const OBDReading &reading); // CONTINUOUS_OBD 用
 void oledUpdateCountdown(int remainSec); // 計測値画面の下部だけ更新（継続モード用）
 void oledShowCharging(float vMain, float vSub, int remainSec);
 void oledShowQRCode(const char *text);

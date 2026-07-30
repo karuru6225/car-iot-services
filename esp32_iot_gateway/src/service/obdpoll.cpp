@@ -43,9 +43,8 @@ const PidDecoder kPids[] = {
     {0x56, obdDecodeSecO2TrimLongTerm},
 };
 const int kPidCount = sizeof(kPids) / sizeof(kPids[0]);
-const int kBulkGroupSize = 6; // ISO 15765-4 Single Frame: 8 - PCI(1) - Mode(1) = 6バイト
 
-// boost/燃費の派生値計算とログ出力。obdPoll()/obdPollBulk()共通
+// boost/燃費の派生値計算とログ出力
 void finalizeAndLog(OBDReading &r)
 {
   if (r.valid)
@@ -77,10 +76,9 @@ void finalizeAndLog(OBDReading &r)
   else
   {
     logger.println("[OBD] 応答なし（IGN OFF または CAN 未接続）");
+    canLogStatus("全PID応答なし");
   }
 }
-
-int s_bulkTestCyclesRemaining = 0;
 } // namespace
 
 OBDReading obdPoll()
@@ -121,74 +119,4 @@ OBDReading obdPoll()
                 okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount);
   finalizeAndLog(r);
   return r;
-}
-
-OBDReading obdPollBulk()
-{
-  OBDReading r = {};
-  r.ts = time(nullptr);
-
-  uint8_t data[8];
-  uint8_t dlc;
-  int groupIndex = 0, sendFailGroups = 0, respTotal = 0;
-
-  for (int base = 0; base < kPidCount; base += kBulkGroupSize)
-  {
-    int groupCount = (kPidCount - base < kBulkGroupSize) ? (kPidCount - base) : kBulkGroupSize;
-    groupIndex++;
-
-    uint8_t pids[kBulkGroupSize];
-    for (int i = 0; i < groupCount; i++)
-      pids[i] = kPids[base + i].pid;
-
-    if (!canSendObdRequestBulk(pids, (uint8_t)groupCount))
-    {
-      sendFailGroups++;
-      logger.printf("[OBD] バルクグループ%d: 送信失敗（PID%d個）\n", groupIndex, groupCount);
-      continue; // 送信失敗時はこのグループを諦めて次へ
-    }
-
-    // グループ内PID数だけ応答を試みる。ECUが複数フレームで個別に返す想定（未検証）
-    int respCount = 0;
-    for (int i = 0; i < groupCount; i++)
-    {
-      if (!canReceiveObdResponse(data, &dlc, 50))
-        break; // タイムアウトしたらこのグループは打ち切り、次のグループへ
-      respCount++;
-
-      uint8_t respPid = data[2];
-      for (int j = 0; j < groupCount; j++)
-      {
-        if (kPids[base + j].pid == respPid)
-        {
-          if (kPids[base + j].decode(data, dlc, r))
-            r.valid = true;
-          break;
-        }
-      }
-    }
-    respTotal += respCount;
-    logger.printf("[OBD] バルクグループ%d: PID%d個送信 → 応答%d個\n", groupIndex, groupCount, respCount);
-  }
-
-  logger.printf("[OBD] バルクポーリング完了: %dグループ中送信失敗%d、応答合計%d/%d\n",
-                groupIndex, sendFailGroups, respTotal, kPidCount);
-  finalizeAndLog(r);
-  return r;
-}
-
-void requestObdBulkTest(int cycles)
-{
-  s_bulkTestCyclesRemaining = cycles;
-  logger.printf("[OBD] バルクテスト開始（%d サイクル）\n", cycles);
-}
-
-OBDReading obdPollTick()
-{
-  if (s_bulkTestCyclesRemaining > 0)
-  {
-    s_bulkTestCyclesRemaining--;
-    return obdPollBulk();
-  }
-  return obdPoll();
 }

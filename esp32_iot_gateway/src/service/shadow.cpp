@@ -1,7 +1,6 @@
 #include "shadow.h"
 #include "mqtt.h"
 #include "logger.h"
-#include "obdpoll.h"
 #include "../config.h"
 #include "../domain/telemetry.h"
 #include <ArduinoJson.h>
@@ -20,7 +19,6 @@ struct OverrideModeEntry
 // override_next_mode で受け付ける文字列 → モードの対応表
 const OverrideModeEntry kOverrideModes[] = {
     {"one_shot_continuous", OperationMode::ONE_SHOT_CONTINUOUS},
-    {"continuous_obd", OperationMode::CONTINUOUS_OBD},
 };
 } // namespace
 
@@ -126,13 +124,6 @@ bool shadowPollDelta(uint32_t timeoutMs)
   {
     setCharging(state["charging"].as<bool>());
     logger.printf("[SHADOW] charging → %s\n", isCharging() ? "on" : "off");
-    changed = true;
-  }
-
-  if (state["obd_bulk_test"].is<bool>() && state["obd_bulk_test"].as<bool>())
-  {
-    requestObdBulkTest();
-    logger.println("[SHADOW] obd_bulk_test → トリガー");
     changed = true;
   }
 

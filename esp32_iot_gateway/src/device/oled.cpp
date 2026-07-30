@@ -167,35 +167,6 @@ void oledShowSensorData(const SensorReading &r)
   display.display();
 }
 
-void oledShowObdData(const OBDReading &r)
-{
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-
-  if (!r.valid)
-  {
-    display.println("OBD: no response");
-    display.println("(IGN OFF or no CAN)");
-  }
-  else
-  {
-    display.printf("RPM:%-5u %3ukm/h", r.rpm, r.speed_kmh);
-    display.setCursor(0, 12);
-    display.printf("TPS:%3u%% Load:%3u%%", r.throttle_pct, r.load_pct);
-    display.setCursor(0, 22);
-    display.printf("MAP:%3ukPa CLT:%3dC", r.map_kpa, r.coolant_c);
-    display.setCursor(0, 32);
-    display.printf("IGN:%+.1f ECU:%.2fV", r.timing_deg, r.ecu_voltage);
-    display.setCursor(0, 42);
-    display.printf("MAF:%.2fg/s BST:%dkPa", r.maf_gs, r.boost_kpa);
-  }
-  display.setCursor(0, 56);
-  display.print("BTN1 long: sleep");
-  display.display();
-}
-
 void oledShowCharging(float vMain, float vSub, int remainSec)
 {
   display.clearDisplay();
