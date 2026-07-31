@@ -376,11 +376,26 @@ void loop()
   oledShowSensorData(g_lastResult.reading);
 #endif
 
-  // BLE 接続 → CONTINUOUS 昇格
+  // BLE 接続 → CONTINUOUS 昇格。未接続なら DeepSleep 突入前に BLE_WAKE_WINDOW_SEC 秒だけ
+  // 接続を待つ（起床直後の setup() 中もアドバタイズ済みのため、実際の待受はそれより長い）
   if (blePeripheral.isConnected() && g_mode == OperationMode::DEEP_SLEEP)
   {
     setOperationMode(OperationMode::CONTINUOUS);
     g_bleUpgradedToContinuous = true;
+  }
+  else if (g_mode == OperationMode::DEEP_SLEEP)
+  {
+    unsigned long waitStart = millis();
+    while (millis() - waitStart < BLE_WAKE_WINDOW_SEC * 1000UL)
+    {
+      if (blePeripheral.isConnected())
+      {
+        setOperationMode(OperationMode::CONTINUOUS);
+        g_bleUpgradedToContinuous = true;
+        break;
+      }
+      delay(100);
+    }
   }
 
   modeManager.run(g_mode);
