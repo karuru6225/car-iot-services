@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
 import 'card_widgets.dart';
 
 class MeasCard extends StatelessWidget {
@@ -50,7 +51,7 @@ class MeasCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w600,
-                color: value != null ? const Color(0xFF4F8EF7) : Colors.grey,
+                color: value != null ? AppColors.primary : Colors.grey,
               ),
             ),
             if (value != null) ...[

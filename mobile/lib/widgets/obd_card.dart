@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/obd_reading.dart';
+import '../theme/app_colors.dart';
 import 'card_widgets.dart';
 
 class ObdCard extends StatelessWidget {
@@ -80,7 +81,7 @@ class ObdCard extends StatelessWidget {
         Text(
           unit.isEmpty ? value : '$value $unit',
           style: const TextStyle(
-              fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF4F8EF7)),
+              fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary),
         ),
       ],
     );

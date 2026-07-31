@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/ble_home_screen.dart';
+import 'theme/app_colors.dart';
 
 void main() => runApp(const App());
 
@@ -14,11 +15,11 @@ class App extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF4F8EF7),
-          surface: Color(0xFF16213E),
+          primary: AppColors.primary,
+          surface: AppColors.surface,
         ),
-        scaffoldBackgroundColor: const Color(0xFF1A1A2E),
-        cardColor: const Color(0xFF16213E),
+        scaffoldBackgroundColor: AppColors.background,
+        cardColor: AppColors.surface,
         useMaterial3: true,
       ),
       home: const BleHome(),

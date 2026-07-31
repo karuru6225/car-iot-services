@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
+
 Widget cardLabel(String text) => Text(
       text,
       style: const TextStyle(
@@ -15,7 +17,7 @@ Widget actionButton(String label, VoidCallback onTap,
     onPressed: enabled ? onTap : null,
     style: ElevatedButton.styleFrom(
       backgroundColor: color,
-      disabledBackgroundColor: const Color(0xFF2A4060),
+      disabledBackgroundColor: AppColors.disabled,
       minimumSize: const Size(72, 44),
     ),
     child: Text(label, style: const TextStyle(color: Colors.white)),

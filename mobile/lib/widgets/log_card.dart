@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/log_entry.dart';
+import '../theme/app_colors.dart';
 import 'card_widgets.dart';
 
 class LogCard extends StatelessWidget {
@@ -21,7 +22,7 @@ class LogCard extends StatelessWidget {
             Container(
               height: 200,
               decoration: BoxDecoration(
-                color: const Color(0xFF0F1A2E),
+                color: AppColors.logBackground,
                 borderRadius: BorderRadius.circular(6),
               ),
               child: ListView.builder(
@@ -35,10 +36,10 @@ class LogCard extends StatelessWidget {
                       '${e.time.minute.toString().padLeft(2, '0')}:'
                       '${e.time.second.toString().padLeft(2, '0')}';
                   final msgColor = switch (e.type) {
-                    LogType.rx  => const Color(0xFF2ECC71),
-                    LogType.tx  => const Color(0xFFF39C12),
-                    LogType.err => const Color(0xFFE74C3C),
-                    LogType.sys => const Color(0xFF888888),
+                    LogType.rx  => AppColors.success,
+                    LogType.tx  => AppColors.warning,
+                    LogType.err => AppColors.danger,
+                    LogType.sys => AppColors.muted,
                   };
                   return RichText(
                     text: TextSpan(
@@ -46,7 +47,7 @@ class LogCard extends StatelessWidget {
                           fontFamily: 'monospace', fontSize: 12, height: 1.6),
                       children: [
                         TextSpan(text: '$ts  ',
-                            style: const TextStyle(color: Color(0xFF4A6A8A))),
+                            style: const TextStyle(color: AppColors.timestamp)),
                         TextSpan(text: e.msg,
                             style: TextStyle(color: msgColor)),
                       ],

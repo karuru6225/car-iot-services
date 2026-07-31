@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
+
 class DebugToggleCard extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
@@ -18,7 +20,7 @@ class DebugToggleCard extends StatelessWidget {
             Switch(
               value: value,
               onChanged: onChanged,
-              activeThumbColor: const Color(0xFF4F8EF7),
+              activeThumbColor: AppColors.primary,
             ),
           ],
         ),

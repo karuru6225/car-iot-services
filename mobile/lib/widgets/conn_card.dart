@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/conn_state.dart';
+import '../theme/app_colors.dart';
 import 'card_widgets.dart';
 
 class ConnCard extends StatelessWidget {
@@ -20,10 +21,10 @@ class ConnCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (dotColor, label) = switch (state) {
-      ConnState.disconnected => (const Color(0xFFE74C3C), '未接続'),
-      ConnState.scanning     => (const Color(0xFFF39C12), 'スキャン中...'),
-      ConnState.connecting   => (const Color(0xFFF39C12), '接続中...'),
-      ConnState.connected    => (const Color(0xFF2ECC71), '接続済み'),
+      ConnState.disconnected => const (AppColors.danger, '未接続'),
+      ConnState.scanning     => const (AppColors.warning, 'スキャン中...'),
+      ConnState.connecting   => const (AppColors.warning, '接続中...'),
+      ConnState.connected    => const (AppColors.success, '接続済み'),
     };
     final isBusy = state == ConnState.scanning || state == ConnState.connecting;
     final isConn = state == ConnState.connected;
@@ -56,11 +57,11 @@ class ConnCard extends StatelessWidget {
               children: [
                 actionButton('接続', onConnect,
                     enabled: !isConn && !isBusy,
-                    color: const Color(0xFF4F8EF7)),
+                    color: AppColors.primary),
                 const SizedBox(width: 10),
                 actionButton(isBusy ? '中止' : '切断', onDisconnect,
                     enabled: isConn || isBusy,
-                    color: const Color(0xFFC0392B)),
+                    color: AppColors.dangerDark),
               ],
             ),
           ],

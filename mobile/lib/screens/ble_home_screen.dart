@@ -7,9 +7,11 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../ble/ble_constants.dart';
+import '../ble/obd_chunk_assembler.dart';
 import '../models/conn_state.dart';
 import '../models/log_entry.dart';
 import '../models/obd_reading.dart';
+import '../theme/app_colors.dart';
 import '../widgets/conn_card.dart';
 import '../widgets/debug_toggle_card.dart';
 import '../widgets/log_card.dart';
@@ -32,8 +34,7 @@ class _BleHomeState extends State<BleHome> {
 
   // OBD-II（チャンク分割で受信・再構成）
   ObdReading? _obdReading;
-  final Map<int, Uint8List> _obdChunks = {};
-  int? _obdTotal;
+  final _obdAssembler = ObdChunkAssembler();
 
   // デバッグモード（接続画面のトグルでON時のみログカードを表示）
   bool _debugMode = false;
@@ -111,8 +112,10 @@ class _BleHomeState extends State<BleHome> {
     if (already.isNotEmpty) {
       try {
         _device = already.first;
-        _deviceName = _device!.platformName;
-        setState(() { _state = ConnState.connecting; _deviceName = _deviceName; });
+        setState(() {
+          _state = ConnState.connecting;
+          _deviceName = _device!.platformName;
+        });
         _addLog('OS 接続済みデバイスを使用: $_deviceName', LogType.sys);
         await _discoverAndSubscribe();
         return true;
@@ -231,35 +234,12 @@ class _BleHomeState extends State<BleHome> {
 
   // ---------- OBD-II チャンク受信 ----------
 
-  // ESP32側 device/ble_peripheral.cpp の notifyObd() と対になる受信処理。
-  // [seq:1][total:1][payload] 形式のチャンクを seq==0 から集め、total個揃ったら結合してパースする。
-  // 総数が食い違う（取りこぼし等）場合は今回の seq==0 から集め直す（次サイクルで自然に復帰する想定）。
   void _onObdChunk(List<int> v) {
-    if (v.length < 2) return;
-    final seq = v[0];
-    final total = v[1];
-    final payload = Uint8List.fromList(v.sublist(2));
-
-    if (seq == 0 || _obdTotal != total) {
-      _obdChunks.clear();
-      _obdTotal = total;
-    }
-    _obdChunks[seq] = payload;
-
-    if (_obdChunks.length == total) {
-      final builder = BytesBuilder();
-      for (var i = 0; i < total; i++) {
-        final chunk = _obdChunks[i];
-        if (chunk == null) return; // 途中が欠けていれば揃うまで待つ
-        builder.add(chunk);
-      }
-      _obdChunks.clear();
-      try {
-        final reading = ObdReading.fromBytes(builder.toBytes());
-        setState(() => _obdReading = reading);
-      } catch (e) {
-        _addLog('OBDデータ解析エラー: $e', LogType.err);
-      }
+    try {
+      final reading = _obdAssembler.add(v);
+      if (reading != null) setState(() => _obdReading = reading);
+    } catch (e) {
+      _addLog('OBDデータ解析エラー: $e', LogType.err);
     }
   }
 
@@ -273,18 +253,21 @@ class _BleHomeState extends State<BleHome> {
   }
 
   void _cleanup() {
-    for (final sub in _notifySubs) { sub.cancel(); }
-    _notifySubs.clear();
-    _connSub?.cancel();
-    _connSub = null;
-    _obdChunks.clear();
-    _obdTotal = null;
+    _cancelSubscriptions();
+    _obdAssembler.reset();
     setState(() {
       _state = ConnState.disconnected;
       _deviceName = '';
       _vMain = _curr = _pwr = _vSub = null;
       _obdReading = null;
     });
+  }
+
+  void _cancelSubscriptions() {
+    for (final sub in _notifySubs) { sub.cancel(); }
+    _notifySubs.clear();
+    _connSub?.cancel();
+    _connSub = null;
   }
 
   // ---------- UUID 検索 ----------
@@ -312,8 +295,7 @@ class _BleHomeState extends State<BleHome> {
 
   @override
   void dispose() {
-    for (final sub in _notifySubs) { sub.cancel(); }
-    _connSub?.cancel();
+    _cancelSubscriptions();
     _logScroll.dispose();
     super.dispose();
   }
@@ -326,8 +308,8 @@ class _BleHomeState extends State<BleHome> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('BLE ダッシュボード'),
-        backgroundColor: const Color(0xFF16213E),
-        foregroundColor: const Color(0xFF4F8EF7),
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.primary,
       ),
       body: IndexedStack(
         index: _tabIndex,
@@ -372,8 +354,8 @@ class _BleHomeState extends State<BleHome> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _tabIndex,
         onTap: (i) => setState(() => _tabIndex = i),
-        backgroundColor: const Color(0xFF16213E),
-        selectedItemColor: const Color(0xFF4F8EF7),
+        backgroundColor: AppColors.surface,
+        selectedItemColor: AppColors.primary,
         unselectedItemColor: Colors.grey,
         type: BottomNavigationBarType.fixed,
         items: const [
