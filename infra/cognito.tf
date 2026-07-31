@@ -44,8 +44,8 @@ resource "aws_cognito_user_pool_client" "web" {
   supported_identity_providers = ["COGNITO"]
 
   token_validity_units {
-    access_token  = "hours"
-    id_token      = "hours"
+    access_token = "hours"
+    id_token     = "hours"
   }
   access_token_validity = 24
   id_token_validity     = 24

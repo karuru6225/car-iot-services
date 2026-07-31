@@ -106,3 +106,33 @@ resource "aws_lambda_permission" "iot_ingest_bin" {
   source_arn    = aws_iot_topic_rule.ingest_bin.arn
 }
 
+# ─── Topic Rule: shadow/update/accepted → Lambda shadow_guard ────────────────
+# UART化けで reported に未知キーが紛れ込んだ場合に検知して null で除去する
+# （data_bin と違い予約トピックのためマージ前には横取りできず、事後修正のみ可能）
+
+resource "aws_iot_topic_rule" "shadow_guard" {
+  name        = replace("${var.project}_shadow_guard", "-", "_")
+  enabled     = true
+  sql         = "SELECT topic(3) AS device_id, state.reported AS reported FROM '$aws/things/+/shadow/update/accepted' WHERE isUndefined(state.reported) = false"
+  sql_version = "2016-03-23"
+
+  lambda {
+    function_arn = aws_lambda_function.shadow_guard.arn
+  }
+
+  error_action {
+    cloudwatch_logs {
+      log_group_name = "/aws/iot/${var.project}/rule-errors"
+      role_arn       = aws_iam_role.iot_error_logs.arn
+    }
+  }
+}
+
+resource "aws_lambda_permission" "iot_shadow_guard" {
+  statement_id  = "AllowIoTInvokeShadowGuard"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.shadow_guard.function_name
+  principal     = "iot.amazonaws.com"
+  source_arn    = aws_iot_topic_rule.shadow_guard.arn
+}
+

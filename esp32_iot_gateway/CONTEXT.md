@@ -676,7 +676,16 @@ ESP32↔SIM7080G間のUARTにパリティ・CRCが無く、稀な1ビット化�
 - `ingest` Lambda (`infra/lambda_src/ingest/index.py`): magicバイトの有無で新旧フォーマットを自動判別（デプロイ順序に依存しない）、CRC不一致時は専用バケット `corrupted`（30日で自動削除、`infra/s3.tf`）に生バイナリを退避し `raw/` のAthenaスキーマは無傷に保つ
 - S3保存JSONとログにフォーマットバージョン（`"ver"`: 0=旧形式, 1=新形式）を出力し、破損率の実測・監視を可能にした
 
-Shadow（JSON テキスト）側は同種の対策は未実装。破損が疑われる場合は `aws iot-data delete-thing-shadow` で一度リセットすれば次サイクルで自動再構築される（`reported` はマージ方式で蓄積し続けるため）。
+Shadow（JSON テキスト）側は同種の対策は未実装だったが、下記の `shadow_guard` で別方式の対策を実装した。破損が疑われる場合は `aws iot-data delete-thing-shadow` で一度リセットすれば次サイクルで自動再構築される（`reported` はマージ方式で蓄積し続けるため）。
+
+### ~~TODO: Shadow reported の不正キー検知・自動修正~~ **実装完了**
+
+`$aws/things/{id}/shadow/update` は AWS IoT の予約トピックで Device Shadow サービスが直接マージするため、data_bin のように Topic Rule でマージ前に横取りして弾くことができない。そのため事後検知＋即時修正で対応する:
+
+- Topic Rule `shadow_guard`（`infra/iot.tf`）: `$aws/things/+/shadow/update/accepted` を購読。このトピックの `state.reported` にはその回の更新で変化したキーのみが載るため、全体を再取得せずに差分だけを検証できる
+- Lambda `shadow_guard`（`infra/lambda_src/shadow_guard/index.py`）: `telemetry.cpp::buildConfigPayload` が送るキーのホワイトリスト（キー名 + 型）と照合。未知キー・型不一致・`override_next_mode` の不正値を検知したら該当キーを `null` で上書きする `update-thing-shadow` を発行し reported から除去する（null は検証対象外にしているため、この修正自体が再度検知されて無限ループする心配はない）
+- **既知の限界**: 許可キーのまま値だけ壊れるケース（例: `chg_start_v` の型は正しいが桁が飛ぶ）は検出できない。あくまでキー名の化けによる未知キー蓄積の防止が目的
+- **保守上の注意**: `telemetry.cpp::buildConfigPayload` の reported フィールドを追加・変更したら `shadow_guard/index.py` の `SCHEMA` も合わせて更新すること
 
 ### TODO: corrupted バケットの破損データをCRC32ブルートフォースで訂正（未着手）
 

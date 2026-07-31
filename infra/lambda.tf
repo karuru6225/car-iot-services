@@ -1,11 +1,12 @@
 locals {
-  ingest_src_dir = "${path.module}/lambda_src/ingest"
-  query_src_dir  = "${path.module}/lambda_src/query"
-  delete_src_dir = "${path.module}/lambda_src/delete"
-  labels_src_dir = "${path.module}/lambda_src/labels"
-  status_src_dir = "${path.module}/lambda_src/status"
-  admin_src_dir  = "${path.module}/lambda_src/admin"
-  build_dir      = "${path.module}/.build"
+  ingest_src_dir       = "${path.module}/lambda_src/ingest"
+  query_src_dir        = "${path.module}/lambda_src/query"
+  delete_src_dir       = "${path.module}/lambda_src/delete"
+  labels_src_dir       = "${path.module}/lambda_src/labels"
+  status_src_dir       = "${path.module}/lambda_src/status"
+  admin_src_dir        = "${path.module}/lambda_src/admin"
+  shadow_guard_src_dir = "${path.module}/lambda_src/shadow_guard"
+  build_dir            = "${path.module}/.build"
 }
 
 data "archive_file" "ingest" {
@@ -42,6 +43,12 @@ data "archive_file" "admin" {
   type        = "zip"
   source_dir  = local.admin_src_dir
   output_path = "${local.build_dir}/admin.zip"
+}
+
+data "archive_file" "shadow_guard" {
+  type        = "zip"
+  source_dir  = local.shadow_guard_src_dir
+  output_path = "${local.build_dir}/shadow_guard.zip"
 }
 
 # ─── ingest Lambda（IoT Core → S3 書き込み） ─────────────────────────────────
@@ -135,6 +142,24 @@ resource "aws_lambda_function" "status" {
   environment {
     variables = {
       THING_NAME   = var.device_id
+      IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
+    }
+  }
+}
+
+# ─── shadow_guard Lambda（Shadow update/accepted → 不正キー検知・修正） ─────
+
+resource "aws_lambda_function" "shadow_guard" {
+  function_name    = "${var.project}-shadow-guard"
+  filename         = data.archive_file.shadow_guard.output_path
+  source_code_hash = data.archive_file.shadow_guard.output_base64sha256
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  role             = aws_iam_role.lambda_shadow_guard.arn
+  timeout          = 10
+
+  environment {
+    variables = {
       IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
     }
   }

@@ -166,8 +166,8 @@ resource "aws_iam_role_policy" "lambda_labels" {
         Resource = "arn:aws:logs:*:*:*"
       },
       {
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject"]
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
         Resource = "${aws_s3_bucket.main.arn}/labels/*"
       },
     ]
@@ -187,13 +187,39 @@ resource "aws_iam_role_policy" "lambda_status" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = "arn:aws:logs:*:*:*"
       },
       {
         Effect   = "Allow"
         Action   = "iot:GetThingShadow"
+        Resource = "arn:aws:iot:${var.aws_region}:*:thing/*"
+      },
+    ]
+  })
+}
+
+# ─── Lambda shadow_guard 実行ロール（Shadow 不正キー検知・修正） ─────────────
+
+resource "aws_iam_role" "lambda_shadow_guard" {
+  name               = "${var.project}-lambda-shadow-guard"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "lambda_shadow_guard" {
+  role = aws_iam_role.lambda_shadow_guard.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "iot:UpdateThingShadow"
         Resource = "arn:aws:iot:${var.aws_region}:*:thing/*"
       },
     ]
@@ -280,13 +306,13 @@ resource "aws_iam_role_policy" "lambda_admin" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Resource = "arn:aws:logs:*:*:*"
       },
       {
-        Effect = "Allow"
-        Action = ["iot:ListThings", "iot:ListThingGroups", "iot:ListThingGroupsForThing"]
+        Effect   = "Allow"
+        Action   = ["iot:ListThings", "iot:ListThingGroups", "iot:ListThingGroupsForThing"]
         Resource = "*"
       },
       {
