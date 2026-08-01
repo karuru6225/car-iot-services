@@ -14,48 +14,56 @@ data "archive_file" "ingest" {
   type        = "zip"
   source_dir  = local.ingest_src_dir
   output_path = "${local.build_dir}/ingest.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "query" {
   type        = "zip"
   source_dir  = local.query_src_dir
   output_path = "${local.build_dir}/query.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "delete" {
   type        = "zip"
   source_dir  = local.delete_src_dir
   output_path = "${local.build_dir}/delete.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "labels" {
   type        = "zip"
   source_dir  = local.labels_src_dir
   output_path = "${local.build_dir}/labels.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "status" {
   type        = "zip"
   source_dir  = local.status_src_dir
   output_path = "${local.build_dir}/status.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "admin" {
   type        = "zip"
   source_dir  = local.admin_src_dir
   output_path = "${local.build_dir}/admin.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "shadow_guard" {
   type        = "zip"
   source_dir  = local.shadow_guard_src_dir
   output_path = "${local.build_dir}/shadow_guard.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "compact" {
   type        = "zip"
   source_dir  = local.compact_src_dir
   output_path = "${local.build_dir}/compact.zip"
+  excludes    = ["tests"]
 }
 
 # ─── ingest Lambda（IoT Core → S3 書き込み） ─────────────────────────────────
