@@ -26,10 +26,6 @@ delete_objectする（corruptedバケットと同じ「安全側に倒す」設�
 また`merged.json`に追記されうる＝行の重複が発生しうるが、データ消失よりマシという
 判断で許容する）。
 
-並列化: パーティション内のGet/Copy/Delete処理はThreadPoolExecutorで並列化する
-（既存Lambda群に前例のない設計だが、バックフィル時に非現実的な実行時間になるのを
-避けるため。boto3クライアントはスレッドセーフ）。
-
 event引数（初回バックフィル等での明示指定用。省略時は環境変数のデフォルト値を使う）:
   {"since": "2026-03-07T00:00:00Z", "until": "2026-03-14T00:00:00Z", "max_partitions": 200}
 """
@@ -37,18 +33,13 @@ event引数（初回バックフィル等での明示指定用。省略時は環
 import json
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 import boto3
-from botocore.config import Config
 
-_MAX_WORKERS = 12
 _COPY_RETRY = 3
 
-# ThreadPoolExecutorの並列数(_MAX_WORKERS)がboto3のデフォルト接続プール(10)を
-# 上回ると "Connection pool is full" が頻発し、接続の作り直しで遅くなるため広げておく
-s3 = boto3.client("s3", config=Config(max_pool_connections=_MAX_WORKERS * 2))
+s3 = boto3.client("s3")
 
 S3_BUCKET = os.environ["S3_BUCKET"]
 ARCHIVE_BUCKET = os.environ["ARCHIVE_BUCKET"]
@@ -143,9 +134,9 @@ def _compact_partition(dt: datetime) -> dict:
     if not has_merged and len(stragglers) < 2:
         return {"partition": prefix, "action": "skip", "archived": 0}
 
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
-        new_lines_per_file = list(pool.map(_get_lines, stragglers))
-    new_lines = [line for lines in new_lines_per_file for line in lines]
+    new_lines = []
+    for key in stragglers:
+        new_lines.extend(_get_lines(key))
 
     existing_lines = _get_lines(merged_key) if has_merged else []
     all_lines = existing_lines + new_lines
@@ -154,9 +145,7 @@ def _compact_partition(dt: datetime) -> dict:
         # マージすべき中身はないが、raw/に残しておく理由もないのでarchiveだけは行う
         # （放置すると毎回再検出されては読めずスキップされ続け、永久にraw/に残ってしまう）。
         print(f"[SKIP] no valid records to merge in {prefix}, archiving {len(stragglers)} unusable file(s)")
-        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
-            archived_flags = list(pool.map(_archive_and_delete, stragglers))
-        archived = sum(1 for ok in archived_flags if ok)
+        archived = sum(1 for key in stragglers if _archive_and_delete(key))
         return {"partition": prefix, "action": "skip", "archived": archived}
 
     s3.put_object(
@@ -167,9 +156,7 @@ def _compact_partition(dt: datetime) -> dict:
     )
     print(f"[OK] merged {len(stragglers)} files ({len(new_lines)} records) -> s3://{S3_BUCKET}/{merged_key}")
 
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
-        archived_flags = list(pool.map(_archive_and_delete, stragglers))
-    archived = sum(1 for ok in archived_flags if ok)
+    archived = sum(1 for key in stragglers if _archive_and_delete(key))
     print(f"[OK] archived {archived}/{len(stragglers)} original files for {prefix}")
     return {"partition": prefix, "action": "merged", "archived": archived}
 
