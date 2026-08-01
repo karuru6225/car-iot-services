@@ -699,6 +699,37 @@ Shadow（JSON テキスト）側は同種の対策は未実装だったが、下
 - 既に `corrupted` バケットに溜まっている過去データにも遡って適用可能
 - Hamming/Reed-Solomon等の本格的なECCをファームに実装する案もあったが、テレメトリは5分おき送信で1件欠損の実害が小さいこと、実装コスト・新規依存追加のリスクを考えると見合わないため不採用
 
+### TODO: S3 raw データの定期 Compaction（未着手）
+
+`raw/year=.../month=.../day=.../hour=.../{device_id}-{uuid8}.json`（`infra/s3.tf` / `infra/lambda_src/ingest/index.py`）は ingest Lambda がメッセージ1件（デバイスの publish 1回）ごとに1オブジェクトとして書き込む設計。稼働台数・稼働時間が伸びるほど数十〜百バイト級の小さいJSONファイルが hour パーティション配下に大量に溜まっていく。
+
+**目的**: Grafana（`claude-opentelemetry/grafana/provisioning/dashboards/iot-monitor.json`）が Athena経由で `sensor_data` テーブルを常時クエリしており、そのコスト削減が主目的。ダッシュボードのデフォルト時間範囲は `now-24h` で、7パネルの多くが直近2日分（`CONCAT(year,month,day,hour) BETWEEN ...` によるパーティションプルーニング）を実質的なスキャン対象にしている。**そのため compaction は直近データから始めて構わない**（「古いデータだけ」に限定すると本来の目的であるクエリコスト削減効果が薄れる）。
+
+**制約1（Grafanaクエリは無改修）**: 上記7パネルの設定・SQLは変更しない前提。パーティションプルーニングに `CONCAT(year, month, day, hour) BETWEEN ...` を使うため、パーティションカラム構成・テーブル名・カラム名は今のまま維持する必要がある。
+
+**確認済み**: `aws glue get-table` でテーブル定義を確認したところ、`InputFormat=TextInputFormat` + `SerDe=org.openx.data.jsonserde.JsonSerDe`（改行区切りJSONを複数行読める）、かつ `projection.enabled=true`（Glue Crawler不要、S3プレフィックスから仮想的にパーティション解決）だった。この2点により、**テーブル定義・Grafanaクエリを一切変更せずに compaction できる**。
+
+**制約2（行単位削除の劣化・許容）**: `DELETE /data`（`infra/lambda_src/delete/index.py`）は Athena の `$path`（＝`raw/`配下の個別オブジェクトキー）を使って行単位削除している。直近データもcompaction対象にするため、compaction 後は削除粒度が「行」から「マージ後ファイル全体（＝該当時間帯の全行）」に落ちるのは**現時点では許容する**。将来的に `delete/index.py` を「対象keyがマージ済みファイルなら GetObject → 該当行を除いて PutObject で上書き」という動作に改修すれば行単位削除を維持できる（`_delete_by_keys` の分岐追加で対応可能、ファイルサイズは小さいままなので読み直しコストは軽微）。この改修は本 TODO のスコープ外とし、別 TODO として切り出す。
+
+**compaction の単位**: 1 hour パーティション（`raw/year=.../month=.../day=.../hour=.../`）＝1マージファイル。年月日時の値はS3パス（projection）から機械的に決まり行内容の `ts` は見ないため、**hour境界をまたいでマージすると行の実時刻とパーティション値がズレて `CONCAT(year,month,day,hour) BETWEEN ...` のプルーニングが壊れる**。device_id はパーティションカラムではないので、同一hour内なら複数デバイスを1ファイルに混ぜてよい（現状1時間あたり平均約29件なので1ファイルで十分小さい）。
+
+**タイムゾーンの注意**: `year/month/day/hour` はすべてUTCで書き込まれている（`ingest/index.py` の `datetime.now(timezone.utc)` / `ts` パース時も `tzinfo=timezone.utc` を付与）。Grafanaダッシュボードは表示上 `"timezone": "browser"`（＝JST）だが、`$__timeFrom()`/`$__timeTo()` マクロが解決するのは絶対時刻（UTC epoch）なので `date_format(...,'%Y%m%d%H')` は問題なくUTCパーティション値と一致する（表示がJSTなだけでクエリのズレはない）。compaction 実装側で気をつけるべきは:
+
+- 「対象は確定済み＝現在進行中でない past hour」の判定は**UTCで**行う（Lambdaの `datetime.now(timezone.utc)` を使う。ローカル実行時のマシン時刻(JST)や `datetime.now()`（naive）をそのまま使わない）
+- EventBridge Scheduler の cron/rate 式はデフォルトUTC評価。スケジュール定義時に誤ってタイムゾーンをAsia/Tokyo等に設定しない（設定した場合は「past hour」判定側もそれに合わせてズレるため、UTC固定に統一するのが安全）
+
+**実装方針**:
+
+- 対象パーティション（`raw/year=.../month=.../day=.../hour=.../`）配下の小さいJSONファイル群を読み、**改行区切りJSON（NDJSON）としてまとめて1ファイルに再書き込み**（同じプレフィックスのまま。テーブル・パーティション定義・Grafanaクエリは無改修で済む）
+- マージ後、元の小ファイルは即削除せず**別プレフィックス/バケットへ退避（アーカイブ）**し、一定期間（例: 90日）はロールバック可能な状態を保ってからS3 Lifecycle expirationで自動削除する（`corrupted` バケットの30日自動削除パターンに倣う）。アーカイブ先はAthenaのテーブルロケーション外なので、退避してもスキャン性能への影響はない
+- EventBridge Scheduler等で定期起動するLambda/Glue Jobとして実装（UTC評価）。実行間隔は「直近データから対象にする」方針に合わせて短め（例: 1日〜数時間おき）を想定
+
+### TODO: compaction後データの行単位削除対応（未着手、上記compactionに従属）
+
+上記「S3 raw データの定期 Compaction」を実装すると、`DELETE /data` の行単位削除（`infra/lambda_src/delete/index.py` の `_delete_by_keys`）がマージ済みファイルに対しては機能しなくなる（ファイル全体＝該当時間帯の全行が削除対象になってしまう）。
+
+**実装方針（案）**: `_delete_by_keys` で対象keyがマージ済みNDJSONファイルかどうかを判定し、マージ済みなら `GetObject` → 削除対象行を除いて残りを `PutObject` で上書きする分岐を追加する。ファイルサイズは compaction 後も小さいままの想定なので、読み直しコストは軽微。判定方法（ファイル名規則 or 内部メタデータ）は compaction 実装時に合わせて設計する。
+
 ### TODO: ストリーミング OTA（塩漬け）
 
 現在の OTA は「SIM7080G FS にフル DL してから読み返す」2フェーズ構成。`AT+HTTPREAD` を使ってチャンクを HTTP レスポンスから直接読み出し、解凍→フラッシュ書き込みを同時進行させることで Phase2 の往復を丸ごと削減できる。
