@@ -185,7 +185,7 @@ ESP32-S3-MINI-1
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"fw_version":"1.19.0+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"fw_version":"1.20.0+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
@@ -747,6 +747,12 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 - EventBridge Scheduler + 専用 Lambda + SNS：柔軟で既存コードと分離できるが、別 Lambda の実装コストがかかる
 
 **背景**: sub（LiFePO4）が深放電に至ると、v1.1.0基板のMOSFETボディダイオード経由でmain（鉛バッテリー）が12Vバスの負荷を供給し続け、mainが上がるリスクがある。梅雨期間の長期曇天でソーラー発電が途絶えた場合に現実的なリスクとなる。
+
+### ~~TODO: OBD-II（CAN）実車データ取得~~ **実装済み**
+
+新規動作モード `OperationMode::CONTINUOUS_OBD` を追加。`device/can.h/.cpp`（TWAI・29bit拡張アドレッシング・N-VAN対応）、`domain/obd.h/.cpp`（全28PIDデコード）、`service/obdpoll.h/.cpp`（1秒間隔逐次ポーリング）を新規実装。取得値はOLED表示（`oledShowObdData()`）とBLE Notify（`MEAS_OBD_UUID`、87バイトを18バイトずつ5チャンクに分割）でスマホアプリ（`mobile/lib/main.dart`）へ送信する。Shadowの`override_next_mode="continuous_obd"`とメニューの`"Continuous OBD"`の両方から起動できる。
+
+AWS への publish（`domain/telemetry`統合）は今回のスコープ外で未実装。詳細（実車スキャン結果・CANプロトコル詳細・ビットマスク等）は `OBD.md` 参照。
 
 ### TODO: OTA中のBLE無効化（IPCタスクスタックオーバーフロー対策・未着手）
 
