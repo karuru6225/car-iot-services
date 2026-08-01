@@ -1,6 +1,7 @@
 #include "ble_peripheral.h"
 #include "oled.h"
 #include "../config.h"
+#include "../service/logger.h"
 #include <NimBLEDevice.h>
 
 #define MEAS_SERVICE_UUID    "f3a8b2c1-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
@@ -12,6 +13,7 @@
 #define MEAS_AH_UUID         "f3a8b2c7-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define MEAS_TS_UUID         "f3a8b2c8-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define MEAS_LTE_UUID        "f3a8b2c9-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
+#define MEAS_OBD_UUID        "f3a8b2ca-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 
 #define CFG_SERVICE_UUID     "f3a8b2d1-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
 #define CFG_AH_OFFSET_UUID   "f3a8b2d2-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
@@ -22,13 +24,14 @@
 BlePeripheral blePeripheral;
 
 class BlePeripheralServerCb : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override {
+  void onConnect(NimBLEServer*, ble_gap_conn_desc* desc) override {
     blePeripheral._connected = true;
-    // BLE スキャンと共存するためコネクションインターバルを延長
-    // 400×1.25ms=500ms 〜 800×1.25ms=1000ms、latency=0、timeout=500×10ms=5s
-    pServer->updateConnParams(desc->conn_handle, 400, 800, 0, 500);
+    logger.printf("[BLE] onConnect conn_handle=%u\n", desc->conn_handle);
+    // コネクションパラメータ変更はペアリングのハンドシェイクと干渉する可能性があるため
+    // onAuthenticationComplete後（認証完了/失敗が確定した後）に遅らせる（診断用）
   }
   void onDisconnect(NimBLEServer*) override {
+    logger.println("[BLE] onDisconnect");
     blePeripheral._connected    = false;
     blePeripheral._authComplete = false;
     NimBLEDevice::startAdvertising();
@@ -36,11 +39,28 @@ class BlePeripheralServerCb : public NimBLEServerCallbacks {
 };
 
 class BlePeripheralSecurityCb : public NimBLESecurityCallbacks {
-  uint32_t onPassKeyRequest() override { return 0; }
-  void     onPassKeyNotify(uint32_t) override {}
-  bool     onSecurityRequest() override { return true; }
-  bool     onConfirmPIN(uint32_t) override { return true; }
+  uint32_t onPassKeyRequest() override {
+    logger.println("[BLE] onPassKeyRequest（通常のDISPLAY_ONLY経路では呼ばれないはず）→ 0を返す");
+    return 0;
+  }
+  void     onPassKeyNotify(uint32_t passkey) override {
+    logger.printf("[BLE] onPassKeyNotify passkey=%06u\n", passkey);
+  }
+  bool     onSecurityRequest() override {
+    logger.println("[BLE] onSecurityRequest → true");
+    return true;
+  }
+  bool     onConfirmPIN(uint32_t pin) override {
+    logger.printf("[BLE] onConfirmPIN pin=%06u → true\n", pin);
+    return true;
+  }
   void     onAuthenticationComplete(ble_gap_conn_desc* desc) override {
+    logger.printf("[BLE] onAuthenticationComplete authenticated=%u encrypted=%u bonded=%u\n",
+                  desc->sec_state.authenticated, desc->sec_state.encrypted, desc->sec_state.bonded);
+    // BLE スキャンと共存するためコネクションインターバルを延長（ペアリング完了後に実施）
+    // 400×1.25ms=500ms 〜 800×1.25ms=1000ms、latency=0、timeout=500×10ms=5s
+    NimBLEServer* pServer = NimBLEDevice::getServer();
+    if (pServer) pServer->updateConnParams(desc->conn_handle, 400, 800, 0, 500);
     if (desc->sec_state.authenticated) {
       blePeripheral._authComplete = true;
     }
@@ -120,25 +140,33 @@ void BlePeripheral::setup() {
   _pAhChar       = pMeas->createCharacteristic(MEAS_AH_UUID,    NIMBLE_PROPERTY::NOTIFY);
   _pTsChar       = pMeas->createCharacteristic(MEAS_TS_UUID,    NIMBLE_PROPERTY::NOTIFY);
   _pLteChar      = pMeas->createCharacteristic(MEAS_LTE_UUID,   NIMBLE_PROPERTY::NOTIFY);
+  _pObdChar      = pMeas->createCharacteristic(MEAS_OBD_UUID,   NIMBLE_PROPERTY::NOTIFY);
   pMeas->start();
 
   // 設定サービス（MITM 認証必要）
   NimBLEService* pCfg = pServer->createService(CFG_SERVICE_UUID);
 
+  // READ_AUTHEN/WRITE_AUTHEN は「認証必須」を示すだけのビットで、
+  // 基本の READ/WRITE プロパティ自体は別途指定しないとクライアントから
+  // 「Readできない」と判定されてしまうため、両方を指定する
   pCfg->createCharacteristic(CFG_AH_OFFSET_UUID,
-    NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::WRITE_AUTHEN)
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_AUTHEN |
+    NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_AUTHEN)
     ->setCallbacks(new CfgAhOffsetCb());
 
   pCfg->createCharacteristic(CFG_CHG_TIMEOUT_UUID,
-    NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::WRITE_AUTHEN)
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_AUTHEN |
+    NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_AUTHEN)
     ->setCallbacks(new CfgChgTimeoutCb());
 
   pCfg->createCharacteristic(CFG_CHG_START_UUID,
-    NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::WRITE_AUTHEN)
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_AUTHEN |
+    NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_AUTHEN)
     ->setCallbacks(new CfgChgStartCb());
 
   pCfg->createCharacteristic(CFG_CHG_STOP_UUID,
-    NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::WRITE_AUTHEN)
+    NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_AUTHEN |
+    NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_AUTHEN)
     ->setCallbacks(new CfgChgStopCb());
 
   pCfg->start();
@@ -152,6 +180,12 @@ void BlePeripheral::startAdvertising() {
 }
 
 void BlePeripheral::enablePairing() {
+  // MAX_BONDS=1（1台分のみ保持）のため、ペアリング画面に入るたびに古いボンドを消して
+  // クリーンな状態から新規ペアリングを始める（古いボンド情報との不整合による認証失敗を防ぐ）
+  int numBonds = NimBLEDevice::getNumBonds();
+  logger.printf("[BLE] enablePairing: 既存ボンド数=%d → 全削除\n", numBonds);
+  NimBLEDevice::deleteAllBonds();
+
   _authComplete = false;
   _passkey = esp_random() % 1000000;
   char keyStr[7];
@@ -161,6 +195,7 @@ void BlePeripheral::enablePairing() {
   NimBLEDevice::setSecurityPasskey(_passkey);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
   oledShowMessage("Pair Code:", keyStr);
+  logger.printf("[BLE] enablePairing passkey=%s\n", keyStr);
 }
 
 void BlePeripheral::disablePairing() {
@@ -188,6 +223,32 @@ void BlePeripheral::notify(float vMain, float i, float p, float vSub,
   uint8_t lteVal = lteConnected ? 1 : 0;
   _pLteChar->setValue(&lteVal, sizeof(lteVal));
   _pLteChar->notify();
+}
+
+// OBDバルクリクエスト（service/obdpoll.cpp）と同じ発想: デフォルトMTU(23バイト、ペイロード20バイト)を
+// 超える87バイトのデータを、[seq:1][total:1][payload:最大18バイト]のチャンクに分けて複数回Notifyする
+void BlePeripheral::notifyObd(const OBDReading &r) {
+  if (!_connected) return;
+
+  ObdBlePacket packet;
+  obdReadingToBlePacket(r, packet);
+
+  const uint8_t *raw = reinterpret_cast<const uint8_t*>(&packet);
+  const size_t totalLen = sizeof(packet);
+  const size_t chunkPayload = 18;
+  const uint8_t total = (uint8_t)((totalLen + chunkPayload - 1) / chunkPayload);
+
+  uint8_t buf[2 + chunkPayload];
+  for (uint8_t seq = 0; seq < total; seq++) {
+    size_t offset = seq * chunkPayload;
+    size_t remain = totalLen - offset;
+    size_t len = (chunkPayload < remain) ? chunkPayload : remain;
+    buf[0] = seq;
+    buf[1] = total;
+    memcpy(buf + 2, raw + offset, len);
+    _pObdChar->setValue(buf, 2 + len);
+    _pObdChar->notify();
+  }
 }
 
 void BlePeripheral::stop() {

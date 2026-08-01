@@ -102,6 +102,8 @@ Honda ECU が variant 共通のビットマスクを返しているが、この�
 
 **確定した取得可能データ一覧（フェーズ2 実装対象・新基板 2026-06-01 実機確認済み）:**
 
+**全28PID実装済み**（`domain/obd.h/.cpp`・`service/obdpoll.cpp`、実装差分は本ドキュメント後半の「domain/obd.h データ構造・デコード関数」参照）。
+
 | PID | 名称 | デコード式 | 備考 |
 |-----|------|-----------|------|
 | 0x04 | Engine Load | A×100/255 % | 負荷監視 |
@@ -268,288 +270,309 @@ OBD-II ポートは CAN ゲートウェイ経由で診断専用に隔離され�
 
 ---
 
-## アーキテクチャ統合概要
+## アーキテクチャ統合概要（実装済み）
 
-既存の 3 層構造への追加。依存ルール（device ← domain ← service）を守る。
+既存の 3 層構造への追加。依存ルール（device ← domain ← service）を守る。GU0 コネクタ
+（GPIO4/5/6）に接続した MCP2562FD 経由で通信する。GU1（GPIO7/8/9）は LTE（SIM7080G）が
+使用中のため触らない（当初ドラフトは GU1 想定だったが、実配線確認の結果 GU0 に変更）。
+
+新しい動作モード `OperationMode::CONTINUOUS_OBD`（メニュー "Continuous OBD" または Shadow
+`override_next_mode: "continuous_obd"` から入る）が、既存 CONTINUOUS の仕組み（5分境界
+待機ループ・BLE notify）を維持したまま OBD ポーリングを追加する。
 
 ```
-device/can.h/.cpp    新規  TWAI ラッパー（GPIO4=RX, GPIO5=TX, GPIO6=EN, 500kbps）
-domain/obd.h/.cpp    新規  OBDReading 構造体・PID デコード関数
-domain/telemetry     変更  buildObdPayload() を追加
-service/pubqueue     変更  ObdEntry・pushObd() を追加
-service/monitor      変更  measure() に CAN ポーリング、publish() に OBD 追加
-device/oled          変更  oledShowObdData() を追加（2ページ）
-main.cpp             変更  CAN init、OLED ページローテーション
+config.h               変更  OperationMode に CONTINUOUS_OBD を追加
+device/can.h/.cpp      新規  TWAI ラッパー（GPIO4=RX, GPIO5=TX, GPIO6=EN, 500kbps）
+domain/obd.h/.cpp      新規  OBDReading 構造体・PID デコード関数
+service/obdpoll.h/.cpp 新規  全PID逐次ポーリング（canInit()済み前提）
+service/shadow.h/.cpp  変更  override_next_mode="continuous_obd" 対応
+service/menu.h/.cpp    変更  "Continuous OBD" メニュー項目
+device/oled.h/.cpp     変更  oledShowObdData() を追加（1画面）
+main.cpp               変更  setOperationMode() でモード遷移集約・CAN init/deinit・1秒間隔ポーリング
 ```
+
+**今回のスコープ: OBD 取得データは AWS へ publish しない。** ログ出力（`logger.printf()`）と
+OLED 表示にのみ使う。`domain/telemetry.h/.cpp` ・ `service/pubqueue.h/.cpp` は変更していない。
+AWS への送信方法（既存パイプライン統合が妥当か等）は別途検討する。
 
 ---
 
-## device/can.h インターフェース
+## device/can.h インターフェース（実装済み）
 
 Honda N-VAN は 29ビット拡張アドレッシングが必須（11ビット 0x7DF は無応答）。
 
 ```cpp
 #pragma once
-#include <driver/twai.h>
 #include <stdint.h>
 
-static const uint8_t  CAN_RX_PIN  = 8;
-static const uint8_t  CAN_TX_PIN  = 7;
-static const uint8_t  CAN_EN_PIN  = 9;
-static const uint32_t CAN_REQ_ID  = 0x18DB33F1; // 29-bit functional addressing
-static const uint32_t CAN_RESP_MASK = 0x18DAF100; // 応答 ID の上位 24bit (下位8bit = ECU addr)
-
-// GPIO9 HIGH → 50ms 待機 → TWAI 500kbps NORMAL モード起動
-bool canInit();
-
-// TWAI 停止 → GPIO9 LOW
-void canDeinit();
-
-// Mode 01 PID リクエストを CAN_REQ_ID (29-bit) に送信
+bool canInit();   // 冪等: 既に起動済みなら即 true
+void canDeinit(); // 未起動でも安全に呼べる（GPIO6 を確実に LOW にする）
 bool canSendObdRequest(uint8_t pid);
-
-// 0x18DAF1xx (29-bit) または 0x7E8 (11-bit) からの応答を受信（timeoutMs 内）
-bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 200);
+bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100);
 ```
 
-### sendObdRequest の実装ポイント
+ピンは `boardPins()` 経由で取得する（ハードコードしない）:
+- `CAN_RX_PIN = boardPins().gu00Pin`（GPIO4、MCP2562FD RXD 側）
+- `CAN_TX_PIN = boardPins().gu01Pin`（GPIO5、MCP2562FD TXD 側）
+- `CAN_EN_PIN = boardPins().gu0EnPin`（GPIO6、AO3401A ゲート）
 
-```cpp
-twai_message_t tx = {};
-tx.identifier = CAN_REQ_ID;  // 0x18DB33F1
-tx.extd = 1;                 // 29-bit 必須
-tx.data_length_code = 8;
-tx.data[0] = 0x02;           // PCI: Single Frame, length=2
-tx.data[1] = 0x01;           // Mode 01
-tx.data[2] = pid;
-// data[3..7] = 0x00 (ISO 15765-4 パディング)
-twai_transmit(&tx, pdMS_TO_TICKS(10));
-```
+`CAN_TEST.md` のブレッドボード試験章の配線（GPIO5=TXD, GPIO4=RXD）そのまま。当初ドラフトは
+GU1（GPIO7/8/9）想定で TX/RX が逆だったため、実装時に修正した。
 
-### receiveObdResponse の応答チェック
+### バスオフ自動リカバリ（`can.cpp` 内にカプセル化）
 
-```cpp
-// Honda N-VAN は 0x18DAF10E (ECU addr=0x0E) で応答
-// 将来他の ECU に対応する場合を考慮して 0x18DAF1xx 全体を受け入れる
-bool is29bit = rx.extd && (rx.identifier & 0xFFFFFF00) == 0x18DAF100;
-bool is11bit = !rx.extd && rx.identifier == 0x7E8; // フォールバック
-if (is29bit || is11bit) { /* 処理 */ }
-```
+- 送信前に `twai_get_status_info()` を確認し、`TWAI_STATE_BUS_OFF` なら
+  `twai_initiate_recovery()` のみ実行（軽量、ドライバ再インストール不要）
+- 連続送信失敗が閾値（20回）を超えたら `canDeinit()` → `canInit()` のフル再初期化に
+  エスカレーション
+- 呼び出し側（`obdpoll.cpp`）は戻り値 `bool` だけ見ればよい
 
-毎 `measure()` サイクルで `canInit()` / `canDeinit()` を呼ぶ（バスオフ自動リカバリ）。
+### CAN init/deinit のタイミング
+
+`measure()`（5分周期）ではなく、`main.cpp` の `setOperationMode()` が `CONTINUOUS_OBD`
+への出入りを検知して呼ぶ。1秒間隔ポーリングのたびに init/deinit すると TWAI ドライバの
+install/uninstall・GPIO 電源トグルのオーバーヘッドが大きいため。
 
 ---
 
-## domain/obd.h データ構造・デコード関数
+## domain/obd.h データ構造・デコード関数（実装済み・全28PID対応）
 
-**実車スキャン結果を反映。非対応 PID（冷却水温・MAF・燃料流量等）は除外。**
+**実車スキャン結果を反映。非対応 PID（0x05水温・0x10 MAF・0x5E燃料流量等）は除外。**
 
 ```cpp
-#pragma once
-#include <stdint.h>
-#include <time.h>
-
 struct OBDReading {
-  // Mode 01 取得可能（確認済み）
+  // 初期実装分（10PID）
   uint16_t rpm;           // 0x0C: (A*256+B)/4 [rpm]
-  uint8_t  speed_kmh;    // 0x0D: A [km/h]
-  uint8_t  load_pct;     // 0x04: A*100/255 [%]
-  uint8_t  map_kpa;      // 0x0B: A [kPa 絶対圧]
-  uint8_t  baro_kpa;     // 0x33: A [kPa]
-  int8_t   boost_kpa;    // map_kpa - baro_kpa [kPa]
-  uint8_t  throttle_pct; // 0x11: A*100/255 [%]
-  float    timing_deg;   // 0x0E: A/2.0-64.0 [°BTDC]
-  float    ecu_voltage;  // 0x42: (A*256+B)/1000.0 [V]
-  // 0x66/0x67 で取得可能（確認済み）
-  float    maf_gs;       // 0x66: (B*256+C)/32 [g/s]
-  int16_t  coolant_c;   // 0x67 Sensor1: B-40 [°C]（0x05 非対応のため代替）
-  float    fuel_rate_lph;// MAF 推算: maf_gs / (14.7×0.745) × 3.6 [L/h]
+  uint8_t  speed_kmh;     // 0x0D: A [km/h]
+  uint8_t  load_pct;      // 0x04: A*100/255 [%]
+  uint8_t  map_kpa;       // 0x0B: A [kPa 絶対圧]
+  uint8_t  baro_kpa;      // 0x33: A [kPa]
+  int8_t   boost_kpa;     // map_kpa - baro_kpa [kPa]（obdpoll.cpp で計算）
+  uint8_t  throttle_pct;  // 0x11: A*100/255 [%]
+  float    timing_deg;    // 0x0E: A/2.0-64.0 [°BTDC]
+  float    ecu_voltage;   // 0x42: (A*256+B)/1000.0 [V]
+  float    maf_gs;        // 0x66: (B*256+C)/32 [g/s]（0x10 非対応のため代替）
+  int16_t  coolant_c;     // 0x67 Sensor1: B-40 [°C]（0x05 非対応のため代替）
+  float    fuel_rate_lph; // MAF 推算: maf_gs / (14.7×0.745) × 3.6 [L/h]（obdpoll.cpp で計算）
+
+  // 追加実装分（18PID・20フィールド。デコード式は「確定した取得可能データ一覧」参照）
+  float    stft_pct, ltft_pct;                          // 0x06, 0x07
+  float    o2_b1s2_v, o2_b1s2_trim_pct;                 // 0x15
+  uint16_t engine_run_time_sec;                         // 0x1F
+  uint16_t mil_distance_km;                             // 0x21
+  float    o2_s1_ratio, o2_s1_voltage;                  // 0x24
+  uint8_t  evap_purge_pct;                              // 0x2E
+  uint8_t  warmups_since_cleared;                       // 0x30
+  uint16_t distance_since_cleared_km;                   // 0x31
+  float    catalyst_temp_c;                             // 0x3C
+  float    absolute_load_pct;                           // 0x43
+  float    commanded_afr;                               // 0x44
+  uint8_t  throttle_b_pct;                              // 0x47
+  uint8_t  accel_pedal_d_pct, accel_pedal_e_pct;        // 0x49, 0x4A
+  uint8_t  fuel_type;                                   // 0x51
+  float    sec_o2_trim_st_pct, sec_o2_trim_lt_pct;      // 0x55, 0x56
 
   bool     valid;
   time_t   ts;
 };
-
-// デコード関数
-bool obdDecodeRpm(const uint8_t *data, uint8_t dlc, OBDReading &out);
-bool obdDecodeSpeed(const uint8_t *data, uint8_t dlc, OBDReading &out);
-bool obdDecodeLoad(const uint8_t *data, uint8_t dlc, OBDReading &out);
-bool obdDecodeMap(const uint8_t *data, uint8_t dlc, OBDReading &out);
-bool obdDecodeBaro(const uint8_t *data, uint8_t dlc, OBDReading &out);
-bool obdDecodeThrottle(const uint8_t *data, uint8_t dlc, OBDReading &out);
-bool obdDecodeTiming(const uint8_t *data, uint8_t dlc, OBDReading &out);
-bool obdDecodeEcuVoltage(const uint8_t *data, uint8_t dlc, OBDReading &out);
-// 0x66: sensors=0x01(N-VAN), rate=(B*256+C)/32 g/s
-bool obdDecodeMafAlt(const uint8_t *data, uint8_t dlc, OBDReading &out);
-// 0x67: A=bitmap(0x03=S1+S2), B=Sensor1 temp (B-40°C)
-bool obdDecodeCoolantAlt(const uint8_t *data, uint8_t dlc, OBDReading &out);
 ```
 
-デコード共通ルール:
-- `data[1] != 0x41` または `data[2] != 要求PID` の場合は false を返す
-- `dlc` が必要バイト数未満の場合は false を返す
+デコード関数は28個（PIDごとに1関数、0x15と0x24のみ1関数で2フィールドを埋める）。
+device/service に依存しない純粋関数。共通ルール:
+`data[1] != 0x41` または `data[2] != 要求PID` または `dlc` が必要バイト数未満なら false
+（`obd.cpp` 内 `checkHeader()` ヘルパーで共通化）。
 
 ---
 
-## service/pubqueue への追加
-
-### ObdEntry（実車スキャン結果を反映した固定小数点構造体）
+## service/obdpoll.h ポーリング関数（実装済み）
 
 ```cpp
-struct ObdEntry {
-  uint16_t rpm;
-  uint8_t  speed_kmh;
-  uint8_t  load_pct;
-  uint8_t  map_kpa;
-  uint8_t  baro_kpa;
-  int8_t   boost_kpa;
-  uint8_t  throttle_pct;
-  int8_t   timing_x2;      // °BTDC × 2（0.5° 分解能）
-  uint16_t ecu_mv_div10;   // V × 100（0.01V 分解能）
-  uint16_t maf_x32;        // g/s × 32（0x66 の raw 値そのまま）
-  int8_t   coolant_c;      // 0x67 Sensor1: -40〜127°C → int8 で十分
-  uint16_t fuel_rate_x20;  // L/h × 20（0.05 L/h 分解能）
-  uint32_t ts;
-};  // 合計 ~22 バイト
+OBDReading obdPoll(); // 全28PID逐次問い合わせ（canInit()済み前提）
 ```
 
-`EntryType::Obd = 3` を追加し、`buildTopic` / `buildPayload` の switch に case を追加する。
+`measure()`/`publish()`（5分周期前提）とは呼び出し契約が異なるため、`service/monitor.h/.cpp`
+に混在させず独立ファイルにした。タイムアウトは **50ms**（10PID時代の100msから短縮）。
+実車では正常応答が数十msで返る実績があるため正常系には影響せず、28PID化に伴い
+IGN OFF等の異常時の最悪サイクル時間（28×タイムアウト）を28×50ms=1.4秒程度に抑える狙い。
+ECUへの負荷は読み取り専用のMode01のみで、市販スキャンツールと同程度の頻度のため問題ない
+という前提（実車でのフェーズ1スキャンで多数PID問い合わせ済みだが異常は確認されていない）。
+
+取得結果は `logger.printf()` でのログ出力と `oledShowObdData()` にのみ使う。
+追加18PID分は既存の10PIDサマリ行とは別に `[OBD2]` タグの行でログ出力する
+（1行が長大になるのを避けるため）。OLED表示（`oledShowObdData()`）は初期実装の10項目のみを
+表示し、追加18項目はログ出力のみで表示は行わない。
+
+**AWS への送信は今回のスコープ外**（`queue.pushObd()` 相当は未実装）。将来的に既存
+パイプラインへ統合する場合は、`domain/telemetry.h/.cpp` の `ITelemetryEncoder` に
+`encodeObd()` を追加し、`service/pubqueue.h/.cpp` に `EntryType::Obd` と `ObdEntry`
+（固定小数点構造体）を追加する形になる想定。
 
 ---
 
-## service/monitor への追加
+## main.cpp 統合（実装済み）
 
-### MeasureResult
+`OperationMode::CONTINUOUS_OBD`（`config.h`）は既存の `DEEP_SLEEP`/`CONTINUOUS`/
+`ONE_SHOT_CONTINUOUS` と異なり、`ONE_SHOT_CONTINUOUS` のように自動で `DEEP_SLEEP` には
+戻らない持続モード。
 
-```cpp
-struct MeasureResult {
-  SensorReading reading;
-  SensorVariant ble[QUEUE_SIZE];
-  int bleCount = 0;
-  OBDReading obd;  // 追加
-};
-```
+- `setOperationMode(OperationMode newMode)`（`main.cpp` 内 static 関数）にモード遷移を
+  集約し、`CONTINUOUS_OBD` への出入りで `canInit()`/`canDeinit()` を呼ぶ。既存の全ての
+  `g_mode = ...` 代入箇所をこの関数呼び出しに置換済み。
+- `setup()` 冒頭で行っていた `gu0EnPin` の常時 HIGH 初期化は削除し、`canDeinit()` 呼び出し
+  （未 init でも GPIO6 を LOW に確定する）に統合した。
+- `runContinuousLoop()` の既存 1秒間隔ブロック（`lastNotify`）に相乗りさせ、
+  `CONTINUOUS_OBD` 中は `obdPoll()` → `oledShowObdData()` を呼ぶ。
+- 同ループの `oledUpdateCountdown()` は `CONTINUOUS_OBD` 中はスキップ（OBD 画面が
+  画面全体を占有するため）。
+- BTN1 長押しは `CONTINUOUS_OBD` → `DEEP_SLEEP` のみ（3状態トグルにはしない。
+  `CONTINUOUS_OBD` への入口はメニュー/Shadow のみ）。
 
-### measure() への CAN ポーリング追加
+### モードへの入り方
 
-```cpp
-result.obd = {};
-result.obd.ts = time(nullptr);
-
-if (canInit()) {
-  uint8_t data[8];
-  uint8_t dlc;
-
-  struct { uint8_t pid; bool(*decode)(const uint8_t*, uint8_t, OBDReading&); } pids[] = {
-    {0x0C, obdDecodeRpm},
-    {0x0D, obdDecodeSpeed},
-    {0x04, obdDecodeLoad},
-    {0x0B, obdDecodeMap},
-    {0x33, obdDecodeBaro},
-    {0x11, obdDecodeThrottle},
-    {0x0E, obdDecodeTiming},
-    {0x42, obdDecodeEcuVoltage},
-    {0x66, obdDecodeMafAlt},    // 0x10 非対応のため代替
-    {0x67, obdDecodeCoolantAlt},// 0x05 非対応のため代替
-  };
-  for (auto &p : pids) {
-    if (canSendObdRequest(p.pid) && canReceiveObdResponse(data, &dlc, 200))
-      if (p.decode(data, dlc, result.obd))
-        result.obd.valid = true;
-  }
-
-  // boost = MAP - Baro
-  if (result.obd.baro_kpa > 0)
-    result.obd.boost_kpa = (int8_t)(result.obd.map_kpa - result.obd.baro_kpa);
-  else
-    result.obd.boost_kpa = (int8_t)(result.obd.map_kpa - 101);
-
-  // 燃費推算（MAF から）
-  if (result.obd.maf_gs > 0)
-    result.obd.fuel_rate_lph = result.obd.maf_gs / (14.7f * 0.745f) * 3.6f;
-
-  canDeinit();
-}
-```
-
-### publish() への追加
-
-```cpp
-// RPM > 0（エンジン動作中）のときのみ送信
-if (result.obd.valid && result.obd.rpm > 0) {
-  queue.pushObd(result.obd);
-}
-```
+- OLED メニュー: `"Continuous OBD"` 項目（`service/menu.cpp`、`"Continuous"` の直後）
+- AWS Shadow: `override_next_mode: "continuous_obd"`（`service/shadow.cpp`、
+  `one_shot_continuous` と同じ delta 経路をテーブル駆動化して対応）
 
 ---
 
-## AWS ペイロード形式
+## OLED レイアウト（実装済み・1画面）
 
-トピック: `sensors/{device_id}/data`（既存パイプライン流用）
-
-```json
-{
-  "type": "obd",
-  "rpm": 1200,
-  "speed": 87,
-  "load": 23,
-  "map": 97,
-  "baro": 101,
-  "boost": -4,
-  "throttle": 12,
-  "timing": 1.5,
-  "ecu_v": 14.29,
-  "maf": 1.69,
-  "coolant": 72,
-  "fuel_rate": 0.56,
-  "ts": 1746143700
-}
-```
-
----
-
-## OLED レイアウト（2ページ）
-
-SSD1306 128×64、TextSize=1（6×8px、最大 21 文字/行）
+SSD1306 128×64、TextSize=1（6×8px、最大 21 文字/行）。当初ドラフトは2ページ構成だったが、
+`runContinuousLoop()` の既存カウントダウン表示との統合を単純にするため1画面にまとめた。
 
 ```
-Page 1: 走行・エンジン系
 +──────────────────────+
-|OBD  1/2              |
-|──────────────────────|
-|RPM:  949    0 km/h   |
-|TPS:  14%  Load: 26%  |
-|MAP: 40kPa CLT:  72C  |
+|RPM:949    0 km/h     |
+|TPS: 14% Load: 26%    |
+|MAP: 40kPa CLT: 72C   |
 |IGN:+1.5  ECU:14.29V  |
-+──────────────────────+
-
-Page 2: 燃料系
-+──────────────────────+
-|OBD  2/2              |
-|──────────────────────|
-|MAF:  1.69 g/s        |
-|FUL:  0.56 L/h [maf]  |
-|BST:  -61 kPa         |
-|BARO: 101 kPa         |
+|MAF:1.69g/s BST:-61kPa|
+|BTN1 long: sleep      |
 +──────────────────────+
 ```
 
-CONTINUOUS モードの表示順:
-- バッテリー画面 → 3秒 → OBD Page 1 → 3秒 → OBD Page 2 → 次サイクルまで
+`oledShowObdData()`（`device/oled.h/.cpp`）が1秒間隔で再描画される。応答なし時は
+"OBD: no response" を表示する。
 
 ---
 
-## 実装順序
+## OBDバルクリクエスト（実験機能・実車未検証）
 
-各ステップで `pio run -e esp32-s3-devkitc-1-v2-develop` のビルドが通ることを確認してからコミット。
+`CONTINUOUS_OBD`モード実行中に、Shadowまたはメニューから一時的に「バルクポーリング」へ
+切り替えられる実験機能。ISO 15765-4 Single Frameの制約上、1フレームには最大6PID詰め込める
+仕様（SAE J1979）だが、Honda N-VANでの対応は未検証。既存の`OperationMode`は増やさず、
+`CONTINUOUS_OBD`モード内部の一時的な動作切り替えとして実装した。
+
+### リクエストフォーマット
+
+```
+送信フレーム（CAN ID=0x18DB33F1, DLC=8）:
+  Byte 0: PCI  = 1 + count （Single Frame、データ長 = Mode(1) + PID数）
+  Byte 1: Mode = 0x01
+  Byte 2〜(1+count): PID1, PID2, ..., PIDn（最大6個）
+  残り: 0x00（パディング）
+
+受信フレーム（複数フレームで個別に返る想定、未検証）:
+  各PIDにつき通常のMode01応答（0x41 [PID] [A] [B]...）が個別のCANフレームで届く
+```
+
+### 実装
+
+- `device/can.h/.cpp`: `canSendObdRequestBulk(pids, count)`（count>6はfalseを返す）
+- `service/obdpoll.h/.cpp`:
+  - `obdPollBulk()` — 既存28PID（`kPids[]`）を6個ずつ5グループに分割し、グループごとに
+    1回バルク送信 → グループ内PID数だけ`canReceiveObdResponse()`を試行 → 各応答の`data[2]`
+    （PIDエコー）でデコーダを検索して呼ぶ。タイムアウトしたグループは打ち切って次へ進む
+  - `requestObdBulkTest(cycles=5)` — 次の5サイクル分`obdPollTick()`が`obdPollBulk()`を
+    返すようにする。Shadowの`obd_bulk_test:true`デルタ、またはメニューの
+    `"OBD Bulk Test"`から呼ばれる
+  - `obdPollTick()` — `main.cpp`の`obdTick()`から呼ばれるラッパー。残りサイクルがあれば
+    `obdPollBulk()`、無ければ通常の`obdPoll()`を返す。5サイクル終了後は自動的に通常の
+    シングルPID逐次ポーリングに復帰する
+- `service/shadow.h/.cpp`: `obd_bulk_test`デルタ検知（ACK reportedへの反映はしない、
+  一時的なトリガーのため）
+- `service/menu.cpp`: `"OBD Bulk Test"`メニュー項目（確認ダイアログ経由）
+
+### 期待される結果と判定
+
+- 複数PID分の応答フレームが返ってくれば対応している（`[OBD]`/`[OBD2]`ログで通常時と
+  同様に値が埋まっているか確認）
+- 応答が来ない、または各グループの最初の1PIDしか返らない場合は非対応と判断できる
+  （`obdPollBulk()`はタイムアウトで打ち切り次グループへ進むため、応答なしでもクラッシュしない）
+
+---
+
+## BLE Notify送信（実装済み・スマホアプリ表示用）
+
+CONTINUOUS_OBDの1秒ティックで取得した`OBDReading`（28項目・約87バイト）を、既存のBLE
+Peripheral（`device/ble_peripheral.h/.cpp`）経由でスマホアプリ（`mobile/lib/main.dart`）に
+表示する。デフォルトBLE ATT MTU（23バイト、ペイロード20バイト）ではデータが収まらないため、
+MTU拡張には頼らず、OBDバルクリクエストと同じ「制約に収まる分だけ詰めて複数回に分けて送る」
+発想でチャンク分割する。
+
+### 送信データレイアウト（`domain/obd.h`の`ObdBlePacket`、`#pragma pack(push,1)`）
+
+`OBDReading`をそのまま`memcpy`するとコンパイラのパディングに依存してしまうため、送信専用の
+パディングなし構造体に変換してから送る（`obdReadingToBlePacket()`、`domain/obd.cpp`）。
+フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`に固定。
+合計87バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/main.dart`の
+`_ObdReading.fromBytes()`のオフセットと完全一致させること）。
+
+### チャンクフォーマット
+
+```text
+[0]     : seq   (uint8, 0-indexed)
+[1]     : total (uint8, 総チャンク数)
+[2..]   : payload（最大18バイト、87バイトを18バイトずつ5チャンクに分割）
+```
+
+`device/ble_peripheral.cpp`の`BlePeripheral::notifyObd()`が`MEAS_OBD_UUID`
+（Notify、認証不要、既存の計測サービスに相乗り）へ`total`回連続で`notify()`する。
+
+### アプリ側の再構成（`mobile/lib/main.dart`）
+
+- `_onObdChunk()`が`seq`ごとに`Map<int, Uint8List>`へ格納。`seq==0`または`total`が前回と
+  食い違ったら前回分を破棄して集め直す（パケット取りこぼし時は次サイクルで自然に復帰する想定、
+  タイムアウト等の複雑なリトライ処理はあえて入れていない）
+- `total`個揃ったら結合して`_ObdReading.fromBytes()`でパースし、`_ObdCard`（既存の
+  `_MeasCard`と同じ`GridView.count`パターン）で28項目を表示
+
+### 注意点
+
+- `obdTick()`内でCANポーリング（最大1.4秒）→OLED表示→BLE Notify呼び出しが全て同期・
+  シングルタスクで実行される（`main.cpp`参照）。BLE Notifyの呼び出し自体はNimBLEの送信
+  キューに積むだけの軽い処理だが、5回連続で呼ぶ分メインループの占有時間はわずかに伸びる
+- 既存の`onConnect`でのコネクションパラメータ（400-800×1.25ms=500-1000ms）はBLEスキャンとの
+  共存のために設定されたもので、OBD用に変更していない。1秒間隔の送信と大きくズレてはいないが、
+  厳密な同期は保証されない
+
+---
+
+## 実装順序（完了）
+
+各ステップで `pio run -e esp32-s3-devkitc-1-v2-develop` のビルドが通ることを確認してから
+コミット。
 
 | # | 対象ファイル | 変更内容 | 状態 |
 |---|------------|---------|------|
-| 1 | `device/can.h/.cpp` 新規 | TWAI ラッパー（29-bit アドレッシング） | 未着手 |
-| 2 | `domain/obd.h/.cpp` 新規 | OBDReading 構造体・デコード関数 | 未着手 |
-| 3 | `domain/telemetry.h/.cpp` | `buildObdPayload()` 追加 | 未着手 |
-| 4 | `service/pubqueue.h/.cpp` | `ObdEntry`、`pushObd()` 追加 | 未着手 |
-| 5 | `service/monitor.h/.cpp` | CAN ポーリング・publish 追加 | 未着手 |
-| 6 | `device/oled.h/.cpp` + `main.cpp` | OLED 2ページ・ローテーション | 未着手 |
+| 1 | `config.h` | `OperationMode::CONTINUOUS_OBD` 追加 | 完了 |
+| 2 | `device/can.h/.cpp` 新規 | TWAI ラッパー（29-bit アドレッシング、GU0） | 完了 |
+| 3 | `domain/obd.h/.cpp` 新規 | OBDReading 構造体・デコード関数 | 完了 |
+| 4 | `service/obdpoll.h/.cpp` 新規 | 全PID逐次ポーリング | 完了 |
+| 5 | `main.cpp` | `setOperationMode()`・CAN init/deinit・1秒間隔ポーリング | 完了 |
+| 6 | `service/shadow.h/.cpp` | `override_next_mode="continuous_obd"` 対応 | 完了 |
+| 7 | `service/menu.cpp` | `"Continuous OBD"` メニュー項目 | 完了 |
+| 8 | `device/oled.h/.cpp` | `oledShowObdData()`（1画面） | 完了 |
+| 9 | `device/can.h/.cpp` | `canSendObdRequestBulk()`追加 | 完了 |
+| 10 | `service/obdpoll.h/.cpp` | `obdPollBulk()`・トリガー管理・`obdPollTick()` | 完了 |
+| 11 | `service/shadow.h/.cpp` + `service/menu.cpp` | `obd_bulk_test`トリガー（Shadow/メニュー） | 完了 |
+| 12 | `domain/obd.h/.cpp` | `ObdBlePacket`構造体・変換関数 | 完了 |
+| 13 | `device/ble_peripheral.h/.cpp` | `MEAS_OBD_UUID`・`notifyObd()`（チャンク分割） | 完了 |
+| 14 | `main.cpp` | `obdTick()`に`notifyObd()`呼び出し追加 | 完了 |
+| 15 | `mobile/lib/main.dart` | チャンク受信・再構成・`_ObdCard`表示 | 完了 |
+
+**未実装（今回のスコープ外）**: AWS への publish（`domain/telemetry`・`service/pubqueue`
+統合）。送信方法は別途検討する。
 
 ---
 
@@ -560,6 +583,6 @@ CONTINUOUS モードの表示順:
 | 冷却水温が 0x05 非対応 | 0x67 Sensor1 で代替取得可能（確認済み） |
 | MAF が 0x10 非対応 | 0x66 で代替取得可能（確認済み、1.69 g/s@idle） |
 | 燃費計算（0x5E 非対応） | 0x66 MAF から推算: `maf_gs / (14.7×0.745) × 3.6` L/h |
-| CAN 未接続・IGN OFF 時のタイムアウト | canInit() 後に全 PID × 200ms = 最大 1.6秒（許容範囲） |
-| エンジン停止中の誤 AWS 送信 | `rpm > 0` チェックで送信をガード |
-| バスオフ状態 | canDeinit/canInit サイクルで自動リカバリ |
+| CAN 未接続・IGN OFF 時のタイムアウト | 全 PID × 100ms = 最大 1秒（許容範囲。正常時は数十msで応答するためもっと短い） |
+| バスオフ状態 | 軽量リカバリ（`twai_initiate_recovery()`）→ 連続失敗20回でフル再init |
+| GU0/GU1 の配線混同 | GU0=CAN（GPIO4/5/6）、GU1=LTE（GPIO7/8/9、`device/lte.cpp` 使用中）。触るのはGU0のみ |

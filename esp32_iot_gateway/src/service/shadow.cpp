@@ -6,14 +6,28 @@
 #include <ArduinoJson.h>
 #include <cstdio>
 
-static bool s_overrideOneShotPending = false;
+static std::optional<OperationMode> s_overridePending = std::nullopt;
 static const char *s_overrideNextModeReport = nullptr; // nullptr = null（通常時）
+
+namespace
+{
+struct OverrideModeEntry
+{
+  const char *name;
+  OperationMode mode;
+};
+// override_next_mode で受け付ける文字列 → モードの対応表
+const OverrideModeEntry kOverrideModes[] = {
+    {"one_shot_continuous", OperationMode::ONE_SHOT_CONTINUOUS},
+};
+} // namespace
 
 std::optional<OperationMode> getShadowOverrideMode()
 {
-  if (!s_overrideOneShotPending) return std::nullopt;
-  s_overrideOneShotPending = false;
-  return OperationMode::ONE_SHOT_CONTINUOUS;
+  if (!s_overridePending) return std::nullopt;
+  OperationMode m = *s_overridePending;
+  s_overridePending = std::nullopt;
+  return m;
 }
 
 static void deltaTopic(char *buf, size_t len)
@@ -113,13 +127,20 @@ bool shadowPollDelta(uint32_t timeoutMs)
     changed = true;
   }
 
-  if (state["override_next_mode"].is<const char *>() &&
-      strcmp(state["override_next_mode"].as<const char *>(), "one_shot_continuous") == 0)
+  if (state["override_next_mode"].is<const char *>())
   {
-    s_overrideOneShotPending = true;
-    s_overrideNextModeReport = "one_shot_continuous"; // 次の shadowPublishConfig で ACK
-    logger.println("[SHADOW] override_next_mode → one_shot_continuous");
-    changed = true;
+    const char *req = state["override_next_mode"].as<const char *>();
+    for (const auto &entry : kOverrideModes)
+    {
+      if (strcmp(req, entry.name) == 0)
+      {
+        s_overridePending = entry.mode;
+        s_overrideNextModeReport = entry.name; // 次の shadowPublishConfig で ACK
+        logger.printf("[SHADOW] override_next_mode → %s\n", entry.name);
+        changed = true;
+        break;
+      }
+    }
   }
 
   if (changed)
