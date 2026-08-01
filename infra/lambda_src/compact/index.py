@@ -1,22 +1,45 @@
 """
 S3 raw データの定期 compaction
 
-ingest Lambda（lambda_src/ingest/index.py）が raw/year=.../hour=.../{device_id}-{uuid8}.json
-にメッセージ1件1オブジェクトで書き込むため、Grafana/Athenaが高頻度（約15分おき）で開く
-S3ファイル数が多くなりすぎている（S3リクエスト課金の主因。esp32_iot_gateway/CONTEXT.md参照）。
-EventBridge Scheduler により毎時実行し（UTC評価）、確定済みhourパーティション内の小ファイルを
-1つのNDJSONファイル `merged.json` にまとめる。
+ingest Lambda（lambda_src/ingest/index.py）はメッセージ1件ごとに1オブジェクトを
+raw/year=YYYY/month=MM/day=DD/hour=HH/{device_id}-{uuid8}.json に書き込む。Grafanaが
+Athena経由でこのテーブルを高頻度（約15分おき）でクエリしており、1hourパーティション
+あたり平均約29ファイルを毎回開くことがS3リクエスト課金（Tier1/Tier2）の主因になって
+いる（esp32_iot_gateway/CONTEXT.md 参照）。
 
-冪等性: `merged.json` 以外のファイル（straggler）が無ければ何もしない。既存の`merged.json`
-があれば吸収して上書き、無ければstraggler2件以上の時だけ新規作成する（1件のみはスキップ）。
-パーティション値はS3パス由来（Glue partition projection）のため、hour境界をまたぐマージは
-しない。
+EventBridge Scheduler により毎時実行される（UTC評価）。確定済み（現在進行中・直前1
+hourを安全マージンとして除外）hourパーティションを対象に、複数の小さいJSONファイルを
+1つの改行区切りJSON（NDJSON）ファイル `merged.json` にまとめる。
 
-マージ元はARCHIVE_BUCKETへ個別コピーしてからまとめて削除する（コピー失敗分は次回に持ち越し、
-重複行が発生しうるがデータ消失よりマシとして許容）。並列化・バッチ分割の設計判断は各定数・
-関数のコメント参照。
+冪等性: `merged.json` 以外のファイル（straggler）が無ければ何もしない。`merged.json`
+が既にあればstragglerを吸収して上書き、無ければstragglerが2件以上のときだけ新規作成
+する（1件だけの場合は圧縮する意味がないためスキップ）。これによりオフラインバッファ
+経由で後から古いhourパーティションに書き込まれるケース（ingest Lambdaはpayloadの
+`ts`でパーティションを決めるため起こりうる）にも次回実行時に自然に対応できる。
 
-event引数（バックフィル用。省略時は環境変数のデフォルト値）:
+パーティション値（year/month/day/hour）はS3パスから機械的に決まる（Glueのpartition
+projection方式）ため、hour境界をまたぐマージは行わない。
+
+マージ元の小ファイルは即削除せず、ARCHIVE_BUCKETへcopy_objectで個別に退避してから
+まとめてdelete_objectsする（corruptedバケットと同じ「安全側に倒す」設計で、archive側
+は元ファイルの1:1コピーを保つ。90日でS3 Lifecycleにより自動削除）。copyが失敗した
+キーはdeleteの対象から外し次回に持ち越す（＝次回また`merged.json`に追記されうる＝
+行の重複が発生しうるが、データ消失よりマシという判断で許容する）。
+
+効率化: S3 APIコールの回数そのものを減らすことを優先する。
+- DeleteObjectは`delete_objects`で最大1000件/回のバッチ削除にまとめる
+  （パーティションあたり従来35回→1回）
+- Get/Copyの並列化はパーティション単位に区切らず、BATCH_SIZE件分のパーティション
+  をまとめて1つの広いThreadPoolExecutorで一斉に処理する（パーティション境界で
+  ワーカーが遊ぶ時間を作らない）。boto3クライアントはスレッドセーフ。
+  同一パーティションへの並行処理はreserved_concurrent_executions=1で別途防止済み
+- バッチをBATCH_SIZE件単位に区切っているのは、merge書き込み(Step3)を全パーティション
+  分終えてからarchive+削除(Step4/5)をまとめて行うため、その間にタイムアウト等で
+  中断すると「merged.jsonは更新済みだが元ファイル未削除」の状態が一度に大量発生し、
+  次回実行時の重複行リスクがバッチサイズ分に膨らんでしまうのを防ぐため
+  （被害範囲を最大1バッチ分に限定する）
+
+event引数（初回バックフィル等での明示指定用。省略時は環境変数のデフォルト値を使う）:
   {"since": "2026-03-07T00:00:00Z", "until": "2026-03-14T00:00:00Z", "max_partitions": 200}
 """
 
