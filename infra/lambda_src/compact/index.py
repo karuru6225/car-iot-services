@@ -9,9 +9,9 @@ Athena経由でこのテーブルを高頻度（約15分おき）でクエリし
 
 EventBridge Scheduler により毎時実行される（UTC評価）。確定済み（現在進行中・直前1
 hourを安全マージンとして除外）hourパーティションを対象に、複数の小さいJSONファイルを
-1つの改行区切りJSON（NDJSON）ファイル `_merged.json` にまとめる。
+1つの改行区切りJSON（NDJSON）ファイル `merged.json` にまとめる。
 
-冪等性: `_merged.json` 以外のファイル（straggler）が無ければ何もしない。`_merged.json`
+冪等性: `merged.json` 以外のファイル（straggler）が無ければ何もしない。`merged.json`
 が既にあればstragglerを吸収して上書き、無ければstragglerが2件以上のときだけ新規作成
 する（1件だけの場合は圧縮する意味がないためスキップ）。これによりオフラインバッファ
 経由で後から古いhourパーティションに書き込まれるケース（ingest Lambdaはpayloadの
@@ -23,7 +23,7 @@ projection方式）ため、hour境界をまたぐマージは行わない。
 マージ元の小ファイルは即削除せず、ARCHIVE_BUCKETへcopy_objectで退避してから
 delete_objectする（corruptedバケットと同じ「安全側に倒す」設計。90日でS3 Lifecycle
 により自動削除）。copy/deleteが失敗した場合はそのstragglerを次回に持ち越す（＝次回
-また`_merged.json`に追記されうる＝行の重複が発生しうるが、データ消失よりマシという
+また`merged.json`に追記されうる＝行の重複が発生しうるが、データ消失よりマシという
 判断で許容する）。
 
 並列化: パーティション内のGet/Copy/Delete処理はThreadPoolExecutorで並列化する
