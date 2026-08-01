@@ -183,6 +183,12 @@ resource "aws_lambda_function" "compact" {
   role             = aws_iam_role.lambda_compact.arn
   timeout          = 900
 
+  # 同一パーティションへの並行書き込みレース（マージ後・削除完了前に別実行が読みに来て
+  # 二重カウントする）を構造的に防ぐため、同時実行数を1に固定する。スケジュール実行が
+  # 手動実行（バックフィル等）と鉢合わせた場合はスロットリングされるが、EventBridge
+  # Schedulerのデフォルトリトライで後追いされるため実害はない
+  reserved_concurrent_executions = 1
+
   environment {
     variables = {
       S3_BUCKET              = aws_s3_bucket.main.bucket

@@ -41,8 +41,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 import boto3
+from botocore.config import Config
 
-s3 = boto3.client("s3")
+_MAX_WORKERS = 12
+_COPY_RETRY = 3
+
+# ThreadPoolExecutorの並列数(_MAX_WORKERS)がboto3のデフォルト接続プール(10)を
+# 上回ると "Connection pool is full" が頻発し、接続の作り直しで遅くなるため広げておく
+s3 = boto3.client("s3", config=Config(max_pool_connections=_MAX_WORKERS * 2))
 
 S3_BUCKET = os.environ["S3_BUCKET"]
 ARCHIVE_BUCKET = os.environ["ARCHIVE_BUCKET"]
@@ -50,8 +56,6 @@ LOOKBACK_HOURS_DEFAULT = int(os.environ.get("LOOKBACK_HOURS", "72"))
 MAX_PARTITIONS_PER_RUN_DEFAULT = int(os.environ.get("MAX_PARTITIONS_PER_RUN", "200"))
 
 MERGED_NAME = "merged.json"  # 先頭 "_"/"." はHadoop系InputFormatが隠しファイルとして無視するため不可
-_MAX_WORKERS = 12
-_COPY_RETRY = 3
 
 
 def _parse_iso(s: str) -> datetime:
