@@ -1,4 +1,4 @@
-package com.example.car_iot_ble
+package info.karuru.cariot_mobile
 
 import io.flutter.embedding.android.FlutterActivity
 

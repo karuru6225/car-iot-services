@@ -5,13 +5,17 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../ble/ble_constants.dart';
 import '../ble/obd_chunk_assembler.dart';
 import '../models/conn_state.dart';
 import '../models/log_entry.dart';
 import '../models/obd_reading.dart';
+import '../services/auth_service.dart';
+import '../services/obd_uploader.dart';
 import '../theme/app_colors.dart';
+import '../widgets/auth_card.dart';
 import '../widgets/conn_card.dart';
 import '../widgets/debug_toggle_card.dart';
 import '../widgets/log_card.dart';
@@ -48,6 +52,44 @@ class _BleHomeState extends State<BleHome> {
   bool _connectCancelled = false;
   final List<StreamSubscription> _notifySubs = [];
   StreamSubscription? _connSub;
+
+  // OBDデータのAWS送信（認証・バッファアップロード）
+  final _auth = AuthService();
+  late final ObdUploader _uploader;
+  String? _userEmail;
+  bool _authBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _uploader = ObdUploader(auth: _auth, deviceIdProvider: () => _deviceName);
+    _uploader.onLog = (m) => _addLog(m, LogType.sys);
+    _uploader.start();
+    _auth.tryRestoreSession().then((email) {
+      if (mounted) setState(() => _userEmail = email);
+    });
+  }
+
+  // ---------- 認証 ----------
+
+  Future<void> _signIn() async {
+    setState(() => _authBusy = true);
+    final email = await _auth.signIn();
+    if (!mounted) return;
+    setState(() {
+      _userEmail = email;
+      _authBusy = false;
+    });
+    _addLog(email != null ? 'ログイン: $email' : 'ログインに失敗しました',
+        email != null ? LogType.sys : LogType.err);
+  }
+
+  Future<void> _signOut() async {
+    await _auth.signOut();
+    if (!mounted) return;
+    setState(() => _userEmail = null);
+    _addLog('ログアウトしました', LogType.sys);
+  }
 
   // ---------- ログ ----------
 
@@ -220,6 +262,7 @@ class _BleHomeState extends State<BleHome> {
         final autoReconnect = !_userDisconnected;
         _userDisconnected = false;
         _addLog(autoReconnect ? '予期しない切断: 自動再接続...' : '切断されました', LogType.sys);
+        _uploader.flush();
         _cleanup();
         if (autoReconnect) {
           // ESP32 の起動・アドバタイズ開始を待ってからスキャン
@@ -229,6 +272,7 @@ class _BleHomeState extends State<BleHome> {
     });
 
     setState(() => _state = ConnState.connected);
+    WakelockPlus.enable();
     _addLog('接続完了', LogType.sys);
   }
 
@@ -237,7 +281,10 @@ class _BleHomeState extends State<BleHome> {
   void _onObdChunk(List<int> v) {
     try {
       final reading = _obdAssembler.add(v);
-      if (reading != null) setState(() => _obdReading = reading);
+      if (reading != null) {
+        setState(() => _obdReading = reading);
+        _uploader.add(reading);
+      }
     } catch (e) {
       _addLog('OBDデータ解析エラー: $e', LogType.err);
     }
@@ -255,6 +302,7 @@ class _BleHomeState extends State<BleHome> {
   void _cleanup() {
     _cancelSubscriptions();
     _obdAssembler.reset();
+    WakelockPlus.disable();
     setState(() {
       _state = ConnState.disconnected;
       _deviceName = '';
@@ -296,6 +344,9 @@ class _BleHomeState extends State<BleHome> {
   @override
   void dispose() {
     _cancelSubscriptions();
+    _uploader.flush();
+    _uploader.dispose();
+    WakelockPlus.disable();
     _logScroll.dispose();
     super.dispose();
   }
@@ -317,6 +368,13 @@ class _BleHomeState extends State<BleHome> {
           ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              AuthCard(
+                userEmail: _userEmail,
+                busy: _authBusy,
+                onSignIn: _signIn,
+                onSignOut: _signOut,
+              ),
+              const SizedBox(height: 12),
               ConnCard(
                 state: _state,
                 deviceName: _deviceName,

@@ -1,2 +1,6 @@
 hosted_zone_id = "Z0123456789ABCDEFGHIJ"
 web_subdomain  = "iot"
+
+# Google Cloud Console で発行したOAuthクライアント（Cognito Google IdP連携用）
+google_oauth_client_id     = "xxxxxxxxxx.apps.googleusercontent.com"
+google_oauth_client_secret = "xxxxxxxxxx"

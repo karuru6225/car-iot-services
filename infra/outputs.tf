@@ -62,3 +62,13 @@ output "cognito_login_url" {
   description = "Cognito Hosted UI のログイン URL"
   value       = "${local.cognito_domain_base}/login?client_id=${aws_cognito_user_pool_client.web.id}&response_type=token&scope=openid+email+profile&redirect_uri=https://${local.web_domain}"
 }
+
+output "cognito_mobile_client_id" {
+  description = "Cognito モバイル用 App Client ID（Flutterアプリに埋め込む）"
+  value       = aws_cognito_user_pool_client.mobile.id
+}
+
+output "cognito_domain" {
+  description = "Cognito Hosted UI ドメイン（Google Cloud ConsoleのリダイレクトURI設定に使用。AppAuthのissuerには使えない、cognito_user_pool_idベースのissuer URLを使うこと）"
+  value       = local.cognito_domain_base
+}

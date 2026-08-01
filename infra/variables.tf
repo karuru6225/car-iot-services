@@ -22,3 +22,15 @@ variable "web_subdomain" {
   description = "Web管理画面のサブドメイン（例: iot → iot.example.com）"
   type        = string
 }
+
+variable "google_oauth_client_id" {
+  description = "Google Cloud ConsoleのOAuthクライアントID（Cognito Google IdP連携用）"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_oauth_client_secret" {
+  description = "Google Cloud ConsoleのOAuthクライアントシークレット（Cognito Google IdP連携用）"
+  type        = string
+  sensitive   = true
+}
