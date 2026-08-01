@@ -6,6 +6,7 @@ locals {
   status_src_dir       = "${path.module}/lambda_src/status"
   admin_src_dir        = "${path.module}/lambda_src/admin"
   shadow_guard_src_dir = "${path.module}/lambda_src/shadow_guard"
+  compact_src_dir      = "${path.module}/lambda_src/compact"
   build_dir            = "${path.module}/.build"
 }
 
@@ -49,6 +50,12 @@ data "archive_file" "shadow_guard" {
   type        = "zip"
   source_dir  = local.shadow_guard_src_dir
   output_path = "${local.build_dir}/shadow_guard.zip"
+}
+
+data "archive_file" "compact" {
+  type        = "zip"
+  source_dir  = local.compact_src_dir
+  output_path = "${local.build_dir}/compact.zip"
 }
 
 # ─── ingest Lambda（IoT Core → S3 書き込み） ─────────────────────────────────
@@ -161,6 +168,27 @@ resource "aws_lambda_function" "shadow_guard" {
   environment {
     variables = {
       IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
+    }
+  }
+}
+
+# ─── compact Lambda（EventBridge Scheduler → raw/ 小ファイルの定期compaction） ───
+
+resource "aws_lambda_function" "compact" {
+  function_name    = "${var.project}-compact"
+  filename         = data.archive_file.compact.output_path
+  source_code_hash = data.archive_file.compact.output_base64sha256
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  role             = aws_iam_role.lambda_compact.arn
+  timeout          = 900
+
+  environment {
+    variables = {
+      S3_BUCKET              = aws_s3_bucket.main.bucket
+      ARCHIVE_BUCKET         = aws_s3_bucket.archive.bucket
+      LOOKBACK_HOURS         = "72"
+      MAX_PARTITIONS_PER_RUN = "200"
     }
   }
 }
