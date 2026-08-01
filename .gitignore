@@ -4,6 +4,10 @@ ops/.venv/
 infra/terraform.tfvars
 infra/*.tfplan
 
+# Lambda テスト実行時のPythonキャッシュ
+infra/lambda_src/**/__pycache__/
+infra/lambda_src/**/.pytest_cache/
+
 # 証明書・秘密鍵（実機用、公開禁止）
 m5atom_iot_gateway/src/certs.h
 esp32_iot_gateway/src/provision_config.h
