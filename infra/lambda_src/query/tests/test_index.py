@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 import pytest
@@ -38,6 +38,13 @@ def test_partition_filters_range_omits_hour_beyond_72h(query):
     assert not any(f.startswith("hour") for f in filters)
 
 
+def test_partition_filters_range_includes_hour_at_exactly_72h(query):
+    start = datetime(2026, 3, 1, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=72)
+    filters = query._partition_filters_range(start, end)
+    assert any(f.startswith("hour") for f in filters)
+
+
 # ---- _validate_inputs ----
 
 
@@ -69,6 +76,19 @@ def test_validate_inputs_rejects_end_before_start(query):
 def test_validate_inputs_rejects_span_over_720h(query):
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     end = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    with pytest.raises(ValueError):
+        query._validate_inputs(None, None, start, end, None, None)
+
+
+def test_validate_inputs_accepts_span_at_exactly_720h(query):
+    start = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    end = start + timedelta(hours=720)
+    query._validate_inputs(None, None, start, end, None, None)  # raises nothing
+
+
+def test_validate_inputs_rejects_span_at_721h(query):
+    start = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    end = start + timedelta(hours=721)
     with pytest.raises(ValueError):
         query._validate_inputs(None, None, start, end, None, None)
 

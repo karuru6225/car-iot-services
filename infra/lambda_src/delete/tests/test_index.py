@@ -52,6 +52,18 @@ def test_partition_filters_omits_hour_beyond_72h(delete, monkeypatch):
     assert not any(f.startswith("hour") for f in filters)
 
 
+def test_partition_filters_includes_hour_at_exactly_72h(delete, monkeypatch):
+    monkeypatch.setattr(delete, "datetime", _FrozenDateTime)
+    filters = delete._partition_filters(72)
+    assert any(f.startswith("hour") for f in filters)
+
+
+def test_partition_filters_omits_hour_at_73h(delete, monkeypatch):
+    monkeypatch.setattr(delete, "datetime", _FrozenDateTime)
+    filters = delete._partition_filters(73)
+    assert not any(f.startswith("hour") for f in filters)
+
+
 def test_partition_filters_single_value_uses_equals(delete, monkeypatch):
     monkeypatch.setattr(delete, "datetime", _FrozenDateTime)
     filters = delete._partition_filters(1)
@@ -181,6 +193,12 @@ def test_handler_requires_addr_or_id(delete):
 
 def test_handler_rejects_invalid_addr(delete):
     event = _admin_event(queryStringParameters={"addr": "not-a-mac"})
+    resp = delete.handler(event, None)
+    assert resp["statusCode"] == 400
+
+
+def test_handler_rejects_invalid_id(delete):
+    event = _admin_event(queryStringParameters={"id": "bad id!"})
     resp = delete.handler(event, None)
     assert resp["statusCode"] == 400
 

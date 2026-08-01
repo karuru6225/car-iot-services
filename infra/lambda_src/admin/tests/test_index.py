@@ -141,6 +141,12 @@ def test_handle_command_creates_job(admin, operation):
     body = json.loads(resp["body"])
     assert body["job_id"].startswith("cmd-esp32-gw-abc123-")
 
+    # レスポンスの形だけでなく、IoT側に実際にJobが作成されたことも確認する
+    job = admin.iot.describe_job(jobId=body["job_id"])["job"]
+    assert job["targets"] == [f"arn:aws:iot:{admin.REGION}:{admin.ACCOUNT_ID}:thing/esp32-gw-abc123"]
+    document = admin.iot.get_job_document(jobId=body["job_id"])["document"]
+    assert json.loads(document) == {"operation": operation}
+
 
 def test_handle_command_rejects_unknown_operation(admin):
     resp = admin.handler(
