@@ -96,6 +96,43 @@ resource "aws_s3_bucket_lifecycle_configuration" "corrupted" {
   }
 }
 
+# ─── compaction前raw小ファイルの退避バケット（ロールバック用、90日で自動削除） ──
+# raw/ のAthenaテーブルロケーション外なのでスキャン性能への影響はない
+
+resource "aws_s3_bucket" "archive" {
+  bucket = "${var.project}-archive-${data.aws_caller_identity.current.account_id}"
+}
+
+resource "aws_s3_bucket_public_access_block" "archive" {
+  bucket                  = aws_s3_bucket.archive.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "archive" {
+  bucket = aws_s3_bucket.archive.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "archive" {
+  bucket = aws_s3_bucket.archive.id
+
+  rule {
+    id     = "expire-archived-raw"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 90
+    }
+  }
+}
+
 # ─── Glue Database ────────────────────────────────────────────────────────────
 
 resource "aws_glue_catalog_database" "main" {

@@ -77,7 +77,7 @@
 <div class="header-row">
   <div>
     <h1>IoT 管理コンソール</h1>
-    <div style="font-size:0.75em; color:#555; margin-top:2px">infra: __TMPL_GIT_HASH__</div>
+    <div style="font-size:0.75em; color:#555; margin-top:2px">infra: <span id="infra-version">-</span></div>
   </div>
   <div style="display:flex; gap:8px; align-items:center">
     <button class="secondary" id="auto-refresh-btn" onclick="toggleAutoRefresh()">自動更新 ON</button>
@@ -98,6 +98,15 @@ const WEB_URL           = '__TMPL_WEB_ADMIN_URL__';
 
 let idToken    = sessionStorage.getItem('id_token') || '';
 let userGroups = JSON.parse(sessionStorage.getItem('user_groups') || '[]');
+
+// ─── infraバージョン表示 ─────────────────────────────────────────────────────
+// admin.html本体には焼き込まず、実行時にversion.jsonを取得して表示する
+// （admin.html自体のcontent/etagをinfra全体の変更から切り離すため）
+
+fetch('version.json')
+  .then(r => r.json())
+  .then(v => { document.getElementById('infra-version').textContent = v.commit; })
+  .catch(() => {});
 
 // ─── Cognito 認証 ────────────────────────────────────────────────────────────
 
