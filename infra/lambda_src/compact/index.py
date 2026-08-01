@@ -9,9 +9,9 @@ Athena経由でこのテーブルを高頻度（約15分おき）でクエリし
 
 EventBridge Scheduler により毎時実行される（UTC評価）。確定済み（現在進行中・直前1
 hourを安全マージンとして除外）hourパーティションを対象に、複数の小さいJSONファイルを
-1つの改行区切りJSON（NDJSON）ファイル `_merged.json` にまとめる。
+1つの改行区切りJSON（NDJSON）ファイル `merged.json` にまとめる。
 
-冪等性: `_merged.json` 以外のファイル（straggler）が無ければ何もしない。`_merged.json`
+冪等性: `merged.json` 以外のファイル（straggler）が無ければ何もしない。`merged.json`
 が既にあればstragglerを吸収して上書き、無ければstragglerが2件以上のときだけ新規作成
 する（1件だけの場合は圧縮する意味がないためスキップ）。これによりオフラインバッファ
 経由で後から古いhourパーティションに書き込まれるケース（ingest Lambdaはpayloadの
@@ -20,19 +20,24 @@ hourを安全マージンとして除外）hourパーティションを対象に
 パーティション値（year/month/day/hour）はS3パスから機械的に決まる（Glueのpartition
 projection方式）ため、hour境界をまたぐマージは行わない。
 
-マージ元の小ファイルは即削除せず、ARCHIVE_BUCKETへcopy_objectで退避してから
-delete_objectする（corruptedバケットと同じ「安全側に倒す」設計。90日でS3 Lifecycle
-により自動削除）。copy/deleteが失敗した場合はそのstragglerを次回に持ち越す（＝次回
-また`_merged.json`に追記されうる＝行の重複が発生しうるが、データ消失よりマシという
-判断で許容する）。
+マージ元の小ファイルは即削除せず、ARCHIVE_BUCKETへcopy_objectで個別に退避してから
+まとめてdelete_objectsする（corruptedバケットと同じ「安全側に倒す」設計で、archive側
+は元ファイルの1:1コピーを保つ。90日でS3 Lifecycleにより自動削除）。copyが失敗した
+キーはdeleteの対象から外し次回に持ち越す（＝次回また`merged.json`に追記されうる＝
+行の重複が発生しうるが、データ消失よりマシという判断で許容する）。
 
-並列化: パーティション単位でThreadPoolExecutorで並列化する（既存Lambda群に前例の
-ない設計だが、バックフィル時に非現実的な実行時間になるのを避けるため。boto3クライ
-アントはスレッドセーフ）。パーティション同士はS3キーを共有しないため並列化しても
-安全（同一パーティションへの並行処理はreserved_concurrent_executions=1で別途防止
-済み）。パーティション内のGet/Copy/Delete処理自体は各ワーカースレッド内で直列実行
-する（並列度を「パーティション数×パーティション内ファイル数」に掛け算させず、
-接続プールの見積もりを単純に保つため）。
+効率化: S3 APIコールの回数そのものを減らすことを優先する。
+- DeleteObjectは`delete_objects`で最大1000件/回のバッチ削除にまとめる
+  （パーティションあたり従来35回→1回）
+- Get/Copyの並列化はパーティション単位に区切らず、BATCH_SIZE件分のパーティション
+  をまとめて1つの広いThreadPoolExecutorで一斉に処理する（パーティション境界で
+  ワーカーが遊ぶ時間を作らない）。boto3クライアントはスレッドセーフ。
+  同一パーティションへの並行処理はreserved_concurrent_executions=1で別途防止済み
+- バッチをBATCH_SIZE件単位に区切っているのは、merge書き込み(Step3)を全パーティション
+  分終えてからarchive+削除(Step4/5)をまとめて行うため、その間にタイムアウト等で
+  中断すると「merged.jsonは更新済みだが元ファイル未削除」の状態が一度に大量発生し、
+  次回実行時の重複行リスクがバッチサイズ分に膨らんでしまうのを防ぐため
+  （被害範囲を最大1バッチ分に限定する）
 
 event引数（初回バックフィル等での明示指定用。省略時は環境変数のデフォルト値を使う）:
   {"since": "2026-03-07T00:00:00Z", "until": "2026-03-14T00:00:00Z", "max_partitions": 200}
@@ -47,12 +52,13 @@ from datetime import datetime, timezone, timedelta
 import boto3
 from botocore.config import Config
 
-_PARTITION_WORKERS = 16  # パーティション単位の並列数
+_WORKERS = 32  # Get/Copyの並列数（1バッチ分をまとめて処理する）
+_BATCH_SIZE = 20  # 1バッチあたりのパーティション数（タイムアウト時の被害範囲をここに抑える）
 _COPY_RETRY = 3
 
-# ThreadPoolExecutorの並列数(_PARTITION_WORKERS)がboto3のデフォルト接続プール(10)を
+# ThreadPoolExecutorの並列数(_WORKERS)がboto3のデフォルト接続プール(10)を
 # 上回ると "Connection pool is full" が頻発し、接続の作り直しで遅くなるため広げておく
-s3 = boto3.client("s3", config=Config(max_pool_connections=_PARTITION_WORKERS * 2))
+s3 = boto3.client("s3", config=Config(max_pool_connections=_WORKERS + 8))
 
 S3_BUCKET = os.environ["S3_BUCKET"]
 ARCHIVE_BUCKET = os.environ["ARCHIVE_BUCKET"]
@@ -92,11 +98,32 @@ def _list_partition(prefix: str) -> list:
     return keys
 
 
+def _plan_partition(dt: datetime):
+    """パーティションを調べ、圧縮対象かどうかを判定する。対象なら
+    {prefix, merged_key, stragglers, has_merged} を返す。対象外なら None。"""
+    prefix = _prefix_for(dt)
+    keys = _list_partition(prefix)
+    merged_key = prefix + MERGED_NAME
+    stragglers = [k for k in keys if k != merged_key]
+    has_merged = merged_key in keys
+
+    if not stragglers:
+        return None
+    if not has_merged and len(stragglers) < 2:
+        return None
+    return {
+        "prefix": prefix,
+        "merged_key": merged_key,
+        "stragglers": stragglers,
+        "has_merged": has_merged,
+    }
+
+
 def _get_lines(key: str) -> list:
     """1オブジェクトを読み、NDJSON行のリストとして返す（不正な行・読み取り失敗はスキップ）。
     内容は妥当性チェックのみに使い、書き戻す文字列は元のバイト列そのまま
     （再シリアライズによる浮動小数点・キー順の変化を避けるため）。
-    1件の読み取り失敗でパーティション全体を巻き込まないよう、ここで例外を吸収する
+    1件の読み取り失敗で他のファイルを巻き込まないよう、ここで例外を吸収する
     （failed keyはstragglerとしてraw/に残り続けるので、次回実行時に自然にリトライされる）。"""
     try:
         body = s3.get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
@@ -117,8 +144,8 @@ def _get_lines(key: str) -> list:
     return lines
 
 
-def _archive_and_delete(key: str) -> bool:
-    """1オブジェクトをARCHIVE_BUCKETへ退避してから削除する。失敗時はリトライする。"""
+def _copy_to_archive(key: str) -> bool:
+    """1オブジェクトをARCHIVE_BUCKETへコピーする（削除はしない）。失敗時はリトライする。"""
     for attempt in range(_COPY_RETRY):
         try:
             s3.copy_object(
@@ -126,52 +153,98 @@ def _archive_and_delete(key: str) -> bool:
                 CopySource={"Bucket": S3_BUCKET, "Key": key},
                 Key=key,
             )
-            s3.delete_object(Bucket=S3_BUCKET, Key=key)
             return True
         except Exception as e:
-            print(f"[WARN] archive/delete failed (attempt {attempt + 1}/{_COPY_RETRY}) for {key}: {e}")
+            print(f"[WARN] archive copy failed (attempt {attempt + 1}/{_COPY_RETRY}) for {key}: {e}")
             time.sleep(0.5 * (attempt + 1))
     print(f"[ERROR] giving up archiving {key}, left in place for next run")
     return False
 
 
-def _compact_partition(dt: datetime) -> dict:
-    """1パーティション分の処理。呼び出し元(handler)がパーティション単位で並列に
-    呼ぶため、ここでの各S3操作は直列で行う（並列度の掛け算を避けるため）。"""
-    prefix = _prefix_for(dt)
-    keys = _list_partition(prefix)
-    merged_key = prefix + MERGED_NAME
-    stragglers = [k for k in keys if k != merged_key]
-    has_merged = merged_key in keys
+def _batch_delete(keys: list) -> int:
+    """delete_objects（最大1000件/回）でまとめて削除する。成功した件数を返す。"""
+    deleted = 0
+    for i in range(0, len(keys), 1000):
+        chunk = keys[i:i + 1000]
+        try:
+            resp = s3.delete_objects(
+                Bucket=S3_BUCKET,
+                Delete={"Objects": [{"Key": k} for k in chunk], "Quiet": True},
+            )
+            errors = resp.get("Errors", [])
+            deleted += len(chunk) - len(errors)
+            for err in errors:
+                print(f"[WARN] batch delete failed for {err.get('Key')}: {err.get('Message')}")
+        except Exception as e:
+            print(f"[ERROR] batch delete request failed for {len(chunk)} keys: {e}")
+    return deleted
 
-    if not stragglers:
-        return {"partition": prefix, "action": "skip", "archived": 0}
-    if not has_merged and len(stragglers) < 2:
-        return {"partition": prefix, "action": "skip", "archived": 0}
 
-    new_lines = [line for key in stragglers for line in _get_lines(key)]
+def _process_batch(batch_plans: list) -> dict:
+    """plansのうち1バッチ分（最大BATCH_SIZE件）に対してGet→merge書き込み→
+    archive(Copy)→削除(まとめてdelete_objects)を実行する。バッチ内で広く並列化する。"""
 
-    existing_lines = _get_lines(merged_key) if has_merged else []
-    all_lines = existing_lines + new_lines
-    if not all_lines:
-        # new_lines が空 = 今回のstragglerは全員「有効な行0件」（不正JSON・読み取り失敗等）。
-        # マージすべき中身はないが、raw/に残しておく理由もないのでarchiveだけは行う
-        # （放置すると毎回再検出されては読めずスキップされ続け、永久にraw/に残ってしまう）。
-        print(f"[SKIP] no valid records to merge in {prefix}, archiving {len(stragglers)} unusable file(s)")
-        archived = sum(1 for key in stragglers if _archive_and_delete(key))
-        return {"partition": prefix, "action": "skip", "archived": archived}
+    # ---- Step 2: このバッチ分のGetObjectを1つの広いプールでまとめて並列実行 ----
+    read_targets = []  # (plan_index, key, is_existing_merged)
+    for i, p in enumerate(batch_plans):
+        if p["has_merged"]:
+            read_targets.append((i, p["merged_key"], True))
+        for key in p["stragglers"]:
+            read_targets.append((i, key, False))
 
-    s3.put_object(
-        Bucket=S3_BUCKET,
-        Key=merged_key,
-        Body=("\n".join(all_lines) + "\n").encode("utf-8"),
-        ContentType="application/json",
-    )
-    print(f"[OK] merged {len(stragglers)} files ({len(new_lines)} records) -> s3://{S3_BUCKET}/{merged_key}")
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        read_results = list(pool.map(lambda t: (t[0], t[2], _get_lines(t[1])), read_targets))
 
-    archived = sum(1 for key in stragglers if _archive_and_delete(key))
-    print(f"[OK] archived {archived}/{len(stragglers)} original files for {prefix}")
-    return {"partition": prefix, "action": "merged", "archived": archived}
+    existing_lines = [[] for _ in batch_plans]
+    new_lines = [[] for _ in batch_plans]
+    for i, is_existing, lines in read_results:
+        (existing_lines if is_existing else new_lines)[i].extend(lines)
+
+    # ---- Step 3: パーティションごとにmerged.jsonを書き込む ----
+    merged_count = 0
+    failed = set()
+    for i, p in enumerate(batch_plans):
+        all_lines = existing_lines[i] + new_lines[i]
+        if not all_lines:
+            # 全stragglerが「有効な行0件」（不正JSON・読み取り失敗等）。マージすべき
+            # 中身はないが、raw/に残しておく理由もないのでarchiveだけは行う
+            # （放置すると毎回再検出されては読めずスキップされ続け、永久にraw/に残ってしまう）
+            print(f"[SKIP] no valid records to merge in {p['prefix']}, archiving {len(p['stragglers'])} unusable file(s)")
+            continue
+        try:
+            s3.put_object(
+                Bucket=S3_BUCKET,
+                Key=p["merged_key"],
+                Body=("\n".join(all_lines) + "\n").encode("utf-8"),
+                ContentType="application/json",
+            )
+            merged_count += 1
+            print(f"[OK] merged {len(p['stragglers'])} files ({len(new_lines[i])} new records) -> s3://{S3_BUCKET}/{p['merged_key']}")
+        except Exception as e:
+            print(f"[ERROR] failed to write merged.json for {p['prefix']}: {e}")
+            failed.add(i)  # マージ失敗パーティションはarchiveせず次回に持ち越す
+
+    # ---- Step 4: このバッチ分のarchive(CopyObject)を1つの広いプールでまとめて並列実行 ----
+    copy_targets = [(i, key) for i, p in enumerate(batch_plans) if i not in failed for key in p["stragglers"]]
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        copy_results = list(pool.map(lambda t: (t[0], t[1], _copy_to_archive(t[1])), copy_targets))
+
+    copied_ok = [[] for _ in batch_plans]
+    for i, key, ok in copy_results:
+        if ok:
+            copied_ok[i].append(key)
+
+    # ---- Step 5: パーティションごとにdelete_objectsでまとめて削除 ----
+    total_archived = 0
+    for i, p in enumerate(batch_plans):
+        keys_to_delete = copied_ok[i]
+        if not keys_to_delete:
+            continue
+        deleted = _batch_delete(keys_to_delete)
+        total_archived += deleted
+        print(f"[OK] archived {deleted}/{len(p['stragglers'])} original files for {p['prefix']}")
+
+    return {"merged": merged_count, "archived": total_archived}
 
 
 def handler(event, context):
@@ -197,22 +270,34 @@ def handler(event, context):
     else:
         print(f"[OK] compaction run: {len(partitions)} partitions from {actual_since.isoformat()} to {until.isoformat()}")
 
-    # パーティション同士はS3キーを共有しないため並列に処理して安全
-    # （同一パーティションへの並行処理は reserved_concurrent_executions=1 で別途防止済み）
-    results = []
-    with ThreadPoolExecutor(max_workers=_PARTITION_WORKERS) as pool:
-        future_to_dt = {pool.submit(_compact_partition, dt): dt for dt in partitions}
-        for future in future_to_dt:
-            dt = future_to_dt[future]
-            try:
-                r = future.result()
-            except Exception as e:
-                print(f"[ERROR] compaction failed for {_prefix_for(dt)}: {e}")
-                r = {"partition": _prefix_for(dt), "action": "error", "archived": 0}
-            results.append(r)
+    # ---- Step 1: 対象パーティションを判定（Listは軽量なので直列で十分） ----
+    plans = []
+    for dt in partitions:
+        try:
+            p = _plan_partition(dt)
+        except Exception as e:
+            print(f"[ERROR] failed to list partition {_prefix_for(dt)}: {e}")
+            continue
+        if p:
+            plans.append(p)
 
-    total_archived = sum(r["archived"] for r in results)
-    merged_count = sum(1 for r in results if r["action"] == "merged")
+    if not plans:
+        print(f"[OK] compaction run complete: partitions={len(partitions)} merged=0 archived=0")
+        return {"partitions_scanned": len(partitions), "partitions_merged": 0, "files_archived": 0}
+
+    # BATCH_SIZE件ずつに区切って処理する（タイムアウト時の被害範囲を1バッチ分に限定するため。
+    # モジュールdocstring・_BATCH_SIZEのコメント参照）
+    merged_count = 0
+    total_archived = 0
+    for start in range(0, len(plans), _BATCH_SIZE):
+        batch = plans[start:start + _BATCH_SIZE]
+        try:
+            result = _process_batch(batch)
+            merged_count += result["merged"]
+            total_archived += result["archived"]
+        except Exception as e:
+            print(f"[ERROR] batch processing failed (partitions {start}-{start + len(batch) - 1}): {e}")
+
     print(f"[OK] compaction run complete: partitions={len(partitions)} merged={merged_count} archived={total_archived}")
     return {
         "partitions_scanned": len(partitions),
