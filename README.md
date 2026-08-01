@@ -53,6 +53,7 @@ car-iot-services/
 ├── infra/                 クラウドインフラ（Terraform）
 │   ├── manage.ps1         デプロイスクリプト（plan / apply）
 │   └── lambda_src/        Lambda ソースコード
+│       └── TESTING.md     Lambdaユニットテストの実行方法（Docker + moto + pytest）
 ├── ops/                   運用スクリプト
 │   ├── provision_device.ps1  ESP32 初回プロビジョニング（証明書発行・SPIFFS 書き込み）
 │   ├── gen_certs.ps1      証明書生成

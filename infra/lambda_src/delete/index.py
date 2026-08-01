@@ -98,8 +98,35 @@ def _get_partitions(addr, sensor_id, hours):
     return partitions
 
 
+def _parse_records(body: bytes) -> list:
+    """1オブジェクトの中身をレコードのリストとして返す。
+    通常は単一JSON（1ファイル1レコード）だが、compaction Lambdaがまとめた
+    `_merged.json` は改行区切りJSON（NDJSON、1ファイル複数レコード）になっている。
+    単一JSONとしてのパースをまず試し（従来ファイルとの高速パス）、
+    失敗したら行ごとにパースする（不正な行は無視して先に進む）。
+    """
+    try:
+        return [json.loads(body)]
+    except json.JSONDecodeError:
+        pass
+    records = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return records
+
+
 def _delete_from_partition(addr, sensor_id, year, month, day, hour):
-    """パーティション内のオブジェクトを読んで addr/id が一致するものを削除する。"""
+    """パーティション内のオブジェクトを読んで addr/id が一致するものを削除する。
+    compaction済み（NDJSON）ファイルの場合、一致した行が1件でもあればファイル
+    全体を削除する（他の非一致行も道連れになる）。deleted には実際に一致した
+    レコード数を返す（ファイル数ではない）。
+    """
     prefix = f"raw/year={year}/month={month}/day={day}/hour={hour}/"
     deleted = 0
     paginator = s3.get_paginator("list_objects_v2")
@@ -107,16 +134,15 @@ def _delete_from_partition(addr, sensor_id, year, month, day, hour):
         for obj in page.get("Contents", []):
             key = obj["Key"]
             body = s3.get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
-            try:
-                data = json.loads(body)
-            except Exception:
-                continue
-            match = (addr and data.get("addr") == addr) or (
-                sensor_id and data.get("id") == sensor_id
+            records = _parse_records(body)
+            match_count = sum(
+                1 for data in records
+                if (addr and data.get("addr") == addr)
+                or (sensor_id and data.get("id") == sensor_id)
             )
-            if match:
+            if match_count > 0:
                 s3.delete_object(Bucket=S3_BUCKET, Key=key)
-                deleted += 1
+                deleted += match_count
     return deleted
 
 

@@ -1,47 +1,69 @@
 locals {
-  ingest_src_dir = "${path.module}/lambda_src/ingest"
-  query_src_dir  = "${path.module}/lambda_src/query"
-  delete_src_dir = "${path.module}/lambda_src/delete"
-  labels_src_dir = "${path.module}/lambda_src/labels"
-  status_src_dir = "${path.module}/lambda_src/status"
-  admin_src_dir  = "${path.module}/lambda_src/admin"
-  build_dir      = "${path.module}/.build"
+  ingest_src_dir       = "${path.module}/lambda_src/ingest"
+  query_src_dir        = "${path.module}/lambda_src/query"
+  delete_src_dir       = "${path.module}/lambda_src/delete"
+  labels_src_dir       = "${path.module}/lambda_src/labels"
+  status_src_dir       = "${path.module}/lambda_src/status"
+  admin_src_dir        = "${path.module}/lambda_src/admin"
+  shadow_guard_src_dir = "${path.module}/lambda_src/shadow_guard"
+  compact_src_dir      = "${path.module}/lambda_src/compact"
+  build_dir            = "${path.module}/.build"
 }
 
 data "archive_file" "ingest" {
   type        = "zip"
   source_dir  = local.ingest_src_dir
   output_path = "${local.build_dir}/ingest.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "query" {
   type        = "zip"
   source_dir  = local.query_src_dir
   output_path = "${local.build_dir}/query.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "delete" {
   type        = "zip"
   source_dir  = local.delete_src_dir
   output_path = "${local.build_dir}/delete.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "labels" {
   type        = "zip"
   source_dir  = local.labels_src_dir
   output_path = "${local.build_dir}/labels.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "status" {
   type        = "zip"
   source_dir  = local.status_src_dir
   output_path = "${local.build_dir}/status.zip"
+  excludes    = ["tests"]
 }
 
 data "archive_file" "admin" {
   type        = "zip"
   source_dir  = local.admin_src_dir
   output_path = "${local.build_dir}/admin.zip"
+  excludes    = ["tests"]
+}
+
+data "archive_file" "shadow_guard" {
+  type        = "zip"
+  source_dir  = local.shadow_guard_src_dir
+  output_path = "${local.build_dir}/shadow_guard.zip"
+  excludes    = ["tests"]
+}
+
+data "archive_file" "compact" {
+  type        = "zip"
+  source_dir  = local.compact_src_dir
+  output_path = "${local.build_dir}/compact.zip"
+  excludes    = ["tests"]
 }
 
 # ─── ingest Lambda（IoT Core → S3 書き込み） ─────────────────────────────────
@@ -136,6 +158,51 @@ resource "aws_lambda_function" "status" {
     variables = {
       THING_NAME   = var.device_id
       IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
+    }
+  }
+}
+
+# ─── shadow_guard Lambda（Shadow update/accepted → 不正キー検知・修正） ─────
+
+resource "aws_lambda_function" "shadow_guard" {
+  function_name    = "${var.project}-shadow-guard"
+  filename         = data.archive_file.shadow_guard.output_path
+  source_code_hash = data.archive_file.shadow_guard.output_base64sha256
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  role             = aws_iam_role.lambda_shadow_guard.arn
+  timeout          = 10
+
+  environment {
+    variables = {
+      IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
+    }
+  }
+}
+
+# ─── compact Lambda（EventBridge Scheduler → raw/ 小ファイルの定期compaction） ───
+
+resource "aws_lambda_function" "compact" {
+  function_name    = "${var.project}-compact"
+  filename         = data.archive_file.compact.output_path
+  source_code_hash = data.archive_file.compact.output_base64sha256
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  role             = aws_iam_role.lambda_compact.arn
+  timeout          = 900
+
+  # 同一パーティションへの並行書き込みレース（マージ後・削除完了前に別実行が読みに来て
+  # 二重カウントする）を構造的に防ぐため、同時実行数を1に固定する。スケジュール実行が
+  # 手動実行（バックフィル等）と鉢合わせた場合はスロットリングされるが、EventBridge
+  # Schedulerのデフォルトリトライで後追いされるため実害はない
+  reserved_concurrent_executions = 1
+
+  environment {
+    variables = {
+      S3_BUCKET              = aws_s3_bucket.main.bucket
+      ARCHIVE_BUCKET         = aws_s3_bucket.archive.bucket
+      LOOKBACK_HOURS         = "72"
+      MAX_PARTITIONS_PER_RUN = "200"
     }
   }
 }

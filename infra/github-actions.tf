@@ -38,8 +38,8 @@ resource "aws_iam_role_policy" "github_actions_firmware" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = "s3:PutObject"
+        Effect = "Allow"
+        Action = "s3:PutObject"
         Resource = [
           "${aws_s3_bucket.firmware.arn}/firmware/*",
           "${aws_s3_bucket.firmware.arn}/jobs/*",

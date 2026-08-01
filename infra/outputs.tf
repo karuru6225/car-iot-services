@@ -28,6 +28,11 @@ output "firmware_bucket" {
   value       = aws_s3_bucket.firmware.bucket
 }
 
+output "archive_bucket" {
+  description = "compaction前raw小ファイルの退避先バケット名（90日で自動削除）"
+  value       = aws_s3_bucket.archive.bucket
+}
+
 output "firmware_base_url" {
   description = "OTA ファームウェア配置先ベース URL"
   value       = "https://${aws_s3_bucket.firmware.bucket}.s3.${var.aws_region}.amazonaws.com"

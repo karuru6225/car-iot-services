@@ -37,6 +37,7 @@ src/
 | `oled.h/.cpp` | SSD1306 OLEDドライバ（表示制御） |
 | `speaker.h/.cpp` | ブザー / スピーカードライバ（tone PWM制御） |
 | `button.h/.cpp` | デバウンス・長押し検出（`ButtonEvent`: BTN0_SHORT / BTN0_LONG / BTN1_SHORT / BTN1_LONG）、ピンは`begin()`で`boardPins()`から取得 |
+| `can.h/.cpp` | GU0コネクタ経由のTWAI（CAN）ドライバ。Honda N-VAN OBD-II Mode 01（29bit拡張アドレッシング）の送受信、バスオフリカバリ |
 
 ### domain/
 
@@ -53,6 +54,7 @@ device / service を include してはいけない。標準ライブラリのみ
 | `sensor_factory.h/.cpp` | センサー種別振り分け（SensorVariant = std::variant）      |
 | `ble_targets.h/.cpp`| 監視対象 BLE アドレスの NVS 永続化（BleTargets、NS: "switchbot"）|
 | `sensor_filter.h/.cpp` | BLE センサー値のメディアンフィルタ（`BLE_MEDIAN_FILTER`ビルドフラグ時のみ有効、直近3件のアドレス別履歴を保持）|
+| `obd.h/.cpp` | OBD-II Mode 01 PID（全28種）の構造体（`OBDReading`）とデコード関数群。BLE送信用の固定レイアウト構造体（`ObdBlePacket`）と変換関数も含む |
 
 ### service/
 
@@ -70,6 +72,8 @@ device / service を include してはいけない。標準ライブラリのみ
 | `monitor.h/.cpp` | 計測サイクル（`measure()` / `publish()`）・`MeasureResult` 定義 |
 | `menu.h/.cpp` | OLED + 2ボタン設定メニュー、`enterMenuMode()` → `OperationMode` を返す |
 | `menu_util.h/.cpp` | メニュー用パスユーティリティ（pathPush / pathPop / pathTitle 等） |
+| `obdpoll.h/.cpp` | `obdPoll()`。全28PID逐次問い合わせ（`canInit()`済み前提）。CONTINUOUS_OBDモードの1秒ティックから呼ばれる |
+| `operation_mode.h/.cpp` | `OperationModeManager`。`OperationMode` ごとの実行関数を登録・呼び出すレジストリ（`main.cpp`のloop()分岐を集約） |
 | `pubqueue.h/.cpp` | オフラインバッファ（RTC メモリ + SPIFFS）・MQTT publish キュー管理 |
 | `log_storage.h/.cpp` | デバッグログの SPIFFS 保存（起動ごと1ファイル、最大12ファイルのリングバッファ） |
 | `logger.h/.cpp` | シリアルデバッグ出力（横断的関心事） |

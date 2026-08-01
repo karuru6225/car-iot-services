@@ -185,7 +185,7 @@ ESP32-S3-MINI-1
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"fw_version":"1.19.0+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"fw_version":"1.20.0+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
@@ -676,7 +676,16 @@ ESP32↔SIM7080G間のUARTにパリティ・CRCが無く、稀な1ビット化�
 - `ingest` Lambda (`infra/lambda_src/ingest/index.py`): magicバイトの有無で新旧フォーマットを自動判別（デプロイ順序に依存しない）、CRC不一致時は専用バケット `corrupted`（30日で自動削除、`infra/s3.tf`）に生バイナリを退避し `raw/` のAthenaスキーマは無傷に保つ
 - S3保存JSONとログにフォーマットバージョン（`"ver"`: 0=旧形式, 1=新形式）を出力し、破損率の実測・監視を可能にした
 
-Shadow（JSON テキスト）側は同種の対策は未実装。破損が疑われる場合は `aws iot-data delete-thing-shadow` で一度リセットすれば次サイクルで自動再構築される（`reported` はマージ方式で蓄積し続けるため）。
+Shadow（JSON テキスト）側は同種の対策は未実装だったが、下記の `shadow_guard` で別方式の対策を実装した。破損が疑われる場合は `aws iot-data delete-thing-shadow` で一度リセットすれば次サイクルで自動再構築される（`reported` はマージ方式で蓄積し続けるため）。
+
+### ~~TODO: Shadow reported の不正キー検知・自動修正~~ **実装完了**
+
+`$aws/things/{id}/shadow/update` は AWS IoT の予約トピックで Device Shadow サービスが直接マージするため、data_bin のように Topic Rule でマージ前に横取りして弾くことができない。そのため事後検知＋即時修正で対応する:
+
+- Topic Rule `shadow_guard`（`infra/iot.tf`）: `$aws/things/+/shadow/update/accepted` を購読。このトピックの `state.reported` にはその回の更新で変化したキーのみが載るため、全体を再取得せずに差分だけを検証できる
+- Lambda `shadow_guard`（`infra/lambda_src/shadow_guard/index.py`）: `telemetry.cpp::buildConfigPayload` が送るキーのホワイトリスト（キー名 + 型）と照合。未知キー・型不一致・`override_next_mode` の不正値を検知したら該当キーを `null` で上書きする `update-thing-shadow` を発行し reported から除去する（null は検証対象外にしているため、この修正自体が再度検知されて無限ループする心配はない）
+- **既知の限界**: 許可キーのまま値だけ壊れるケース（例: `chg_start_v` の型は正しいが桁が飛ぶ）は検出できない。あくまでキー名の化けによる未知キー蓄積の防止が目的
+- **保守上の注意**: `telemetry.cpp::buildConfigPayload` の reported フィールドを追加・変更したら `shadow_guard/index.py` の `SCHEMA` も合わせて更新すること
 
 ### TODO: corrupted バケットの破損データをCRC32ブルートフォースで訂正（未着手）
 
@@ -689,6 +698,37 @@ Shadow（JSON テキスト）側は同種の対策は未実装。破損が疑わ
 - `ingest` Lambda の `_save_corrupted` 呼び出し箇所（またはオフライン解析スクリプト）に訂正トライを追加
 - 既に `corrupted` バケットに溜まっている過去データにも遡って適用可能
 - Hamming/Reed-Solomon等の本格的なECCをファームに実装する案もあったが、テレメトリは5分おき送信で1件欠損の実害が小さいこと、実装コスト・新規依存追加のリスクを考えると見合わないため不採用
+
+### TODO: S3 raw データの定期 Compaction（未着手）
+
+`raw/year=.../month=.../day=.../hour=.../{device_id}-{uuid8}.json`（`infra/s3.tf` / `infra/lambda_src/ingest/index.py`）は ingest Lambda がメッセージ1件（デバイスの publish 1回）ごとに1オブジェクトとして書き込む設計。稼働台数・稼働時間が伸びるほど数十〜百バイト級の小さいJSONファイルが hour パーティション配下に大量に溜まっていく。
+
+**目的**: Grafana（`claude-opentelemetry/grafana/provisioning/dashboards/iot-monitor.json`）が Athena経由で `sensor_data` テーブルを常時クエリしており、そのコスト削減が主目的。ダッシュボードのデフォルト時間範囲は `now-24h` で、7パネルの多くが直近2日分（`CONCAT(year,month,day,hour) BETWEEN ...` によるパーティションプルーニング）を実質的なスキャン対象にしている。**そのため compaction は直近データから始めて構わない**（「古いデータだけ」に限定すると本来の目的であるクエリコスト削減効果が薄れる）。
+
+**制約1（Grafanaクエリは無改修）**: 上記7パネルの設定・SQLは変更しない前提。パーティションプルーニングに `CONCAT(year, month, day, hour) BETWEEN ...` を使うため、パーティションカラム構成・テーブル名・カラム名は今のまま維持する必要がある。
+
+**確認済み**: `aws glue get-table` でテーブル定義を確認したところ、`InputFormat=TextInputFormat` + `SerDe=org.openx.data.jsonserde.JsonSerDe`（改行区切りJSONを複数行読める）、かつ `projection.enabled=true`（Glue Crawler不要、S3プレフィックスから仮想的にパーティション解決）だった。この2点により、**テーブル定義・Grafanaクエリを一切変更せずに compaction できる**。
+
+**制約2（行単位削除の劣化・許容）**: `DELETE /data`（`infra/lambda_src/delete/index.py`）は Athena の `$path`（＝`raw/`配下の個別オブジェクトキー）を使って行単位削除している。直近データもcompaction対象にするため、compaction 後は削除粒度が「行」から「マージ後ファイル全体（＝該当時間帯の全行）」に落ちるのは**現時点では許容する**。将来的に `delete/index.py` を「対象keyがマージ済みファイルなら GetObject → 該当行を除いて PutObject で上書き」という動作に改修すれば行単位削除を維持できる（`_delete_by_keys` の分岐追加で対応可能、ファイルサイズは小さいままなので読み直しコストは軽微）。この改修は本 TODO のスコープ外とし、別 TODO として切り出す。
+
+**compaction の単位**: 1 hour パーティション（`raw/year=.../month=.../day=.../hour=.../`）＝1マージファイル。年月日時の値はS3パス（projection）から機械的に決まり行内容の `ts` は見ないため、**hour境界をまたいでマージすると行の実時刻とパーティション値がズレて `CONCAT(year,month,day,hour) BETWEEN ...` のプルーニングが壊れる**。device_id はパーティションカラムではないので、同一hour内なら複数デバイスを1ファイルに混ぜてよい（現状1時間あたり平均約29件なので1ファイルで十分小さい）。
+
+**タイムゾーンの注意**: `year/month/day/hour` はすべてUTCで書き込まれている（`ingest/index.py` の `datetime.now(timezone.utc)` / `ts` パース時も `tzinfo=timezone.utc` を付与）。Grafanaダッシュボードは表示上 `"timezone": "browser"`（＝JST）だが、`$__timeFrom()`/`$__timeTo()` マクロが解決するのは絶対時刻（UTC epoch）なので `date_format(...,'%Y%m%d%H')` は問題なくUTCパーティション値と一致する（表示がJSTなだけでクエリのズレはない）。compaction 実装側で気をつけるべきは:
+
+- 「対象は確定済み＝現在進行中でない past hour」の判定は**UTCで**行う（Lambdaの `datetime.now(timezone.utc)` を使う。ローカル実行時のマシン時刻(JST)や `datetime.now()`（naive）をそのまま使わない）
+- EventBridge Scheduler の cron/rate 式はデフォルトUTC評価。スケジュール定義時に誤ってタイムゾーンをAsia/Tokyo等に設定しない（設定した場合は「past hour」判定側もそれに合わせてズレるため、UTC固定に統一するのが安全）
+
+**実装方針**:
+
+- 対象パーティション（`raw/year=.../month=.../day=.../hour=.../`）配下の小さいJSONファイル群を読み、**改行区切りJSON（NDJSON）としてまとめて1ファイルに再書き込み**（同じプレフィックスのまま。テーブル・パーティション定義・Grafanaクエリは無改修で済む）
+- マージ後、元の小ファイルは即削除せず**別プレフィックス/バケットへ退避（アーカイブ）**し、一定期間（例: 90日）はロールバック可能な状態を保ってからS3 Lifecycle expirationで自動削除する（`corrupted` バケットの30日自動削除パターンに倣う）。アーカイブ先はAthenaのテーブルロケーション外なので、退避してもスキャン性能への影響はない
+- EventBridge Scheduler等で定期起動するLambda/Glue Jobとして実装（UTC評価）。実行間隔は「直近データから対象にする」方針に合わせて短め（例: 1日〜数時間おき）を想定
+
+### TODO: compaction後データの行単位削除対応（未着手、上記compactionに従属）
+
+上記「S3 raw データの定期 Compaction」を実装すると、`DELETE /data` の行単位削除（`infra/lambda_src/delete/index.py` の `_delete_by_keys`）がマージ済みファイルに対しては機能しなくなる（ファイル全体＝該当時間帯の全行が削除対象になってしまう）。
+
+**実装方針（案）**: `_delete_by_keys` で対象keyがマージ済みNDJSONファイルかどうかを判定し、マージ済みなら `GetObject` → 削除対象行を除いて残りを `PutObject` で上書きする分岐を追加する。ファイルサイズは compaction 後も小さいままの想定なので、読み直しコストは軽微。判定方法（ファイル名規則 or 内部メタデータ）は compaction 実装時に合わせて設計する。
 
 ### TODO: ストリーミング OTA（塩漬け）
 
@@ -747,6 +787,29 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 - EventBridge Scheduler + 専用 Lambda + SNS：柔軟で既存コードと分離できるが、別 Lambda の実装コストがかかる
 
 **背景**: sub（LiFePO4）が深放電に至ると、v1.1.0基板のMOSFETボディダイオード経由でmain（鉛バッテリー）が12Vバスの負荷を供給し続け、mainが上がるリスクがある。梅雨期間の長期曇天でソーラー発電が途絶えた場合に現実的なリスクとなる。
+
+### ~~TODO: OBD-II（CAN）実車データ取得~~ **実装済み**
+
+新規動作モード `OperationMode::CONTINUOUS_OBD` を追加。`device/can.h/.cpp`（TWAI・29bit拡張アドレッシング・N-VAN対応）、`domain/obd.h/.cpp`（全28PIDデコード）、`service/obdpoll.h/.cpp`（1秒間隔逐次ポーリング）を新規実装。取得値はOLED表示（`oledShowObdData()`）とBLE Notify（`MEAS_OBD_UUID`、87バイトを18バイトずつ5チャンクに分割）でスマホアプリ（`mobile/lib/main.dart`）へ送信する。Shadowの`override_next_mode="continuous_obd"`とメニューの`"Continuous OBD"`の両方から起動できる。
+
+AWS への publish（`domain/telemetry`統合）は今回のスコープ外で未実装。詳細（実車スキャン結果・CANプロトコル詳細・ビットマスク等）は `OBD.md` 参照。
+
+### TODO: OTA中のBLE無効化（IPCタスクスタックオーバーフロー対策・未着手）
+
+現状、OTA（`ota.handleJob()` → `apply()`）中も BLE（`blePeripheral` / `bleScanner`）は動いたまま。`esp_ota_write` によるフラッシュ書き込みとBLEスタックが同時に動くと、ESP32/ESP32-S3で知られる "IPC task has overflowed its stack" の要因になり得る。
+
+**実装方針**:
+
+- `blePeripheral.stop()`（`NimBLEDevice::stopAdvertising()` のみ、`device/ble_peripheral.cpp`）と
+  `bleScanner.deinit()`（Peripheral と共存するため no-op、`device/ble_scan.cpp`）は、
+  どちらも NimBLE ホストタスク・コントローラ自体は停止しないため、この対策には**使えない**（レビュー指摘済み）
+- 実際に BLE スタックを完全停止するには `NimBLEDevice::deinit(true)`（引数 true でコントローラも解放）を呼ぶ必要がある。
+  `service/ota.cpp` の `handleJob()` 冒頭（`jobsReport(job.id, "IN_PROGRESS")` 直後あたり）で呼ぶ想定
+- `NimBLEDevice::deinit(true)` の後に BLE を再開するには `BleScanner::setup()` 相当
+  （`NimBLEDevice::init()` からのアドバタイズコールバック再設定を含む）をやり直す必要がある。
+  現状の `setup()` は起動時 1 回のみの呼び出しを想定した作りのため、再入可能にする見直しが必要
+- OTA成功時は `esp_restart()` するため再開処理は不要。失敗時に呼び出し元へ処理が戻るケースでBLEを再開すべきか、
+  その場合の再初期化方法が検討課題として残る
 
 ### v2.0.0 基板 — 電源ボタン＋自己保持回路（ファームウェア側は実装済み、電源断ロジックは未着手）
 
