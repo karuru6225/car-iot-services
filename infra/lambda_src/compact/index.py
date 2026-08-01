@@ -49,7 +49,7 @@ ARCHIVE_BUCKET = os.environ["ARCHIVE_BUCKET"]
 LOOKBACK_HOURS_DEFAULT = int(os.environ.get("LOOKBACK_HOURS", "72"))
 MAX_PARTITIONS_PER_RUN_DEFAULT = int(os.environ.get("MAX_PARTITIONS_PER_RUN", "200"))
 
-MERGED_NAME = "_merged.json"
+MERGED_NAME = "merged.json"  # 先頭 "_"/"." はHadoop系InputFormatが隠しファイルとして無視するため不可
 _MAX_WORKERS = 12
 _COPY_RETRY = 3
 
@@ -85,10 +85,16 @@ def _list_partition(prefix: str) -> list:
 
 
 def _get_lines(key: str) -> list:
-    """1オブジェクトを読み、NDJSON行のリストとして返す（不正な行はスキップ）。
+    """1オブジェクトを読み、NDJSON行のリストとして返す（不正な行・読み取り失敗はスキップ）。
     内容は妥当性チェックのみに使い、書き戻す文字列は元のバイト列そのまま
-    （再シリアライズによる浮動小数点・キー順の変化を避けるため）。"""
-    body = s3.get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
+    （再シリアライズによる浮動小数点・キー順の変化を避けるため）。
+    1件の読み取り失敗でパーティション全体を巻き込まないよう、ここで例外を吸収する
+    （failed keyはstragglerとしてraw/に残り続けるので、次回実行時に自然にリトライされる）。"""
+    try:
+        body = s3.get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
+    except Exception as e:
+        print(f"[WARN] failed to read {key}, skip (will retry next run): {e}")
+        return []
     lines = []
     for raw_line in body.splitlines():
         line = raw_line.strip()
@@ -140,8 +146,14 @@ def _compact_partition(dt: datetime) -> dict:
     existing_lines = _get_lines(merged_key) if has_merged else []
     all_lines = existing_lines + new_lines
     if not all_lines:
-        print(f"[SKIP] no valid records to merge in {prefix}")
-        return {"partition": prefix, "action": "skip", "archived": 0}
+        # new_lines が空 = 今回のstragglerは全員「有効な行0件」（不正JSON・読み取り失敗等）。
+        # マージすべき中身はないが、raw/に残しておく理由もないのでarchiveだけは行う
+        # （放置すると毎回再検出されては読めずスキップされ続け、永久にraw/に残ってしまう）。
+        print(f"[SKIP] no valid records to merge in {prefix}, archiving {len(stragglers)} unusable file(s)")
+        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+            archived_flags = list(pool.map(_archive_and_delete, stragglers))
+        archived = sum(1 for ok in archived_flags if ok)
+        return {"partition": prefix, "action": "skip", "archived": archived}
 
     s3.put_object(
         Bucket=S3_BUCKET,
@@ -171,7 +183,15 @@ def handler(event, context):
     since = _parse_iso(event["since"]) if event.get("since") else until - timedelta(hours=lookback_hours)
 
     partitions = _target_hour_partitions(since, until, max_partitions)
-    print(f"[OK] compaction run: {len(partitions)} partitions from {since.isoformat()} to {until.isoformat()}")
+    actual_since = partitions[-1] if partitions else until
+    if actual_since > since:
+        # max_partitions で打ち切られ、要求された since まで到達しなかった
+        print(
+            f"[OK] compaction run: {len(partitions)} partitions from {actual_since.isoformat()} to {until.isoformat()} "
+            f"(truncated by max_partitions={max_partitions}; requested since={since.isoformat()})"
+        )
+    else:
+        print(f"[OK] compaction run: {len(partitions)} partitions from {actual_since.isoformat()} to {until.isoformat()}")
 
     results = []
     total_archived = 0
