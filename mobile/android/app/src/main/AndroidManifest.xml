@@ -4,8 +4,9 @@
         android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30"/>
+    <!-- GPS取得用（元々BLEスキャンのAndroid 11以下向けレガシー権限だったが、
+         GPS用に無条件で必要なためmaxSdkVersion指定を外して共用する） -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <!-- Bluetooth: Android 12+ -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"/>
