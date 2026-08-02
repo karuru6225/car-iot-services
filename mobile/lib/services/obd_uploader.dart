@@ -50,7 +50,10 @@ class ObdUploader {
   Future<void> flush() async {
     if (_buffer.isEmpty || _uploading) return;
     _uploading = true;
-    final batch = List<ObdReading>.from(_buffer);
+    // オフライン中にバッファが溜まっても、1回の送信は_maxBatchSize件までに区切る。
+    // 丸ごと送るとサーバー側の上限（500件、_maxBatchSizeの5倍の安全マージン）を
+    // 超えて常に拒否され続け、バッファが二度と縮まらなくなるのを防ぐため。
+    final batch = _buffer.take(_maxBatchSize).toList();
     try {
       final token = await _auth.accessToken;
       if (token == null) {
