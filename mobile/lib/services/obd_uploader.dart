@@ -13,10 +13,8 @@ import 'auth_service.dart';
 class ObdUploader {
   ObdUploader({
     required AuthService auth,
-    required String Function() deviceIdProvider,
     this.onLog,
-  })  : _auth = auth,
-        _deviceIdProvider = deviceIdProvider;
+  }) : _auth = auth;
 
   static const _apiEndpoint = AppConfig.apiEndpoint;
 
@@ -25,8 +23,11 @@ class ObdUploader {
   static const _maxBufferHardCap = 6000; // 異常系（長時間送信失敗が続いた場合）の保険
 
   final AuthService _auth;
-  final String Function() _deviceIdProvider;
   void Function(String msg)? onLog;
+
+  // 接続成功時に呼び出し側（ble_home_screen.dart）が設定する。バッファと同じ場所で保持し、
+  // 切断後もflush()が正しいdevice_idで再送できるようにする（切断してもクリアしない）。
+  String deviceId = '';
 
   final _buffer = <ObdReading>[];
   Timer? _flushTimer;
@@ -65,7 +66,7 @@ class ObdUploader {
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
-              'device_id': _deviceIdProvider(),
+              'device_id': deviceId,
               'readings': batch.map(_toJson).toList(),
             }),
           )

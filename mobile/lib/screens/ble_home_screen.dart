@@ -11,6 +11,7 @@ import '../ble/ble_constants.dart';
 import '../ble/obd_chunk_assembler.dart';
 import '../models/conn_state.dart';
 import '../models/log_entry.dart';
+import '../models/obd_metric.dart';
 import '../models/obd_reading.dart';
 import '../services/auth_service.dart';
 import '../services/obd_uploader.dart';
@@ -21,6 +22,7 @@ import '../widgets/debug_toggle_card.dart';
 import '../widgets/log_card.dart';
 import '../widgets/meas_card.dart';
 import '../widgets/obd_card.dart';
+import 'meter_screen.dart';
 
 class BleHome extends StatefulWidget {
   const BleHome({super.key});
@@ -39,6 +41,12 @@ class _BleHomeState extends State<BleHome> {
   // OBD-II（チャンク分割で受信・再構成）
   ObdReading? _obdReading;
   final _obdAssembler = ObdChunkAssembler();
+
+  // メーター画面のミニグラフ用リングバッファ（約1Hz更新 × 60件 ≒ 60秒分）
+  static const _historyCapacity = 60;
+  final Map<ObdMetric, List<double>> _obdHistory = {
+    for (final m in ObdMetric.values) m: <double>[],
+  };
 
   // デバッグモード（接続画面のトグルでON時のみログカードを表示）
   bool _debugMode = false;
@@ -62,7 +70,7 @@ class _BleHomeState extends State<BleHome> {
   @override
   void initState() {
     super.initState();
-    _uploader = ObdUploader(auth: _auth, deviceIdProvider: () => _deviceName);
+    _uploader = ObdUploader(auth: _auth);
     _uploader.onLog = (m) => _addLog(m, LogType.sys);
     _uploader.start();
     _auth.tryRestoreSession().then((email) {
@@ -157,6 +165,7 @@ class _BleHomeState extends State<BleHome> {
         setState(() {
           _state = ConnState.connecting;
           _deviceName = _device!.platformName;
+          _uploader.deviceId = _deviceName;
         });
         _addLog('OS 接続済みデバイスを使用: $_deviceName', LogType.sys);
         await _discoverAndSubscribe();
@@ -196,6 +205,7 @@ class _BleHomeState extends State<BleHome> {
       setState(() {
         _state = ConnState.connecting;
         _deviceName = _device!.platformName;
+        _uploader.deviceId = _deviceName;
       });
       _addLog('接続中: $_deviceName', LogType.sys);
 
@@ -257,12 +267,13 @@ class _BleHomeState extends State<BleHome> {
       }
     }
 
-    _connSub = _device!.connectionState.listen((s) {
+    _connSub = _device!.connectionState.listen((s) async {
       if (s == BluetoothConnectionState.disconnected) {
         final autoReconnect = !_userDisconnected;
         _userDisconnected = false;
         _addLog(autoReconnect ? '予期しない切断: 自動再接続...' : '切断されました', LogType.sys);
-        _uploader.flush();
+        // 切断直後の残りバッファを送り切ってから後始末する
+        await _uploader.flush();
         _cleanup();
         if (autoReconnect) {
           // ESP32 の起動・アドバタイズ開始を待ってからスキャン
@@ -282,11 +293,25 @@ class _BleHomeState extends State<BleHome> {
     try {
       final reading = _obdAssembler.add(v);
       if (reading != null) {
-        setState(() => _obdReading = reading);
+        setState(() {
+          _obdReading = reading;
+          if (reading.valid) _pushHistory(reading);
+        });
         _uploader.add(reading);
       }
     } catch (e) {
       _addLog('OBDデータ解析エラー: $e', LogType.err);
+    }
+  }
+
+  // メーター画面のミニグラフ用に全項目の値を履歴へ積む。
+  // 無応答フレーム（reading.valid == false）はグラフがゼロ落ちしないよう積まない。
+  void _pushHistory(ObdReading reading) {
+    for (final metric in ObdMetric.values) {
+      final value = obdMetricMeta[metric]!.valueOf(reading);
+      final list = _obdHistory[metric]!;
+      list.add(value);
+      if (list.length > _historyCapacity) list.removeAt(0);
     }
   }
 
@@ -308,6 +333,9 @@ class _BleHomeState extends State<BleHome> {
       _deviceName = '';
       _vMain = _curr = _pwr = _vSub = null;
       _obdReading = null;
+      for (final list in _obdHistory.values) {
+        list.clear();
+      }
     });
   }
 
@@ -407,6 +435,7 @@ class _BleHomeState extends State<BleHome> {
               const SizedBox(height: 24),
             ],
           ),
+          MeterScreen(reading: _obdReading, history: _obdHistory),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -420,6 +449,7 @@ class _BleHomeState extends State<BleHome> {
           BottomNavigationBarItem(icon: Icon(Icons.bluetooth), label: '接続'),
           BottomNavigationBarItem(icon: Icon(Icons.battery_full), label: 'バッテリー'),
           BottomNavigationBarItem(icon: Icon(Icons.speed), label: 'OBD'),
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard_customize), label: 'メーター'),
         ],
       ),
     );
