@@ -29,6 +29,8 @@ enum class OperationMode
 
 // DeepSleep
 static const uint32_t SLEEP_INTERVAL_SEC = 300;
+// DeepSleep突入前にBLE接続を待つ最低時間（スマホ側の接続リトライと合わせる。OBD.md参照）
+static const uint32_t BLE_WAKE_WINDOW_SEC = 15;
 
 // BLE
 static const uint16_t SWITCHBOT_COMPANY_ID = 0x0969;

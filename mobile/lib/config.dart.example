@@ -1,0 +1,11 @@
+// lib/config.dart にコピーして実際の値を埋めること（config.dart はgitignore対象）。
+// 各値は `cd infra && terraform output` で確認できる。
+// --dart-define-from-file でJSONを参照させる方法もあるけどめんどいからこれで。
+class AppConfig {
+  AppConfig._();
+
+  static const cognitoClientId = '<cognito_mobile_client_id>';
+  static const awsRegion = '<terraform output時のvar.aws_region、例: ap-northeast-1>';
+  static const cognitoUserPoolId = '<cognito_user_pool_id>';
+  static const apiEndpoint = '<api_endpoint（末尾スラッシュ無し）>';
+}

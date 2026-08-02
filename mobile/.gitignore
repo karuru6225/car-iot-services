@@ -23,6 +23,9 @@ migrate_working_dir/
 # is commented out by default.
 #.vscode/
 
+# 実際のCognito/APIエンドポイント値を含む（lib/config.dart.exampleがテンプレート）
+lib/config.dart
+
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id
