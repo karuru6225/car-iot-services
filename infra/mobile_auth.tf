@@ -17,6 +17,14 @@ resource "aws_cognito_identity_provider" "google" {
     email    = "email"
     username = "sub"
   }
+
+  # AWS側がGoogle用のOAuthエンドポイント（authorize_url/token_url/oidc_issuer等）を
+  # 勝手にデフォルト値で補完して返してくるため、宣言していないこれらの項目との差分が
+  # terraform planのたびに「削除」として出続ける（実際には何も壊れない既知の挙動）。
+  # provider_detailsの差分検出自体を無視して、この無限diffを止める。
+  lifecycle {
+    ignore_changes = [provider_details]
+  }
 }
 
 # ─── App Client（モバイル用、Authorization Code + PKCE、シークレット無し） ────

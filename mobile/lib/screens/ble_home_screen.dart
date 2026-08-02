@@ -14,6 +14,7 @@ import '../models/log_entry.dart';
 import '../models/obd_metric.dart';
 import '../models/obd_reading.dart';
 import '../services/auth_service.dart';
+import '../services/location_service.dart';
 import '../services/obd_uploader.dart';
 import '../theme/app_colors.dart';
 import '../widgets/auth_card.dart';
@@ -66,6 +67,9 @@ class _BleHomeState extends State<BleHome> {
   late final ObdUploader _uploader;
   String? _userEmail;
   bool _authBusy = false;
+
+  // GPS位置情報（OBDデータへの紐付け用）
+  final _location = LocationService();
 
   @override
   void initState() {
@@ -121,6 +125,11 @@ class _BleHomeState extends State<BleHome> {
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
     ].request();
+
+    // GPSは無くてもBLE/OBD自体は動作させたいので、拒否されても接続はブロックしない
+    // （position引数がnullのままアップロードされるだけ）。
+    await Permission.locationWhenInUse.request();
+
     return statuses.values.every((s) => s.isGranted);
   }
 
@@ -284,6 +293,7 @@ class _BleHomeState extends State<BleHome> {
 
     setState(() => _state = ConnState.connected);
     WakelockPlus.enable();
+    _location.start();
     _addLog('接続完了', LogType.sys);
   }
 
@@ -297,7 +307,7 @@ class _BleHomeState extends State<BleHome> {
           _obdReading = reading;
           if (reading.valid) _pushHistory(reading);
         });
-        _uploader.add(reading);
+        _uploader.add(reading, position: _location.lastPosition);
       }
     } catch (e) {
       _addLog('OBDデータ解析エラー: $e', LogType.err);
@@ -328,6 +338,7 @@ class _BleHomeState extends State<BleHome> {
     _cancelSubscriptions();
     _obdAssembler.reset();
     WakelockPlus.disable();
+    _location.stop();
     setState(() {
       _state = ConnState.disconnected;
       _deviceName = '';
@@ -375,6 +386,7 @@ class _BleHomeState extends State<BleHome> {
     _uploader.flush();
     _uploader.dispose();
     WakelockPlus.disable();
+    _location.stop();
     _logScroll.dispose();
     super.dispose();
   }

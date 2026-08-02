@@ -5,7 +5,8 @@
   {
     "device_id": "car-iot-xxxxxx",
     "readings": [
-      {"ts": 1735689600, "rpm": 1800, "speedKmh": 45, ... ObdReadingの全フィールド},
+      {"ts": 1735689600, "rpm": 1800, "speedKmh": 45, ... ObdReadingの全フィールド,
+       "lat": 35.681, "lon": 139.767},  # GPS取得できていれば付与、未取得ならキー自体が無い
       ...
     ]
   }
@@ -53,6 +54,7 @@ _FIELD_MAP = {
     "accelPedalDPct": "accel_pedal_d_pct", "accelPedalEPct": "accel_pedal_e_pct",
     "fuelType": "fuel_type", "secO2TrimStPct": "sec_o2_trim_st_pct",
     "secO2TrimLtPct": "sec_o2_trim_lt_pct", "valid": "valid",
+    "lat": "lat", "lon": "lon",  # GPS未取得時はキー自体が無い（アプリ側で省略）
 }
 
 

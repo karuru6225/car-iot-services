@@ -13,6 +13,7 @@ dependencies:
   flutter_appauth: ^12.0.2
   flutter_blue_plus: ^1.32.0
   flutter_secure_storage: ^10.3.1
+  geolocator: ^14.0.3
   http: ^1.6.0
   percent_indicator: ^4.2.5
   permission_handler: ^11.3.0

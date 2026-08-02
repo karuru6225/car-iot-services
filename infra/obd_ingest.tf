@@ -270,6 +270,14 @@ resource "aws_glue_catalog_table" "obd_data" {
       name = "valid"
       type = "boolean"
     }
+    columns {
+      name = "lat"
+      type = "double"
+    }
+    columns {
+      name = "lon"
+      type = "double"
+    }
   }
 
   partition_keys {
