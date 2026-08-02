@@ -1,11 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
 import '../models/obd_reading.dart';
 import 'auth_service.dart';
+
+// バッファ内で OBD reading と、取得できていればその時点のGPS位置をペアで保持する。
+class _BufferedReading {
+  final ObdReading reading;
+  final Position? position;
+  const _BufferedReading(this.reading, this.position);
+}
 
 // OBD-IIデータをメモリ上にバッファし、件数上限／時間経過／BLE切断（呼び出し側からflush()を
 // 呼ぶ）のいずれか早い方でAWSへバッチアップロードする。アプリが落ちたらバッファは失われる
@@ -29,7 +37,7 @@ class ObdUploader {
   // 切断後もflush()が正しいdevice_idで再送できるようにする（切断してもクリアしない）。
   String deviceId = '';
 
-  final _buffer = <ObdReading>[];
+  final _buffer = <_BufferedReading>[];
   Timer? _flushTimer;
   bool _uploading = false;
 
@@ -37,9 +45,9 @@ class ObdUploader {
     _flushTimer ??= Timer.periodic(_flushInterval, (_) => flush());
   }
 
-  void add(ObdReading reading) {
+  void add(ObdReading reading, {Position? position}) {
     if (!reading.valid) return; // IGN OFF等の無応答データはアップロード対象外
-    _buffer.add(reading);
+    _buffer.add(_BufferedReading(reading, position));
     if (_buffer.length >= _maxBatchSize) {
       flush();
     } else if (_buffer.length > _maxBufferHardCap) {
@@ -89,42 +97,48 @@ class ObdUploader {
     }
   }
 
-  Map<String, dynamic> _toJson(ObdReading r) => {
-        'ts': r.ts,
-        'rpm': r.rpm,
-        'speedKmh': r.speedKmh,
-        'loadPct': r.loadPct,
-        'mapKpa': r.mapKpa,
-        'baroKpa': r.baroKpa,
-        'boostKpa': r.boostKpa,
-        'throttlePct': r.throttlePct,
-        'timingDeg': r.timingDeg,
-        'ecuVoltage': r.ecuVoltage,
-        'mafGs': r.mafGs,
-        'coolantC': r.coolantC,
-        'fuelRateLph': r.fuelRateLph,
-        'stftPct': r.stftPct,
-        'ltftPct': r.ltftPct,
-        'o2B1s2V': r.o2B1s2V,
-        'o2B1s2TrimPct': r.o2B1s2TrimPct,
-        'engineRunTimeSec': r.engineRunTimeSec,
-        'milDistanceKm': r.milDistanceKm,
-        'o2S1Ratio': r.o2S1Ratio,
-        'o2S1Voltage': r.o2S1Voltage,
-        'evapPurgePct': r.evapPurgePct,
-        'warmupsSinceCleared': r.warmupsSinceCleared,
-        'distanceSinceClearedKm': r.distanceSinceClearedKm,
-        'catalystTempC': r.catalystTempC,
-        'absoluteLoadPct': r.absoluteLoadPct,
-        'commandedAfr': r.commandedAfr,
-        'throttleBPct': r.throttleBPct,
-        'accelPedalDPct': r.accelPedalDPct,
-        'accelPedalEPct': r.accelPedalEPct,
-        'fuelType': r.fuelType,
-        'secO2TrimStPct': r.secO2TrimStPct,
-        'secO2TrimLtPct': r.secO2TrimLtPct,
-        'valid': r.valid,
-      };
+  Map<String, dynamic> _toJson(_BufferedReading buffered) {
+    final r = buffered.reading;
+    final pos = buffered.position;
+    return {
+      if (pos != null) 'lat': pos.latitude,
+      if (pos != null) 'lon': pos.longitude,
+      'ts': r.ts,
+      'rpm': r.rpm,
+      'speedKmh': r.speedKmh,
+      'loadPct': r.loadPct,
+      'mapKpa': r.mapKpa,
+      'baroKpa': r.baroKpa,
+      'boostKpa': r.boostKpa,
+      'throttlePct': r.throttlePct,
+      'timingDeg': r.timingDeg,
+      'ecuVoltage': r.ecuVoltage,
+      'mafGs': r.mafGs,
+      'coolantC': r.coolantC,
+      'fuelRateLph': r.fuelRateLph,
+      'stftPct': r.stftPct,
+      'ltftPct': r.ltftPct,
+      'o2B1s2V': r.o2B1s2V,
+      'o2B1s2TrimPct': r.o2B1s2TrimPct,
+      'engineRunTimeSec': r.engineRunTimeSec,
+      'milDistanceKm': r.milDistanceKm,
+      'o2S1Ratio': r.o2S1Ratio,
+      'o2S1Voltage': r.o2S1Voltage,
+      'evapPurgePct': r.evapPurgePct,
+      'warmupsSinceCleared': r.warmupsSinceCleared,
+      'distanceSinceClearedKm': r.distanceSinceClearedKm,
+      'catalystTempC': r.catalystTempC,
+      'absoluteLoadPct': r.absoluteLoadPct,
+      'commandedAfr': r.commandedAfr,
+      'throttleBPct': r.throttleBPct,
+      'accelPedalDPct': r.accelPedalDPct,
+      'accelPedalEPct': r.accelPedalEPct,
+      'fuelType': r.fuelType,
+      'secO2TrimStPct': r.secO2TrimStPct,
+      'secO2TrimLtPct': r.secO2TrimLtPct,
+      'valid': r.valid,
+    };
+  }
 
   void dispose() {
     _flushTimer?.cancel();
