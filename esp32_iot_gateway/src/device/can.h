@@ -15,8 +15,10 @@ void canDeinit();
 bool canSendObdRequest(uint8_t pid);
 
 // 応答を受信する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）。timeoutMs 内に届かなければ false
-// data には ISO-TP の PCI バイトを除いたペイロード（41 PID data...）を返す
-bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100);
+// ISO-TP マルチフレーム（First Frame + Consecutive Frame）にも対応し、Flow Controlを自動送信する。
+// data には ISO-TP の PCI バイトを除いたペイロード（41 PID data...）を返す。
+// maxLen は data バッファの最大サイズ。応答長がこれを超える場合は false を返す（バッファ溢れ防止）
+bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100, uint8_t maxLen = 8);
 
 // TWAIコントローラの状態・エラーカウンタ（TEC/REC等）をログ出力する（診断用）
 void canLogStatus(const char *tag);
