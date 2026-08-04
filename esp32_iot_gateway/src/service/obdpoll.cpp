@@ -11,6 +11,21 @@ struct PidDecoder
   bool (*decode)(const uint8_t *, uint8_t, OBDReading &);
 };
 
+// 一時デバッグデコーダ（HANDOFF_isotp_multipid.md タスク4）: 0x68のバイト割り当てが
+// 実測未確定のため、ヘッダ一致のみ確認して生データをログ出力する。OBDReadingへは反映しない。
+// バイト割り当てが確定したら削除し、obd.cpp に正式なデコーダを実装すること。
+bool decodeChargeAirTempRaw(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  (void)out;
+  if (dlc < 2 || data[0] != 0x41 || data[1] != 0x68)
+    return false;
+  logger.printf("[OBD] 0x68 raw dlc=%u:", dlc);
+  for (uint8_t i = 0; i < dlc; i++)
+    logger.printf(" %02X", data[i]);
+  logger.println();
+  return false; // 割り当て未確定のため常にfalse（OBDReading未反映）
+}
+
 const PidDecoder kPids[] = {
     {0x0C, obdDecodeRpm},
     {0x0D, obdDecodeSpeed},
@@ -41,6 +56,11 @@ const PidDecoder kPids[] = {
     {0x51, obdDecodeFuelType},
     {0x55, obdDecodeSecO2TrimShortTerm},
     {0x56, obdDecodeSecO2TrimLongTerm},
+
+    // 一時デバッグPID（HANDOFF_isotp_multipid.md タスク4）: 0x68のバイト割り当てが
+    // 実測未確定のため、正式デコーダはまだ obd.cpp に実装しない。生データをログ出力するのみ。
+    // 割り当てが確定したら decodeChargeAirTempRaw を削除し obd.cpp に本実装を追加すること。
+    {0x68, decodeChargeAirTempRaw},
 };
 const int kPidCount = sizeof(kPids) / sizeof(kPids[0]);
 
@@ -86,7 +106,9 @@ OBDReading obdPoll()
   OBDReading r = {};
   r.ts = time(nullptr);
 
-  uint8_t data[8];
+  // 64バイト: 0x68等マルチフレーム応答を受けられるだけの余裕を持たせる
+  // （HANDOFF_isotp_multipid.md タスク1「当面64バイトあれば十分」）
+  uint8_t data[64];
   uint8_t dlc;
   int okCount = 0, sendFailCount = 0, recvFailCount = 0, decodeFailCount = 0;
 
@@ -99,7 +121,7 @@ OBDReading obdPoll()
       sendFailCount++;
       continue;
     }
-    if (!canReceiveObdResponse(data, &dlc, 50))
+    if (!canReceiveObdResponse(data, &dlc, 50, sizeof(data)))
     {
       recvFailCount++;
       continue;
