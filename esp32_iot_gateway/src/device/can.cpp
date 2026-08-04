@@ -150,6 +150,14 @@ bool canSendObdRequest(uint8_t pid)
   return ok;
 }
 
+// ECUからのOBD応答フレームか判定する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）
+static bool isObdResponseFrame(const twai_message_t &rx)
+{
+  bool is29bit = rx.extd && (rx.identifier & 0xFFFFFF00) == CAN_RESP_MASK;
+  bool is11bit = !rx.extd && rx.identifier == 0x7E8; // フォールバック
+  return is29bit || is11bit;
+}
+
 bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs)
 {
   if (!s_ready)
@@ -162,9 +170,7 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs)
   {
     if (twai_receive(&rx, pdMS_TO_TICKS(10)) == ESP_OK)
     {
-      bool is29bit = rx.extd && (rx.identifier & 0xFFFFFF00) == CAN_RESP_MASK;
-      bool is11bit = !rx.extd && rx.identifier == 0x7E8; // フォールバック
-      if (is29bit || is11bit)
+      if (isObdResponseFrame(rx))
       {
         // ISO-TP PCIバイト（1バイト目）を剥がし、ペイロード（41 PID data...）のみを返す
         memcpy(data, rx.data + 1, rx.data_length_code - 1);
