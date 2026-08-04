@@ -166,8 +166,9 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs)
       bool is11bit = !rx.extd && rx.identifier == 0x7E8; // フォールバック
       if (is29bit || is11bit)
       {
-        memcpy(data, rx.data, rx.data_length_code);
-        *dlc = rx.data_length_code;
+        // ISO-TP PCIバイト（1バイト目）を剥がし、ペイロード（41 PID data...）のみを返す
+        memcpy(data, rx.data + 1, rx.data_length_code - 1);
+        *dlc = rx.data_length_code - 1;
         return true;
       }
       // 想定外ID（別ECU応答やバス上の他フレーム）を受信 → 診断用に記録

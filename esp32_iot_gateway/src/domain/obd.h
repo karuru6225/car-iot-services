@@ -92,7 +92,8 @@ struct ObdBlePacket
 // OBDReading → ObdBlePacket 変換
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out);
 
-// デコード共通ルール: data[1]!=0x41 または data[2]!=要求PID または dlc不足の場合は false を返す
+// デコード共通ルール: data[0]!=0x41 または data[1]!=要求PID または dlc不足の場合は false を返す
+// （data は can.cpp 側で ISO-TP PCI バイトを剥がし済み。data[2]以降がA,B,C...のペイロード）
 
 bool obdDecodeRpm(const uint8_t *data, uint8_t dlc, OBDReading &out);
 bool obdDecodeSpeed(const uint8_t *data, uint8_t dlc, OBDReading &out);
@@ -103,10 +104,10 @@ bool obdDecodeThrottle(const uint8_t *data, uint8_t dlc, OBDReading &out);
 bool obdDecodeTiming(const uint8_t *data, uint8_t dlc, OBDReading &out);
 bool obdDecodeEcuVoltage(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
-// PID 0x66: sensors=data[3]（N-VANでは0x01）, MAF=(data[4]*256+data[5])/32 g/s
+// PID 0x66: sensors=data[2]（N-VANでは0x01）, MAF=(data[3]*256+data[4])/32 g/s
 bool obdDecodeMafAlt(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
-// PID 0x67: bitmap=data[3]（0x03=S1+S2）, Sensor1温度=data[4]-40 °C
+// PID 0x67: bitmap=data[2]（0x03=S1+S2）, Sensor1温度=data[3]-40 °C
 bool obdDecodeCoolantAlt(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
 // 追加確定PID（OBD.md「確定した取得可能データ一覧」参照）

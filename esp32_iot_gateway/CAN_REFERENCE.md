@@ -35,8 +35,10 @@ ESP32-S3 + MCP2562FD で車載 CAN バスを扱うための参照ドキュメン
   Byte 5〜7: 不定
 ```
 
-デコード時は `data[1] == 0x41` かつ `data[2] == 要求PID` であることを確認してから `data[3]`（A）以降を読む。  
-`data[1] == 0x7F`（Negative Response Code）の場合は ECU が PID 非対応。
+上記はCANバス上の生フレーム（ワイヤーフォーマット）。`can.cpp` の `canReceiveObdResponse()` は
+Byte 0（PCI）を剥がしたペイロードをアプリ側に返すため、`obd.cpp` のデコード関数群が実際に見るのは
+`data[0] == 0x41` かつ `data[1] == 要求PID` であることを確認してから `data[2]`（A）以降を読む形になる。  
+`data[0] == 0x7F`（Negative Response Code）の場合は ECU が PID 非対応。
 
 ### PID サポートスキャン
 

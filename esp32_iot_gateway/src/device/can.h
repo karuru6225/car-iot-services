@@ -15,6 +15,7 @@ void canDeinit();
 bool canSendObdRequest(uint8_t pid);
 
 // 応答を受信する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）。timeoutMs 内に届かなければ false
+// data には ISO-TP の PCI バイトを除いたペイロード（41 PID data...）を返す
 bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100);
 
 // TWAIコントローラの状態・エラーカウンタ（TEC/REC等）をログ出力する（診断用）

@@ -378,9 +378,10 @@ struct OBDReading {
 ```
 
 デコード関数は28個（PIDごとに1関数、0x15と0x24のみ1関数で2フィールドを埋める）。
-device/service に依存しない純粋関数。共通ルール:
-`data[1] != 0x41` または `data[2] != 要求PID` または `dlc` が必要バイト数未満なら false
-（`obd.cpp` 内 `checkHeader()` ヘルパーで共通化）。
+device/service に依存しない純粋関数。`can.cpp` の `canReceiveObdResponse()` が ISO-TP PCI バイトを
+剥がしたペイロード（`41 PID data...`）を渡してくる前提。共通ルール:
+`data[0] != 0x41` または `data[1] != 要求PID` または `dlc` が必要バイト数未満なら false
+（`obd.cpp` 内 `checkHeader()` ヘルパーが判定し、一致すればペイロード先頭（A）へのポインタを返す）。
 
 ---
 
