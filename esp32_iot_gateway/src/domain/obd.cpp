@@ -276,6 +276,57 @@ bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
   return true;
 }
 
+// PID→データ長（PIDバイト自身を除く、A/B/C...の合計バイト数）。各値は上の
+// obdDecode*() の checkHeader() minDlc から算出（minDlc - 2）。kPids（obdpoll.cpp）と
+// 対応するPIDを追加したら、ここにも追記すること。
+namespace
+{
+struct PidLength
+{
+  uint8_t pid;
+  uint8_t len;
+};
+
+const PidLength kPidLengths[] = {
+    {0x04, 1}, {0x06, 1}, {0x07, 1}, {0x0B, 1}, {0x0C, 2}, {0x0D, 1}, {0x0E, 1},
+    {0x11, 1}, {0x15, 2}, {0x1F, 2}, {0x21, 2}, {0x24, 4}, {0x2E, 1}, {0x30, 1},
+    {0x31, 2}, {0x33, 1}, {0x3C, 2}, {0x42, 2}, {0x43, 2}, {0x44, 2}, {0x47, 1},
+    {0x49, 1}, {0x4A, 1}, {0x51, 1}, {0x55, 1}, {0x56, 1}, {0x66, 3}, {0x67, 2}, {0x68, 3},
+};
+
+bool lookupPidLength(uint8_t pid, uint8_t &lenOut)
+{
+  for (const auto &e : kPidLengths)
+  {
+    if (e.pid == pid)
+    {
+      lenOut = e.len;
+      return true;
+    }
+  }
+  return false;
+}
+} // namespace
+
+void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx)
+{
+  if (dlc < 1 || data[0] != 0x41)
+    return;
+
+  uint8_t i = 1;
+  while (i < dlc)
+  {
+    uint8_t pid = data[i++];
+    uint8_t len;
+    if (!lookupPidLength(pid, len))
+      break; // 未知PID: 以降のセグメント境界が分からないため打ち切り
+    if ((uint16_t)i + len > dlc)
+      break; // データ不足（応答が途中で切れている）
+    cb(pid, data + i, len, ctx);
+    i += len;
+  }
+}
+
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 {
   out.rpm = r.rpm;

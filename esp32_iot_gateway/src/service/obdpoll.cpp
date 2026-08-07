@@ -81,6 +81,15 @@ void finalizeAndLog(OBDReading &r)
     canLogStatus("全PID応答なし");
   }
 }
+
+// 診断用（HANDOFF_isotp_multipid.md §4 テスト2、タスク2/3の実車確認用。結論が出たら削除すること）
+void logMultiPidSegment(uint8_t pid, const uint8_t *segData, uint8_t len, void *)
+{
+  logger.printf("[TEST2] pid=0x%02X len=%u data=", pid, len);
+  for (uint8_t i = 0; i < len; i++)
+    logger.printf(" %02X", segData[i]);
+  logger.println();
+}
 } // namespace
 
 OBDReading obdPoll()
@@ -122,5 +131,25 @@ OBDReading obdPoll()
   logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d\n",
                 okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount);
   finalizeAndLog(r);
+
+  // 診断用（HANDOFF_isotp_multipid.md §4 テスト2、原因B確定後のタスク2/3実車確認用。
+  // 通常の29PIDポーリングとは独立、r/okCount等の集計には含めない。結論が出たら削除すること）
+  {
+    static const uint8_t kTestPids[] = {0x0C, 0x0B}; // RPM, MAP（§4テスト1と同じ組）
+    if (canSendObdRequestMulti(kTestPids, sizeof(kTestPids)))
+    {
+      uint8_t testData[16];
+      uint8_t testDlc;
+      if (canReceiveObdResponse(testData, &testDlc, 50, sizeof(testData)))
+        obdParseMultiResponse(testData, testDlc, logMultiPidSegment, nullptr);
+      else
+        logger.println("[TEST2] 応答なし");
+    }
+    else
+    {
+      logger.println("[TEST2] 送信失敗");
+    }
+  }
+
   return r;
 }

@@ -140,3 +140,11 @@ bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &ou
 // PID 0x68: bitmap=data[2]（0x03=S1+S2）, Sensor1温度=data[3]-40 [°C], Sensor2温度=data[4]-40 [°C]
 // （インタークーラー前後どちらがSensor1/2に対応するかは未確定）
 bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);       // 0x68
+
+// 多PID応答（`41 [PID_a][data_a...] [PID_b][data_b...] ...`）をPIDごとのセグメントに
+// 分解する（タスク3、HANDOFF_isotp_multipid.md §3参照）。PIDの並び順・省略はECU任せなので
+// 位置固定では解釈できず、内蔵のPID→データ長テーブルを頼りにTLV的に歩く。
+// テーブルに無いPIDに遭遇した場合はそこで安全に打ち切る（以降のセグメント境界が不明なため）。
+// data は canReceiveObdResponse() が返す `41 ...` から始まるペイロード。
+typedef void (*ObdMultiSegmentCb)(uint8_t pid, const uint8_t *data, uint8_t len, void *ctx);
+void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx);
