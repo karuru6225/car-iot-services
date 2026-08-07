@@ -8,8 +8,8 @@ CAN層の制約を解消する。本書はチャット側での調査結果と�
 
 ## 0. 進捗状況（別PCでの継続用）
 
-**ブランチ**: `isotp-multipid`（`main`には未マージ）
-**PR**: [#6](https://github.com/karuru6225/car-iot-services/pull/6)（draft）
+**ブランチ**: `isotp-multipid`（[#6](https://github.com/karuru6225/car-iot-services/pull/6)として`main`へマージ済み）
+**リリース**: `v1.21.0`としてOTAリリース済み（v1本番車両、2026-08-07）。v2系は開発中のため対象外
 
 ### 完了（コミット済み・ビルド確認済み。実車確認状況は各項目末尾に記載）
 
@@ -248,3 +248,58 @@ Honda ECUがMode 01の多PID要求を拒否する懸念（原因A）は否定さ
 - 目的: WOTスイープからのVEマップ作成、インマニ充填動態補正、
   月次VEマップ差分によるエンジン経年診断。CVT車のため中間RPM×高MAPセルは
   変速比通過中の短時間しか埋まらず、高レート化が効く。
+
+---
+
+## 6. 別セッション継続用の補足メモ
+
+### BOARD_VERSIONの罠（v1=本番、v2=開発中）
+
+`platformio.ini`の`default_envs`は`esp32-s3-devkitc-1-v2-develop`（v2基板向け）。
+`pio run`をenv指定なしで実行するとv2向けにビルドされるが、**本番車両はv1基板**。
+ビルド確認だけならv2デフォルトで問題ないが（今回の変更はCANピン配置が
+v1/v2共通なので実害なし、`board_pins_v1.h`/`board_pins_v2.h`参照）、
+実車への書き込み・リリースタグ付けは必ずv1向け
+（`esp32-s3-devkitc-1-v1-develop`/`-v1-release`）であることを意識すること。
+v1/v2は`RELEASE.md`の規約通り独立にバージョニングされる
+（`config.h`の`FIRMWARE_VERSION_BASE`がBOARD_VERSIONで分岐）。
+
+### AWS上のデータ検証方法（Athenaクエリ）
+
+`infra/manage.ps1 output -Profile default`でTerraform管理下のリソース名
+（S3バケット・Athena workgroup名・Glue DB名等）が取れる。DB名は
+`replace(var.project, "-", "_")`（デフォルト`project="iot-monitor"`なら
+`iot_monitor`）、workgroup名は`var.project`そのまま（`iot-monitor`）。
+
+クエリはAWS CLIで直接投げられる:
+
+```bash
+export AWS_PROFILE=default
+QID=$(aws athena start-query-execution \
+  --query-string "SELECT ... FROM iot_monitor.obd_data WHERE ..." \
+  --work-group iot-monitor \
+  --query-execution-context Database=iot_monitor \
+  --query 'QueryExecutionId' --output text)
+# ポーリングしてSUCCEEDEDを待ってから
+aws athena get-query-results --query-execution-id "$QID" --output json
+```
+
+**タイムゾーンの罠**: `obd_ts`はUTC epoch秒。表示は
+`from_unixtime(obd_ts) AT TIME ZONE 'Asia/Tokyo'`でJST変換できるが、
+**WHERE句の`timestamp 'YYYY-MM-DD HH:MM:SS'`リテラルはUTC解釈**される
+（Athenaのデフォルトセッションタイムゾーン）。JST時刻で絞り込みたい場合は
+必ず`-9時間`した値を書くこと（例: JST 21:30 → `timestamp '... 12:30:00'`）。
+このセッション中、JST表示値をそのままリテラルに使って0件になる事故が発生した。
+
+パーティション列（`year`/`month`/`day`/`hour`）はパーティションプロジェクション
+なので、`obd_ts`の絞り込みに加えて`year='2026' AND month='08' AND day='07'
+AND hour IN ('12','13')`のように明示すると確実（時刻がUTC時で日をまたぐ・
+時をまたぐ場合は該当する複数の値をIN句で列挙する）。
+
+### 2026-08-07 リリース時点の状態
+
+- `main`は`v1.21.0`タグ済み・OTA配信済み（v1本番車両）
+- バグ混入期間（JST 21:30頃〜21:57:46、`coolant_c=0`等）のデータはAthena上に
+  残存させる方針（見た目で識別可能なため削除不要と判断）
+- 単発PID版`canSendObdRequest()`（`can.h/.cpp`）が未使用のまま残存（§0残作業参照）
+- 実走行・IGN OFF時の異常系は未検証のままリリース済み（§0残作業参照）
