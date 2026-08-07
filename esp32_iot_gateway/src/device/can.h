@@ -22,3 +22,8 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100
 
 // TWAIコントローラの状態・エラーカウンタ（TEC/REC等）をログ出力する（診断用）
 void canLogStatus(const char *tag);
+
+// 診断用一時関数（HANDOFF_isotp_multipid.md §4 テスト1、原因A/B切り分け用）:
+// RPM(0x0C)+MAP(0x0B)を1フレームにまとめて要求する。SFに収まる想定。
+// 結論が出たら削除すること。
+bool canSendObdRequestTest2Pid();

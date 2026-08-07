@@ -161,6 +161,27 @@ bool canSendObdRequest(uint8_t pid)
   return ok;
 }
 
+bool canSendObdRequestTest2Pid()
+{
+  if (!s_ready)
+    return false;
+
+  recoverIfBusOff();
+
+  twai_message_t tx = {};
+  tx.identifier = CAN_REQ_ID;
+  tx.extd = 1;
+  tx.data_length_code = 8;
+  tx.data[0] = 0x03; // PCI: Single Frame, length=3（Mode1+PID2個）
+  tx.data[1] = 0x01; // Mode 01
+  tx.data[2] = 0x0C; // RPM
+  tx.data[3] = 0x0B; // MAP
+  // data[4..7] = 0x00（ISO 15765-4 パディング）
+
+  esp_err_t txErr = twai_transmit(&tx, pdMS_TO_TICKS(10));
+  return txErr == ESP_OK;
+}
+
 // ECUからのOBD応答フレームか判定する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）
 static bool isObdResponseFrame(const twai_message_t &rx)
 {
