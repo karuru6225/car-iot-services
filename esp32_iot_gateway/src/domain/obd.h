@@ -42,6 +42,10 @@ struct OBDReading
 
   bool     valid;
   time_t   ts;
+
+  // 末尾追加（ObdBlePacketとのオフセット互換のため既存フィールドより後ろに置く）
+  int16_t  iat_c;  // 0x68 Sensor1: B-40 [°C]（インタークーラー前後どちらか未確定）
+  int16_t  iat2_c; // 0x68 Sensor2: C-40 [°C]（同上）
 };
 
 // BLE Notify 送信用（パディングなしで詰めた固定レイアウト）。
@@ -86,13 +90,17 @@ struct ObdBlePacket
 
   uint8_t  valid; // bool を1バイト固定で送る
   uint32_t ts;    // time_t は環境依存サイズのため uint32_t に固定
+
+  int16_t  iat_c;
+  int16_t  iat2_c;
 };
 #pragma pack(pop)
 
 // OBDReading → ObdBlePacket 変換
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out);
 
-// デコード共通ルール: data[1]!=0x41 または data[2]!=要求PID または dlc不足の場合は false を返す
+// デコード共通ルール: data[0]!=0x41 または data[1]!=要求PID または dlc不足の場合は false を返す
+// （data は can.cpp 側で ISO-TP PCI バイトを剥がし済み。data[2]以降がA,B,C...のペイロード）
 
 bool obdDecodeRpm(const uint8_t *data, uint8_t dlc, OBDReading &out);
 bool obdDecodeSpeed(const uint8_t *data, uint8_t dlc, OBDReading &out);
@@ -103,10 +111,10 @@ bool obdDecodeThrottle(const uint8_t *data, uint8_t dlc, OBDReading &out);
 bool obdDecodeTiming(const uint8_t *data, uint8_t dlc, OBDReading &out);
 bool obdDecodeEcuVoltage(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
-// PID 0x66: sensors=data[3]（N-VANでは0x01）, MAF=(data[4]*256+data[5])/32 g/s
+// PID 0x66: sensors=data[2]（N-VANでは0x01）, MAF=(data[3]*256+data[4])/32 g/s
 bool obdDecodeMafAlt(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
-// PID 0x67: bitmap=data[3]（0x03=S1+S2）, Sensor1温度=data[4]-40 °C
+// PID 0x67: bitmap=data[2]（0x03=S1+S2）, Sensor1温度=data[3]-40 °C
 bool obdDecodeCoolantAlt(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
 // 追加確定PID（OBD.md「確定した取得可能データ一覧」参照）
@@ -128,3 +136,15 @@ bool obdDecodeAccelPedalE(const uint8_t *data, uint8_t dlc, OBDReading &out);   
 bool obdDecodeFuelType(const uint8_t *data, uint8_t dlc, OBDReading &out);            // 0x51
 bool obdDecodeSecO2TrimShortTerm(const uint8_t *data, uint8_t dlc, OBDReading &out);  // 0x55
 bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &out);   // 0x56
+
+// PID 0x68: bitmap=data[2]（0x03=S1+S2）, Sensor1温度=data[3]-40 [°C], Sensor2温度=data[4]-40 [°C]
+// （インタークーラー前後どちらがSensor1/2に対応するかは未確定）
+bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);       // 0x68
+
+// 多PID応答（`41 [PID_a][data_a...] [PID_b][data_b...] ...`）をPIDごとのセグメントに
+// 分解する（タスク3、HANDOFF_isotp_multipid.md §3参照）。PIDの並び順・省略はECU任せなので
+// 位置固定では解釈できず、内蔵のPID→データ長テーブルを頼りにTLV的に歩く。
+// テーブルに無いPIDに遭遇した場合はそこで安全に打ち切る（以降のセグメント境界が不明なため）。
+// data は canReceiveObdResponse() が返す `41 ...` から始まるペイロード。
+typedef void (*ObdMultiSegmentCb)(uint8_t pid, const uint8_t *data, uint8_t len, void *ctx);
+void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx);

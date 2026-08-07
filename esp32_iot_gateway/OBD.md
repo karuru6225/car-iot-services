@@ -81,7 +81,7 @@ Mask[0x60]=0x07114001 （エンジン始動後、949 rpm 時に取得）
 | 0x63 | Torque Reference | ✗ 非対応 | — |
 | 0x66 | MAF Alt | **✓ OK** | sensors=0x01, MAF1=**1.69 g/s**（アイドル 949 rpm） |
 | 0x67 | Coolant Temp Alt | **✓ OK** | sensors=0x03, **S1=72°C**（冷却水）, S2=17°C（外気？） |
-| 0x68 | Charge Air Cooler Temp | !! マスク対応だが応答なし | — |
+| 0x68 | Charge Air Cooler Temp | !! マスク対応だが応答なし（※後述） | — |
 | 0x6C | Commanded Throttle Actuator | !! マスク対応だが応答なし | — |
 | 0x6E | Boost Ctrl | ✗ 非対応 | — |
 | 0x70 | Boost Pressure Control | !! マスク対応だが応答なし | — |
@@ -100,9 +100,14 @@ Mask[0x80]=0x00000002 → 0x9F のみマスク対応
 **「!! マスク対応だが応答なし」について:**  
 Honda ECU が variant 共通のビットマスクを返しているが、この個体（JJ1/JJ2）では実際のデータを持たない PID が含まれている可能性が高い。timeout を延ばしても変わらない可能性がある。
 
+**※0x68について（`HANDOFF_isotp_multipid.md`参照）:** 上記「応答なし」はISO-TP（ISO 15765-2）
+マルチフレーム受信未実装が原因と判明。0x68の応答ペイロードは9バイトでSF上限（7バイト）を
+超えるため、Flow Control未送信でECUが送信を打ち切っていた。マルチフレーム受信実装後は
+`41 68 03 4A 49 00 00 00 00`（Sensor1=34°C, Sensor2=33°C）が取得できることを実車で確認済み。
+
 **確定した取得可能データ一覧（フェーズ2 実装対象・新基板 2026-06-01 実機確認済み）:**
 
-**全28PID実装済み**（`domain/obd.h/.cpp`・`service/obdpoll.cpp`、実装差分は本ドキュメント後半の「domain/obd.h データ構造・デコード関数」参照）。
+**全29PID実装済み**（`domain/obd.h/.cpp`・`service/obdpoll.cpp`、実装差分は本ドキュメント後半の「domain/obd.h データ構造・デコード関数」参照）。
 
 | PID | 名称 | デコード式 | 備考 |
 |-----|------|-----------|------|
@@ -135,6 +140,7 @@ Honda ECU が variant 共通のビットマスクを返しているが、この�
 | 0x56 | Sec O2 Trim B1 (LT) | (A-128)×100/128 % | — |
 | 0x66 | MAF Alt | (B×256+C)/32 g/s | **燃費推算のソース**（0x10 の代替） |
 | 0x67 | Coolant Temp Alt | B-40 °C (Sensor1) | **0x05 の代替** |
+| 0x68 | Charge Air Cooler Temp | B-40 / C-40 °C (Sensor1/2) | 吸気温。ISO-TPマルチフレーム必須。IC前後どちらがSensor1/2かは未確定 |
 
 燃費推算: `fuel_rate_lph = maf_gs / (14.7 × 0.745) × 3.6`
 
@@ -335,7 +341,7 @@ install/uninstall・GPIO 電源トグルのオーバーヘッドが大きいた�
 
 ---
 
-## domain/obd.h データ構造・デコード関数（実装済み・全28PID対応）
+## domain/obd.h データ構造・デコード関数（実装済み・全29PID対応）
 
 **実車スキャン結果を反映。非対応 PID（0x05水温・0x10 MAF・0x5E燃料流量等）は除外。**
 
@@ -374,20 +380,25 @@ struct OBDReading {
 
   bool     valid;
   time_t   ts;
+
+  // 末尾追加分（1PID・2フィールド。ObdBlePacketとのオフセット互換のため末尾に配置）
+  int16_t  iat_c, iat2_c;                               // 0x68（IC前後どちらか未確定）
 };
 ```
 
-デコード関数は28個（PIDごとに1関数、0x15と0x24のみ1関数で2フィールドを埋める）。
-device/service に依存しない純粋関数。共通ルール:
-`data[1] != 0x41` または `data[2] != 要求PID` または `dlc` が必要バイト数未満なら false
-（`obd.cpp` 内 `checkHeader()` ヘルパーで共通化）。
+デコード関数は29個（PIDごとに1関数、0x15と0x24のみ1関数で2フィールドを埋める。
+0x68も1関数で2フィールドを埋める）。
+device/service に依存しない純粋関数。`can.cpp` の `canReceiveObdResponse()` が ISO-TP PCI バイトを
+剥がしたペイロード（`41 PID data...`）を渡してくる前提。共通ルール:
+`data[0] != 0x41` または `data[1] != 要求PID` または `dlc` が必要バイト数未満なら false
+（`obd.cpp` 内 `checkHeader()` ヘルパーが判定し、一致すればペイロード先頭（A）へのポインタを返す）。
 
 ---
 
 ## service/obdpoll.h ポーリング関数（実装済み）
 
 ```cpp
-OBDReading obdPoll(); // 全28PID逐次問い合わせ（canInit()済み前提）
+OBDReading obdPoll(); // 全29PID逐次問い合わせ（canInit()済み前提）
 ```
 
 `measure()`/`publish()`（5分周期前提）とは呼び出し契約が異なるため、`service/monitor.h/.cpp`
@@ -458,7 +469,7 @@ SSD1306 128×64、TextSize=1（6×8px、最大 21 文字/行）。当初ドラ�
 
 ## BLE Notify送信（実装済み・スマホアプリ表示用）
 
-CONTINUOUS_OBDの1秒ティックで取得した`OBDReading`（28項目・約87バイト）を、既存のBLE
+CONTINUOUS_OBDの1秒ティックで取得した`OBDReading`（29項目・約91バイト）を、既存のBLE
 Peripheral（`device/ble_peripheral.h/.cpp`）経由でスマホアプリ（`mobile/lib/main.dart`）に
 表示する。デフォルトBLE ATT MTU（23バイト、ペイロード20バイト）ではデータが収まらないため、
 MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分けて送る」発想でチャンク分割する。
@@ -468,8 +479,8 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 `OBDReading`をそのまま`memcpy`するとコンパイラのパディングに依存してしまうため、送信専用の
 パディングなし構造体に変換してから送る（`obdReadingToBlePacket()`、`domain/obd.cpp`）。
 フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`に固定。
-合計87バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/main.dart`の
-`_ObdReading.fromBytes()`のオフセットと完全一致させること）。
+合計91バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/models/obd_reading.dart`の
+`ObdReading.fromBytes()`のオフセットと完全一致させること）。
 
 ### チャンクフォーマット
 

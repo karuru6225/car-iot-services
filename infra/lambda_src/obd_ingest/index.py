@@ -53,7 +53,8 @@ _FIELD_MAP = {
     "commandedAfr": "commanded_afr", "throttleBPct": "throttle_b_pct",
     "accelPedalDPct": "accel_pedal_d_pct", "accelPedalEPct": "accel_pedal_e_pct",
     "fuelType": "fuel_type", "secO2TrimStPct": "sec_o2_trim_st_pct",
-    "secO2TrimLtPct": "sec_o2_trim_lt_pct", "valid": "valid",
+    "secO2TrimLtPct": "sec_o2_trim_lt_pct", "iatC": "iat_c", "iat2C": "iat2_c",
+    "valid": "valid",
     "lat": "lat", "lon": "lon",  # GPS未取得時はキー自体が無い（アプリ側で省略）
 }
 

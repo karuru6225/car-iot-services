@@ -136,6 +136,8 @@ class ObdUploader {
       'fuelType': r.fuelType,
       'secO2TrimStPct': r.secO2TrimStPct,
       'secO2TrimLtPct': r.secO2TrimLtPct,
+      'iatC': r.iatC,
+      'iat2C': r.iat2C,
       'valid': r.valid,
     };
   }
