@@ -161,6 +161,44 @@ bool canSendObdRequest(uint8_t pid)
   return ok;
 }
 
+bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count)
+{
+  if (!s_ready || count == 0 || count > 6)
+    return false;
+
+  recoverIfBusOff();
+
+  twai_message_t tx = {};
+  tx.identifier = CAN_REQ_ID;
+  tx.extd = 1;
+  tx.data_length_code = 8;
+  tx.data[0] = 1 + count; // PCI: Single Frame, length = Mode1(1) + PID数
+  tx.data[1] = 0x01;      // Mode 01
+  for (uint8_t i = 0; i < count; i++)
+    tx.data[2 + i] = pids[i];
+  // 残り（data[2+count..7]）は0x00（ISO 15765-4 パディング、txはゼロ初期化済み）
+
+  esp_err_t txErr = twai_transmit(&tx, pdMS_TO_TICKS(10));
+  bool ok = txErr == ESP_OK;
+  if (!ok)
+  {
+    logger.printf("[CAN] canSendObdRequestMulti: 送信失敗 count=%u err=%s (連続%u回)\n",
+                  count, esp_err_to_name(txErr), s_failCount + 1);
+    if (++s_failCount >= CAN_FAIL_ESCALATE_THRESHOLD)
+    {
+      logger.printf("[CAN] 連続送信失敗%u回 → フル再初期化\n", s_failCount);
+      canLogStatus("再初期化前");
+      canDeinit();
+      canInit();
+    }
+  }
+  else
+  {
+    s_failCount = 0;
+  }
+  return ok;
+}
+
 // ECUからのOBD応答フレームか判定する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）
 static bool isObdResponseFrame(const twai_message_t &rx)
 {
