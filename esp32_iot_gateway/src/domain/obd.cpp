@@ -266,6 +266,16 @@ bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &ou
   return true;
 }
 
+bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x68, 5, p))
+    return false;
+  out.iat_c = (int16_t)p[1] - 40;
+  out.iat2_c = (int16_t)p[2] - 40;
+  return true;
+}
+
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 {
   out.rpm = r.rpm;
@@ -304,4 +314,7 @@ void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 
   out.valid = r.valid ? 1 : 0;
   out.ts = (uint32_t)r.ts;
+
+  out.iat_c = r.iat_c;
+  out.iat2_c = r.iat2_c;
 }

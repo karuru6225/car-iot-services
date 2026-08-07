@@ -11,21 +11,6 @@ struct PidDecoder
   bool (*decode)(const uint8_t *, uint8_t, OBDReading &);
 };
 
-// 一時デバッグデコーダ（HANDOFF_isotp_multipid.md タスク4）: 0x68のバイト割り当てが
-// 実測未確定のため、ヘッダ一致のみ確認して生データをログ出力する。OBDReadingへは反映しない。
-// バイト割り当てが確定したら削除し、obd.cpp に正式なデコーダを実装すること。
-bool decodeChargeAirTempRaw(const uint8_t *data, uint8_t dlc, OBDReading &out)
-{
-  (void)out;
-  if (dlc < 2 || data[0] != 0x41 || data[1] != 0x68)
-    return false;
-  logger.printf("[OBD] 0x68 raw dlc=%u:", dlc);
-  for (uint8_t i = 0; i < dlc; i++)
-    logger.printf(" %02X", data[i]);
-  logger.println();
-  return false; // 割り当て未確定のため常にfalse（OBDReading未反映）
-}
-
 const PidDecoder kPids[] = {
     {0x0C, obdDecodeRpm},
     {0x0D, obdDecodeSpeed},
@@ -56,11 +41,7 @@ const PidDecoder kPids[] = {
     {0x51, obdDecodeFuelType},
     {0x55, obdDecodeSecO2TrimShortTerm},
     {0x56, obdDecodeSecO2TrimLongTerm},
-
-    // 一時デバッグPID（HANDOFF_isotp_multipid.md タスク4）: 0x68のバイト割り当てが
-    // 実測未確定のため、正式デコーダはまだ obd.cpp に実装しない。生データをログ出力するのみ。
-    // 割り当てが確定したら decodeChargeAirTempRaw を削除し obd.cpp に本実装を追加すること。
-    {0x68, decodeChargeAirTempRaw},
+    {0x68, obdDecodeChargeAirTemp},
 };
 const int kPidCount = sizeof(kPids) / sizeof(kPids[0]);
 
@@ -84,14 +65,15 @@ void finalizeAndLog(OBDReading &r)
     logger.printf("[OBD2] stft=%.1f%% ltft=%.1f%% o2b1s2=%.2fV/%.1f%% o2s1=%.3f/%.2fV "
                   "runtime=%us milDist=%ukm evap=%u%% warmups=%u distCleared=%ukm "
                   "cat=%.0fC absLoad=%.1f%% afr=%.2f tpsB=%u%% padD=%u%% padE=%u%% "
-                  "fuelType=%u secO2st=%.1f%% secO2lt=%.1f%%\n",
+                  "fuelType=%u secO2st=%.1f%% secO2lt=%.1f%% iat=%dC/%dC\n",
                   r.stft_pct, r.ltft_pct, r.o2_b1s2_v, r.o2_b1s2_trim_pct,
                   r.o2_s1_ratio, r.o2_s1_voltage,
                   r.engine_run_time_sec, r.mil_distance_km, r.evap_purge_pct,
                   r.warmups_since_cleared, r.distance_since_cleared_km,
                   r.catalyst_temp_c, r.absolute_load_pct, r.commanded_afr,
                   r.throttle_b_pct, r.accel_pedal_d_pct, r.accel_pedal_e_pct,
-                  r.fuel_type, r.sec_o2_trim_st_pct, r.sec_o2_trim_lt_pct);
+                  r.fuel_type, r.sec_o2_trim_st_pct, r.sec_o2_trim_lt_pct,
+                  r.iat_c, r.iat2_c);
   }
   else
   {

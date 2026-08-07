@@ -11,7 +11,7 @@ enum GaugeStyle {
   const GaugeStyle(this.label);
 }
 
-// ObdReadingのts/validを除く全32フィールドに対応する識別子。
+// ObdReadingのts/validを除く全34フィールドに対応する識別子。
 // 宣言順はobd_card.dartの表示順と完全に一致させること（ObdMetric.valuesを
 // そのままグリッド順として使うため、順序を変えると既存OBDタブの見た目が変わる）。
 enum ObdMetric {
@@ -47,6 +47,8 @@ enum ObdMetric {
   fuelType,
   secO2TrimStPct,
   secO2TrimLtPct,
+  iatC,
+  iat2C,
 }
 
 // 各ObdMetricの表示・ゲージ描画に必要なメタ情報。
@@ -231,6 +233,16 @@ final Map<ObdMetric, ObdMetricMeta> obdMetricMeta = {
     label: '副O2長期', unit: '%', decimals: 1,
     min: -100, max: 100,
     valueOf: (r) => r.secO2TrimLtPct,
+  ),
+  ObdMetric.iatC: ObdMetricMeta(
+    label: '吸気温1(仮)', unit: '°C', decimals: 0,
+    min: -20, max: 120,
+    valueOf: (r) => r.iatC.toDouble(),
+  ),
+  ObdMetric.iat2C: ObdMetricMeta(
+    label: '吸気温2(仮)', unit: '°C', decimals: 0,
+    min: -20, max: 120,
+    valueOf: (r) => r.iat2C.toDouble(),
   ),
 };
 

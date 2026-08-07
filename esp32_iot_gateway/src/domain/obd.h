@@ -42,6 +42,10 @@ struct OBDReading
 
   bool     valid;
   time_t   ts;
+
+  // 末尾追加（ObdBlePacketとのオフセット互換のため既存フィールドより後ろに置く）
+  int16_t  iat_c;  // 0x68 Sensor1: B-40 [°C]（インタークーラー前後どちらか未確定）
+  int16_t  iat2_c; // 0x68 Sensor2: C-40 [°C]（同上）
 };
 
 // BLE Notify 送信用（パディングなしで詰めた固定レイアウト）。
@@ -86,6 +90,9 @@ struct ObdBlePacket
 
   uint8_t  valid; // bool を1バイト固定で送る
   uint32_t ts;    // time_t は環境依存サイズのため uint32_t に固定
+
+  int16_t  iat_c;
+  int16_t  iat2_c;
 };
 #pragma pack(pop)
 
@@ -129,3 +136,7 @@ bool obdDecodeAccelPedalE(const uint8_t *data, uint8_t dlc, OBDReading &out);   
 bool obdDecodeFuelType(const uint8_t *data, uint8_t dlc, OBDReading &out);            // 0x51
 bool obdDecodeSecO2TrimShortTerm(const uint8_t *data, uint8_t dlc, OBDReading &out);  // 0x55
 bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &out);   // 0x56
+
+// PID 0x68: bitmap=data[2]（0x03=S1+S2）, Sensor1温度=data[3]-40 [°C], Sensor2温度=data[4]-40 [°C]
+// （インタークーラー前後どちらがSensor1/2に対応するかは未確定）
+bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);       // 0x68

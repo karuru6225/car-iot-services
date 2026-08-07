@@ -35,14 +35,17 @@ CAN層の制約を解消する。本書はチャット側での調査結果と�
      （`OBDReading` へは反映しない。常に `decodeFailCount` にカウントされるのは意図通り）。
    - 受信バッファを `data[8]` → `data[64]` に拡張し、`canReceiveObdResponse()` の
      `maxLen` を明示的に渡すよう変更（0x68の応答9バイトはSF上限7バイトを超えるため）。
+4. **タスク4本編**: 実車で `41 68 03 4A 49 00 00 00 00`（Sensor1=34°C, Sensor2=33°C）を確認。
+   Sensor1/2とインタークーラー前後の物理対応は未確定のまま(保留)、`decodeChargeAirTempRaw`を
+   削除して`obd.cpp`に`obdDecodeChargeAirTemp()`を実装。`OBDReading`/`ObdBlePacket`（末尾に
+   `iat_c`/`iat2_c`を追加、既存フィールドのオフセットは不変）/mobile側
+   （`obd_reading.dart`/`obd_metric.dart`/`obd_uploader.dart`）/Lambda ingest/Athenaスキーマへ
+   反映済み。
 
 ### 未着手
 
 - **タスク2**: 多PID要求の送信対応（`canSendObdRequest` の複数PID版、物理アドレッシング）。
 - **タスク3**: 多PID応答パーサ（PID→データ長テーブルのTLV的パーサ）。
-- **タスク4本編**: 0x68のバイト割り当てを実測確定 → `decodeChargeAirTempRaw` を削除し
-  `obd.cpp` に正式デコーダを実装 → `OBDReading`/`ObdBlePacket`/mobile側/ingest/Athenaへ
-  `iat_c` を追加。
 
 ### 次にやること（実車での検証が必須、コードでは進められない）
 
@@ -50,12 +53,10 @@ CAN層の制約を解消する。本書はチャット側での調査結果と�
    - §4 テスト1（RPM+MAP 2PID要求、SFに収まるケース）→ 原因A/Bの最終切り分け。
      ※このテストは現行コードのままでも実施可能（多PID送信はまだ未実装のため、
      `canSendObdRequest` を2回呼ぶ形の簡易テストコードが別途必要）。
-   - シリアルログで `[OBD] 0x68 raw dlc=N: XX XX ...` が出るか確認。
-     - 出ない/受信失敗 → タスク1のISO-TP受信ロジックにバグがある可能性。
-     - 出る → 生バイト列からインタークーラー前後温度のバイト位置を実測で特定
-       （`docs/obd2_honda_nvan.md` のCivic実績: B-40=IC後, C-40=IC前を参考に照合）。
-   - §4 テスト2の4（既存28PID単発ポーリングの回帰確認）も併せて実施。
-2. 上記の実測結果を踏まえてタスク4本編・タスク2・タスク3に着手。
+   - §4 テスト2の4（既存29PID単発ポーリングの回帰確認、`iat_c`/`iat2_c`が
+     `[OBD2]`ログ・スマホアプリ・AWS側に正しく反映されるか含む）。
+   - （任意）過給時のログを追加取得し、Sensor1/2とIC前後の対応をいずれ確定させる。
+2. 上記の実測結果を踏まえてタスク2・タスク3に着手。
 
 ---
 

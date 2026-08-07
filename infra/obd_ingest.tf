@@ -267,6 +267,14 @@ resource "aws_glue_catalog_table" "obd_data" {
       type = "double"
     }
     columns {
+      name = "iat_c"
+      type = "int"
+    }
+    columns {
+      name = "iat2_c"
+      type = "int"
+    }
+    columns {
       name = "valid"
       type = "boolean"
     }

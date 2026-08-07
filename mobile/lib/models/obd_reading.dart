@@ -16,6 +16,7 @@ class ObdReading {
   final double secO2TrimStPct, secO2TrimLtPct;
   final bool valid;
   final int ts;
+  final int iatC, iat2C;
 
   ObdReading._({
     required this.rpm, required this.speedKmh, required this.loadPct,
@@ -32,6 +33,7 @@ class ObdReading {
     required this.accelPedalEPct, required this.fuelType,
     required this.secO2TrimStPct, required this.secO2TrimLtPct,
     required this.valid, required this.ts,
+    required this.iatC, required this.iat2C,
   });
 
   factory ObdReading.fromBytes(Uint8List bytes) {
@@ -72,6 +74,8 @@ class ObdReading {
       secO2TrimLtPct: d.getFloat32(78, e),
       valid: d.getUint8(82) != 0,
       ts: d.getUint32(83, e),
+      iatC: d.getInt16(87, e),
+      iat2C: d.getInt16(89, e),
     );
   }
 }
