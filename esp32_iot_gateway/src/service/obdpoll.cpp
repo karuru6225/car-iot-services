@@ -49,9 +49,9 @@ const int kPidCount = sizeof(kPids) / sizeof(kPids[0]);
 // 1リクエストにまとめるPID数の上限。SFリクエストのPCI長（1+N）が7バイトに収まる上限（N<=6）。
 const uint8_t kMaxPidsPerRequest = 6;
 
-// obd.h内の各obdDecode*()が消費するデータ長の最大値（0x24 ワイドバンドO2の4バイトが最大）。
+// kPidLengths（obd.cpp）上の最大値（0x68 の7バイトが最大）。
 // セグメントを`41 [pid] data...`形式に詰め直す一時バッファのサイズに使う。
-const uint8_t kMaxSegmentDataLen = 4;
+const uint8_t kMaxSegmentDataLen = 7;
 
 const PidDecoder *findDecoder(uint8_t pid)
 {

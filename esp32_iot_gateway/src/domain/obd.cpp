@@ -276,9 +276,15 @@ bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
   return true;
 }
 
-// PID→データ長（PIDバイト自身を除く、A/B/C...の合計バイト数）。各値は上の
-// obdDecode*() の checkHeader() minDlc から算出（minDlc - 2）。kPids（obdpoll.cpp）と
-// 対応するPIDを追加したら、ここにも追記すること。
+// PID→データ長（PIDバイト自身を除く、A/B/C...の合計バイト数）。多くは上の
+// obdDecode*() の checkHeader() minDlc から算出（minDlc - 2）で正しいが、
+// 0x66/0x67/0x68（マスクバイト+複数センサー枠を持つ拡張PID群）は
+// デコーダが最初のセンサー分しか読まないため minDlc からは実際の応答長が分からない。
+// この3件は実車の生応答（多PIDバッチ応答・0x68単発応答）から実測した値
+// （HANDOFF_isotp_multipid.md参照。0x66=マスク+2センサー×2byte、
+// 0x67=マスク+2センサー×1byte、0x68=マスク+6byte）。kPids（obdpoll.cpp）と
+// 対応するPIDを追加したら、ここにも追記すること（実測せず minDlc から機械的に
+// 決めると同様の齟齬が起きうるので注意）。
 namespace
 {
 struct PidLength
@@ -291,7 +297,7 @@ const PidLength kPidLengths[] = {
     {0x04, 1}, {0x06, 1}, {0x07, 1}, {0x0B, 1}, {0x0C, 2}, {0x0D, 1}, {0x0E, 1},
     {0x11, 1}, {0x15, 2}, {0x1F, 2}, {0x21, 2}, {0x24, 4}, {0x2E, 1}, {0x30, 1},
     {0x31, 2}, {0x33, 1}, {0x3C, 2}, {0x42, 2}, {0x43, 2}, {0x44, 2}, {0x47, 1},
-    {0x49, 1}, {0x4A, 1}, {0x51, 1}, {0x55, 1}, {0x56, 1}, {0x66, 3}, {0x67, 2}, {0x68, 3},
+    {0x49, 1}, {0x4A, 1}, {0x51, 1}, {0x55, 1}, {0x56, 1}, {0x66, 5}, {0x67, 3}, {0x68, 7},
 };
 
 bool lookupPidLength(uint8_t pid, uint8_t &lenOut)
