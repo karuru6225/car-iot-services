@@ -909,3 +909,13 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - `notify-next` トピックを購読し、CONTINUOUSモード中の1秒ティック（`continuousLoopCore()`）でも新規ジョブ通知を検知したら `jobsGetNext()` を呼べるようにする
 - または `continuousLoopCore()` の待機ループ内で定期的（例: 5分ごと）に `jobsGetNext()` をポーリングする
 - OTA適用中はCONTINUOUS動作（測定・publish・OBDポーリング）を止める必要があるため、既存の「OTA中のBLE無効化」TODOと合わせて割り込みタイミングを設計する
+
+### TODO: mobileアプリのrelease署名を専用keystoreに切り替え（未着手）
+
+`mobile/android/app/build.gradle:36-41` の `release` ビルドタイプが `signingConfigs.getByName("debug")` を使っている（`flutter run --release` を通すための暫定対応、コード中のTODOコメント参照）。debugキーストア（`%USERPROFILE%\.android\debug.keystore`）はPCごとに自動生成される使い捨ての鍵のため、別PCでビルドしたAPKは署名が一致せず、端末への上書きインストール時に `INSTALL_FAILED_UPDATE_INCOMPATIBLE` が発生する（現状はflutter/adbが自動でアンインストール→再インストールするため実害はないが、ローカルデータは消える）。
+
+**実装方針（案）**:
+
+- `keytool` で専用のreleaseキーストアを新規作成
+- `key.properties`（`.gitignore` 対象、パス・パスワードを記載）を作成し、`build.gradle` の `signingConfigs.release` から参照する構成に変更
+- keystoreファイル自体はGitに含めず、USBやパスワードマネージャー等の安全な方法でPC間共有する
