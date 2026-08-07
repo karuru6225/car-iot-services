@@ -1,6 +1,7 @@
 #include "obdpoll.h"
 #include "logger.h"
 #include "../device/can.h"
+#include <string.h>
 #include <time.h>
 
 namespace
@@ -45,6 +46,63 @@ const PidDecoder kPids[] = {
 };
 const int kPidCount = sizeof(kPids) / sizeof(kPids[0]);
 
+// 1リクエストにまとめるPID数の上限。SFリクエストのPCI長（1+N）が7バイトに収まる上限（N<=6）。
+const uint8_t kMaxPidsPerRequest = 6;
+
+// obd.h内の各obdDecode*()が消費するデータ長の最大値（0x24 ワイドバンドO2の4バイトが最大）。
+// セグメントを`41 [pid] data...`形式に詰め直す一時バッファのサイズに使う。
+const uint8_t kMaxSegmentDataLen = 4;
+
+const PidDecoder *findDecoder(uint8_t pid)
+{
+  for (const auto &p : kPids)
+    if (p.pid == pid)
+      return &p;
+  return nullptr;
+}
+
+// obdParseMultiResponse()のコールバック用コンテキスト（1リクエストグループ分）
+struct SegmentCtx
+{
+  OBDReading *r;
+  const uint8_t *groupPids;
+  uint8_t groupCount;
+  bool seen[kMaxPidsPerRequest];
+  int okCount;
+  int decodeFailCount;
+};
+
+// 多PID応答の1セグメントを既存のobdDecode*()に橋渡しする。既存デコーダは
+// checkHeader()経由で`41 [pid] [data...]`形式を前提にしているため、セグメントを
+// 一時バッファに詰め直して呼び出す（デコーダ本体は変更しない）。
+void handleSegment(uint8_t pid, const uint8_t *segData, uint8_t len, void *ctxPtr)
+{
+  auto *ctx = static_cast<SegmentCtx *>(ctxPtr);
+
+  for (uint8_t i = 0; i < ctx->groupCount; i++)
+    if (ctx->groupPids[i] == pid)
+      ctx->seen[i] = true;
+
+  const PidDecoder *dec = findDecoder(pid);
+  if (!dec || len > kMaxSegmentDataLen)
+    return; // グループに含めていないPID、または想定外に長いデータは無視
+
+  uint8_t tmp[2 + kMaxSegmentDataLen];
+  tmp[0] = 0x41;
+  tmp[1] = pid;
+  memcpy(tmp + 2, segData, len);
+
+  if (dec->decode(tmp, 2 + len, *ctx->r))
+  {
+    ctx->r->valid = true;
+    ctx->okCount++;
+  }
+  else
+  {
+    ctx->decodeFailCount++;
+  }
+}
+
 // boost/燃費の派生値計算とログ出力
 void finalizeAndLog(OBDReading &r)
 {
@@ -81,15 +139,6 @@ void finalizeAndLog(OBDReading &r)
     canLogStatus("全PID応答なし");
   }
 }
-
-// 診断用（HANDOFF_isotp_multipid.md §4 テスト2、タスク2/3の実車確認用。結論が出たら削除すること）
-void logMultiPidSegment(uint8_t pid, const uint8_t *segData, uint8_t len, void *)
-{
-  logger.printf("[TEST2] pid=0x%02X len=%u data=", pid, len);
-  for (uint8_t i = 0; i < len; i++)
-    logger.printf(" %02X", segData[i]);
-  logger.println();
-}
 } // namespace
 
 OBDReading obdPoll()
@@ -97,59 +146,49 @@ OBDReading obdPoll()
   OBDReading r = {};
   r.ts = time(nullptr);
 
-  // 64バイト: 0x68等マルチフレーム応答を受けられるだけの余裕を持たせる
-  // （HANDOFF_isotp_multipid.md タスク1「当面64バイトあれば十分」）
+  // 64バイト: 6PIDまとめ要求時の最大応答（ワイドバンドO2等を含む組み合わせ）や
+  // 0x68等のマルチフレーム応答を受けられるだけの余裕を持たせる
   uint8_t data[64];
   uint8_t dlc;
-  int okCount = 0, sendFailCount = 0, recvFailCount = 0, decodeFailCount = 0;
+  int okCount = 0, sendFailCount = 0, recvFailCount = 0, decodeFailCount = 0, missingCount = 0;
 
-  for (const auto &p : kPids)
+  for (int start = 0; start < kPidCount; start += kMaxPidsPerRequest)
   {
-    // 28PIDに増えたため異常時（IGN OFF等）の最悪サイクル時間を抑える目的でタイムアウトを短縮
-    // （実車では正常応答は数十msで返る実績があるため、50msでも正常系には影響しない）
-    if (!canSendObdRequest(p.pid))
+    uint8_t groupCount = (uint8_t)((kPidCount - start < kMaxPidsPerRequest)
+                                        ? (kPidCount - start)
+                                        : kMaxPidsPerRequest);
+    uint8_t groupPids[kMaxPidsPerRequest];
+    for (uint8_t i = 0; i < groupCount; i++)
+      groupPids[i] = kPids[start + i].pid;
+
+    // 29PID→最大6PIDずつ計5リクエストに集約したため、異常時（IGN OFF等）の
+    // 最悪サイクル時間は5×50ms=250ms程度に収まる（旧実装の29×50msから大幅短縮）
+    if (!canSendObdRequestMulti(groupPids, groupCount))
     {
-      sendFailCount++;
+      sendFailCount += groupCount;
       continue;
     }
     if (!canReceiveObdResponse(data, &dlc, 50, sizeof(data)))
     {
-      recvFailCount++;
+      recvFailCount += groupCount;
       continue;
     }
-    if (p.decode(data, dlc, r))
-    {
-      r.valid = true;
-      okCount++;
-    }
-    else
-    {
-      decodeFailCount++;
-    }
+
+    SegmentCtx ctx = {};
+    ctx.r = &r;
+    ctx.groupPids = groupPids;
+    ctx.groupCount = groupCount;
+    obdParseMultiResponse(data, dlc, handleSegment, &ctx);
+
+    okCount += ctx.okCount;
+    decodeFailCount += ctx.decodeFailCount;
+    for (uint8_t i = 0; i < groupCount; i++)
+      if (!ctx.seen[i])
+        missingCount++;
   }
 
-  logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d\n",
-                okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount);
+  logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d 未応答PID=%d\n",
+                okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount, missingCount);
   finalizeAndLog(r);
-
-  // 診断用（HANDOFF_isotp_multipid.md §4 テスト2、原因B確定後のタスク2/3実車確認用。
-  // 通常の29PIDポーリングとは独立、r/okCount等の集計には含めない。結論が出たら削除すること）
-  {
-    static const uint8_t kTestPids[] = {0x0C, 0x0B}; // RPM, MAP（§4テスト1と同じ組）
-    if (canSendObdRequestMulti(kTestPids, sizeof(kTestPids)))
-    {
-      uint8_t testData[16];
-      uint8_t testDlc;
-      if (canReceiveObdResponse(testData, &testDlc, 50, sizeof(testData)))
-        obdParseMultiResponse(testData, testDlc, logMultiPidSegment, nullptr);
-      else
-        logger.println("[TEST2] 応答なし");
-    }
-    else
-    {
-      logger.println("[TEST2] 送信失敗");
-    }
-  }
-
   return r;
 }
