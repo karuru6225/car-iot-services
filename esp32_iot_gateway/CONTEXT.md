@@ -919,3 +919,19 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - `keytool` で専用のreleaseキーストアを新規作成
 - `key.properties`（`.gitignore` 対象、パス・パスワードを記載）を作成し、`build.gradle` の `signingConfigs.release` から参照する構成に変更
 - keystoreファイル自体はGitに含めず、USBやパスワードマネージャー等の安全な方法でPC間共有する
+
+### TODO: developビルドでOTA Jobsが「ジョブなし」を返し続けた原因不明のバグ（未解決・原因不明）
+
+2026-08-07、実車（develop ビルド、fw 1.20.0）に対する1.21.0のOTAジョブが、Restartを4回試しても毎回シリアルログに `[JOBS] ジョブなし` を出力して失敗し続けた。同一デバイスに `v1-release` env でビルドしたファームを書き込んだところ、初回起動で即座にジョブを受信し、AWS IoT Jobs側も成功（SUCCEEDED）した。
+
+**確認して除外した原因**:
+
+- AWS側のIoT Jobs Publish/Subscribe用IAMポリシー（`infra/iot.tf`）: `terraform plan` で差分なし、適用済みと確認
+- Thing Groupのターゲット対象: ジョブの「ターゲット」一覧にこのデバイスが含まれていることを確認済み
+- `getDeviceId()`（MACアドレスから `esp32-gw-{mac}` を生成、`config.cpp:17-28`）: 決定的な処理で develop/release 間で値が変わる要素がない
+- `DEBUG_MODE` マクロ: `main.cpp:59-63` の動作モード初期値以外どこにも影響しないことを確認済み（`jobsGetNext()`/`mqtt.cpp`/`getDeviceId()`のいずれも参照していない）
+- ログが `[JOBS] レスポンスなし`（タイムアウト）ではなく `[JOBS] ジョブなし`（`exec.isNull()`）だったため、MQTT subscribe自体は成功しAWSからの正規応答は受信できていた
+
+**未解決**: develop/releaseのコード差分は実質 `DEBUG_MODE` の有無（Jobs関連コードに無関係と確認済み）と最適化レベル（`-Os`有無、release env）のみで、`jobsGetNext()`自体のロジックは共通。にもかかわらず何が結果を変えたのか特定できていない。「developのまま再度Restartしたら直る可能性」も検証できておらず、develop固有の問題なのか、単なるタイミング/AWS側の一時的な状態だったのかも未確定（後者を裏付ける根拠はなく、憶測に留まる）。
+
+**次にできること**: 次回developビルドで同様の事象が起きたら、`pio device monitor`でログを見ながら同じdevelopビルドのまま複数回Restartして再現するか確認する。再現すれば develop 固有（`-Os`有無等のビルド差）を疑う根拠になる。
