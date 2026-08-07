@@ -122,29 +122,5 @@ OBDReading obdPoll()
   logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d\n",
                 okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount);
   finalizeAndLog(r);
-
-  // 診断用（HANDOFF_isotp_multipid.md §4 テスト1、原因A/B切り分け用。
-  // 通常の29PIDポーリングとは独立、r/okCount等の集計には含めない。結論が出たら削除すること）
-  if (canSendObdRequestTest2Pid())
-  {
-    uint8_t testData[16];
-    uint8_t testDlc;
-    if (canReceiveObdResponse(testData, &testDlc, 50, sizeof(testData)))
-    {
-      logger.printf("[TEST1] 2PID(0x0C+0x0B)応答 dlc=%u:", testDlc);
-      for (uint8_t i = 0; i < testDlc; i++)
-        logger.printf(" %02X", testData[i]);
-      logger.println();
-    }
-    else
-    {
-      logger.println("[TEST1] 2PID応答なし");
-    }
-  }
-  else
-  {
-    logger.println("[TEST1] 2PID送信失敗");
-  }
-
   return r;
 }
