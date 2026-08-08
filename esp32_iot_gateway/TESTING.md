@@ -21,7 +21,9 @@ docker compose -f docker-compose.test.yml run --rm test
 
 ## CI
 
-`esp32_iot_gateway/**` に変更があるPRで [.github/workflows/esp32-tests.yml](../.github/workflows/esp32-tests.yml) が自動実行される。GitHub-hosted runner（`ubuntu-latest`）はDocker/`docker compose`プラグインを標準搭載しているため、追加セットアップなしで上記と同じコマンドが走る。失敗するとPRのチェックがREDになる。
+`esp32_iot_gateway/**` に変更があるPRで [.github/workflows/esp32-tests.yml](../.github/workflows/esp32-tests.yml) が自動実行される。失敗するとPRのチェックがREDになる。
+
+GitHub-hosted runnerは毎回まっさらな環境なので、ローカルのDockerイメージキャッシュは引き継がれない。そのため `docker/build-push-action` の `cache-from`/`cache-to: type=gha` でDockerレイヤーをGitHub Actions Cacheに保存・再利用し、`Dockerfile.test`のビルド（`pio pkg install -e native`を含む）が変更されていない限りCI側でも再ダウンロードが起きないようにしている。テストの実行自体は `docker compose` ではなく、ビルド済みイメージに対する `docker run` で行っている（`cache-from type=gha` はbuildx経由のビルドでのみ機能し、`docker compose build` からは使えないため）。
 
 `test/` 配下の各 `test_domain_*/` ディレクトリが個別のテストスイートとしてビルド・実行される（`pio test` が自動収集する）。
 

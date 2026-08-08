@@ -11,6 +11,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: domain層ユニットテストを実行（native platform, Docker）
-        run: docker compose -f docker-compose.test.yml run --rm test
-        working-directory: esp32_iot_gateway
+      - uses: docker/setup-buildx-action@v3
+
+      - name: テスト用イメージをビルド（GitHub Actions Cacheでレイヤーキャッシュ）
+        uses: docker/build-push-action@v6
+        with:
+          context: esp32_iot_gateway
+          file: esp32_iot_gateway/Dockerfile.test
+          tags: esp32-domain-test:ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: domain層ユニットテストを実行（native platform）
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/esp32_iot_gateway:/work" \
+            -w /work \
+            esp32-domain-test:ci \
+            pio test -e native
