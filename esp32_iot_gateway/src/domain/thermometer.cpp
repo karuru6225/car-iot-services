@@ -1,4 +1,5 @@
 #include "thermometer.h"
+#include <cstring>
 
 void ThermometerParser::parseCommon(SensorBase &d,
                                     const std::string &mf,
