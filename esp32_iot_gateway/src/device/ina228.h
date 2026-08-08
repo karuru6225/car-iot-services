@@ -17,8 +17,14 @@ private:
   static constexpr uint8_t ADDR = 0x40;
   static constexpr float CURRENT_LSB = 208e-6f; // A/bit
   static constexpr uint16_t SHUNT_CAL = 4096;
+
+  // CONFIG (reg 0x00): ADCRANGE のみ。RST/RSTACC/TEMPCOMP/CONVDLY は使わない
   static constexpr uint16_t CONFIG =
-    (1 << 4)        // ADCRANGE=1
+    (1 << 4); // ADCRANGE=1
+
+  // ADC_CONFIG (reg 0x01): MODE/変換時間/平均化はこちらのレジスタ
+  static constexpr uint16_t ADC_CONFIG =
+    (0b1111 << 12) // MODE=Fh 連続変換（Bus+Shunt+Temp）
     | (0b111 << 9)  // VBUSCT=7h 4120us
     | (0b111 << 6)  // VSHCT=7h 4120us
     | (0b111 << 3)  // VTCT=7h 4120us
