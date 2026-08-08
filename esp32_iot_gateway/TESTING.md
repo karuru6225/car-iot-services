@@ -15,7 +15,9 @@ cd esp32_iot_gateway
 docker compose -f docker-compose.test.yml run --rm test
 ```
 
-初回は `build-essential` のインストールとPlatformIOの依存取得が走るため数分かかる。2回目以降はDockerのレイヤーキャッシュが効く。
+初回は `build-essential` のインストールとPlatformIOの依存取得が走るため数分かかる。
+
+`native` platform・`tool-scons`・ArduinoJson等のPlatformIOパッケージは`Dockerfile.test`の**イメージビルド時**に`pio pkg install -e native`で先にインストールしている（`~/.platformio`に入るため`/work`へのbind mountの影響を受けない）。そのため`docker compose run --rm test`はコンテナを使い捨てても2回目以降は再ダウンロードが発生しない（`platformio.ini`か`test/lib/`を変更した時だけそのレイヤーが再ビルドされる）。
 
 ## CI
 
