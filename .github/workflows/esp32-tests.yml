@@ -1,0 +1,16 @@
+name: ESP32 Domain Tests
+
+on:
+  pull_request:
+    paths:
+      - 'esp32_iot_gateway/**'
+
+jobs:
+  native-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: domain層ユニットテストを実行（native platform, Docker）
+        run: docker compose -f docker-compose.test.yml run --rm test
+        working-directory: esp32_iot_gateway
