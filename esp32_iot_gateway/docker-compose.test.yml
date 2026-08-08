@@ -1,0 +1,14 @@
+# domain層（ハードウェア非依存の純粋ロジック）のユニットテストをホストPC上で動かす。
+# Windows/WSLにgcc/g++が無くても、コンテナ内のbuild-essentialでnative platformをビルドできる。
+#
+# 使い方:
+#   docker compose -f docker-compose.test.yml run --rm test
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - .:/work
+    working_dir: /work
+    command: pio test -e native

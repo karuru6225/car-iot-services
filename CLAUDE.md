@@ -83,6 +83,7 @@ AWS CLI の `--` オプションのパースエラーや presigned URL の生成
 - `esp32_iot_gateway/ARCHITECTURE.md` — レイヤー構成・依存ルール・命名規則
 - `esp32_iot_gateway/CONTEXT.md` — ハードウェア詳細・GPIO ピン・実装状態・設計ノート
 - `esp32_iot_gateway/OTA.md` — OTA 仕様
+- `esp32_iot_gateway/TESTING.md` — domain層のnativeユニットテスト（Docker実行方法・スタブライブラリの追加方法）
 - `esp32_iot_gateway/FLEET_PROVISIONING.md` — キッティング省略のための Fleet Provisioning 移行検討（未実装）
 - `esp32_iot_gateway/RELEASE.md` — リリース手順・GitHub Actions・バージョン命名規則
 - `esp32_iot_gateway/MENU.md` — OLED＋2ボタン設定メニュー仕様

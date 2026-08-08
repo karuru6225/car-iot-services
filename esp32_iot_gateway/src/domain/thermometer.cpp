@@ -1,10 +1,13 @@
 #include "thermometer.h"
+#include <cstring>
 
 void ThermometerParser::parseCommon(SensorBase &d,
                                     const std::string &mf,
                                     const std::string &sd)
 {
-  size_t hexBytes = mf.size() < sizeof(d.mfHex) / 2 ? mf.size() : sizeof(d.mfHex) / 2;
+  // NUL終端込みでmfHexに収まるバイト数の上限（snprintfが末尾に'\0'を書くため-1）
+  size_t maxBytes = (sizeof(d.mfHex) - 1) / 2;
+  size_t hexBytes = mf.size() < maxBytes ? mf.size() : maxBytes;
   for (size_t i = 0; i < hexBytes; i++)
     snprintf(d.mfHex + i * 2, 3, "%02x", (uint8_t)mf[i]);
 

@@ -1,5 +1,5 @@
 #pragma once
-#include <Arduino.h>
+#include <cstdint>
 
 // BLE センサーデータの共通フィールド
 // ThermometerData / Co2MeterData が継承する
