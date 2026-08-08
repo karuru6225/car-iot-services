@@ -699,7 +699,7 @@ Shadow（JSON テキスト）側は同種の対策は未実装だったが、下
 - 既に `corrupted` バケットに溜まっている過去データにも遡って適用可能
 - Hamming/Reed-Solomon等の本格的なECCをファームに実装する案もあったが、テレメトリは5分おき送信で1件欠損の実害が小さいこと、実装コスト・新規依存追加のリスクを考えると見合わないため不採用
 
-### TODO: S3 raw データの定期 Compaction（未着手）
+### ~~TODO: S3 raw データの定期 Compaction~~ **実装済み**
 
 `raw/year=.../month=.../day=.../hour=.../{device_id}-{uuid8}.json`（`infra/s3.tf` / `infra/lambda_src/ingest/index.py`）は ingest Lambda がメッセージ1件（デバイスの publish 1回）ごとに1オブジェクトとして書き込む設計。稼働台数・稼働時間が伸びるほど数十〜百バイト級の小さいJSONファイルが hour パーティション配下に大量に溜まっていく。
 
@@ -718,11 +718,11 @@ Shadow（JSON テキスト）側は同種の対策は未実装だったが、下
 - 「対象は確定済み＝現在進行中でない past hour」の判定は**UTCで**行う（Lambdaの `datetime.now(timezone.utc)` を使う。ローカル実行時のマシン時刻(JST)や `datetime.now()`（naive）をそのまま使わない）
 - EventBridge Scheduler の cron/rate 式はデフォルトUTC評価。スケジュール定義時に誤ってタイムゾーンをAsia/Tokyo等に設定しない（設定した場合は「past hour」判定側もそれに合わせてズレるため、UTC固定に統一するのが安全）
 
-**実装方針**:
+**実装内容**: `infra/lambda_src/compact/index.py`（Lambda名 `iot-monitor-compact`）が対象 hour パーティション配下の小さいJSONファイル群を読み、NDJSONとして1ファイル（`merged.json`）にまとめて同じプレフィックスへ再書き込みする。元の小ファイルはアーカイブへ退避後、S3 Lifecycle expirationで自動削除。EventBridge Scheduler で1時間に1回起動（UTC評価）。`s3-compaction-infra`ブランチをPR #3として2026-08-01にmainへマージ、`terraform apply`済みで稼働中。
 
-- 対象パーティション（`raw/year=.../month=.../day=.../hour=.../`）配下の小さいJSONファイル群を読み、**改行区切りJSON（NDJSON）としてまとめて1ファイルに再書き込み**（同じプレフィックスのまま。テーブル・パーティション定義・Grafanaクエリは無改修で済む）
-- マージ後、元の小ファイルは即削除せず**別プレフィックス/バケットへ退避（アーカイブ）**し、一定期間（例: 90日）はロールバック可能な状態を保ってからS3 Lifecycle expirationで自動削除する（`corrupted` バケットの30日自動削除パターンに倣う）。アーカイブ先はAthenaのテーブルロケーション外なので、退避してもスキャン性能への影響はない
-- EventBridge Scheduler等で定期起動するLambda/Glue Jobとして実装（UTC評価）。実行間隔は「直近データから対象にする」方針に合わせて短め（例: 1日〜数時間おき）を想定
+過去データ約105,000件のバックフィルのために一時的にパーティション単位並列化・バッチ処理化まで複雑化したが、バックフィル完走後に単純化（通常運用は1〜2パーティション/時なので逐次処理で数秒で終わる）。`lambda.tf`の`reserved_concurrent_executions=1`は同時実行による行重複防止のため意図的に残置。
+
+**効果**: `raw/`配下の総オブジェクト数が104,688（compaction前）→3,126（compaction後）と約97%減少（2026-08-01確認）。
 
 ### TODO: compaction後データの行単位削除対応（未着手、上記compactionに従属）
 
@@ -935,3 +935,15 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 **未解決**: develop/releaseのコード差分は実質 `DEBUG_MODE` の有無（Jobs関連コードに無関係と確認済み）と最適化レベル（`-Os`有無、release env）のみで、`jobsGetNext()`自体のロジックは共通。にもかかわらず何が結果を変えたのか特定できていない。「developのまま再度Restartしたら直る可能性」も検証できておらず、develop固有の問題なのか、単なるタイミング/AWS側の一時的な状態だったのかも未確定（後者を裏付ける根拠はなく、憶測に留まる）。
 
 **次にできること**: 次回developビルドで同様の事象が起きたら、`pio device monitor`でログを見ながら同じdevelopビルドのまま複数回Restartして再現するか確認する。再現すれば develop 固有（`-Os`有無等のビルド差）を疑う根拠になる。
+
+### TODO: CONTINUOUSモード中、5分境界ごとにOBDポーリングが10秒以上途切れる問題（未着手）
+
+2026-08-08 10:45〜13:45 JSTの実走行データ（Athena `obd_data`）を分析したところ、`obd_ts`の間隔が通常2〜3秒のところ、毎回ちょうど5分境界（`xx:x0:0x`/`xx:x5:0x`）の直後だけ14〜19秒に伸びる欠損が計6回見つかった（走行中・速度変動中でも発生、コールドソーク明けの再始動直後にも無関係に発生）。CANデコード失敗や`coolant_c=0`汚染は伴わず、単にその区間だけサンプルが取れていない。
+
+原因は`loop()`（[main.cpp:361-402](esp32_iot_gateway/src/main.cpp#L361-L402)）先頭の`measure()`（[monitor.cpp:13-22](esp32_iot_gateway/src/service/monitor.cpp#L13-L22)）が呼ぶ`bleScanner.start(SCAN_TIME)`（`SCAN_TIME=10`、[config.h:37](esp32_iot_gateway/src/config.h#L37)）。NimBLEの同期スキャン呼び出し（[ble_scan.cpp:53-56](esp32_iot_gateway/src/device/ble_scan.cpp#L53-L56)）で10秒ブロックし、そこにADS/INA228読み取りや`shadowPollDelta()`のネットワーク往復が加わって14〜19秒になっていると見られる。CONTINUOUSモードは`continuousLoopCore()`が次の5分境界まで内部whileループに留まり続ける設計（[main.cpp:274-343](esp32_iot_gateway/src/main.cpp#L274-L343)）のため、`loop()`自体も5分境界でしか再実行されず、`measure()`のBLEスキャンがちょうどその瞬間にOBDポーリング（`obdTick()`→`obdPoll()`）を含む全処理を止めてしまう。
+
+**実装方針（案）**:
+
+- BLEスキャンをブロッキングでなくする（`_scan->start(seconds, false)`のコールバック版に変更し、スキャン中も`continuousLoopCore()`のループへ制御を返せるようにする）
+- または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
+- ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
