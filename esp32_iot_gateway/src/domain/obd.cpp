@@ -89,6 +89,8 @@ bool obdDecodeMafAlt(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x66, 5, p))
     return false;
+  if (!(p[0] & 0x01)) // Sensor1 MAF 非搭載
+    return false;
   out.maf_gs = ((uint16_t)p[1] * 256 + p[2]) / 32.0f;
   return true;
 }
@@ -97,6 +99,8 @@ bool obdDecodeCoolantAlt(const uint8_t *data, uint8_t dlc, OBDReading &out)
 {
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x67, 4, p))
+    return false;
+  if (!(p[0] & 0x01)) // Sensor1 非搭載
     return false;
   out.coolant_c = (int16_t)p[1] - 40;
   return true;
@@ -271,9 +275,18 @@ bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x68, 5, p))
     return false;
-  out.iat_c = (int16_t)p[1] - 40;
-  out.iat2_c = (int16_t)p[2] - 40;
-  return true;
+  bool any = false;
+  if (p[0] & 0x01) // Sensor1 搭載
+  {
+    out.iat_c = (int16_t)p[1] - 40;
+    any = true;
+  }
+  if (p[0] & 0x02) // Sensor2 搭載
+  {
+    out.iat2_c = (int16_t)p[2] - 40;
+    any = true;
+  }
+  return any;
 }
 
 // PID→データ長（PIDバイト自身を除く、A/B/C...の合計バイト数）。多くは上の
