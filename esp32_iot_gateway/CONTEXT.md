@@ -755,29 +755,15 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
 
-### TODO: main.cppがセンサー/CAN初期化の失敗を無視している（未着手）
+### TODO: SPIFFSログ永続化が既知の未解決問題により無効化中（原因未特定・対応は無効化のみ）
 
-`setup()`内の`adsInit()`/`ina228.init()`/`canInit()`（[main.cpp:102-104](esp32_iot_gateway/src/main.cpp#L102-L104)）はいずれも初期化失敗を伝えるため`bool`を返す設計だが、戻り値を誰も確認していない。I2C接続不良等で初期化に失敗しても、以降の`readCurrent()`等が未設定デバイスに対して読み取りを続け、無効値をテレメトリとしてAWSへ送信し続けてしまう。異常を検知する手段がどこにもない。
+`logStorageWrite()`（[log_storage.cpp:98](esp32_iot_gateway/src/service/log_storage.cpp#L98)）の`SPIFFS.open(s_currentPath, FILE_APPEND)`が、`logStorageInit()`で一度`FILE_WRITE`モードで作成・closeした直後から毎回失敗し続ける事象を実機で確認（2026-08-09）。`[E][vfs_api.cpp:301] VFSFileImpl(): fopen(...) failed`がSerialに大量出力される。
 
-**実装方針（案）**: 各初期化の戻り値を見てログ出力し、OLEDに警告表示する、またはtelemetryペイロードに「センサー異常」フラグを含めてクラウド側で気づけるようにする。
+**調査結果**: ESP-IDF/arduino-esp32双方のリポジトリに同一症状の未解決issueが複数存在する（[esp-idf#1012](https://github.com/espressif/esp-idf/issues/1012) "File append not working with SPIFFS"、[esp-idf#9915](https://github.com/espressif/esp-idf/issues/9915)、[arduino-esp32#5250](https://github.com/espressif/arduino-esp32/issues/5250)）が、いずれも`Resolution: More info needed`のまま未解決で、根本原因（`spiffs_open()`内部の何が失敗しているか）は特定できていない。`vfs_api.cpp`のソース自体にもappendモード固有の特別扱いは無い。公式SPIFFSドキュメントにはappendモード特有の言及はないが、GC性能・電源断での破損リスク・利用効率75%程度という一般的な脆弱性は明記されている。
 
-### TODO: jobs.cppがacceptedトピックを厳密一致で判定していない（未着手）
+**影響範囲（重要）**: この問題により`logStorageWrite()`は事実上ずっと機能しておらず、SPIFFS上のデバッグログファイルへの永続化が全て失敗していた可能性がある。シリアルモニタ接続時は`[E]`ログで気づけるが、実運用中（車載・モニタなし）は完全に不可視。**過去にSPIFFS上のログファイルを根拠にした調査結果があれば信頼できない**（他のTODOでは幸い`pio device monitor`でのシリアル直接確認を使っており、この問題の影響は受けていない）。
 
-`jobsGetNext()`（[jobs.cpp:29-77](esp32_iot_gateway/src/service/jobs.cpp#L29-L77)）は`rejected`トピック文字列を生成する（[jobs.cpp:45](esp32_iot_gateway/src/service/jobs.cpp#L45)）が使わず、`strstr(recvTopic, "rejected")`が偽であれば無条件にacceptedレスポンスとして処理する。`shadow.cpp`の`shadowPollDelta()`が`strcmp(recvTopic, expected) != 0`で厳密一致を取っているのと対照的。現状`jobsGetNext()`は起動時1回しか呼ばれないため実害は限定的だが、将来ポーリング頻度を上げると別トピックのメッセージを誤ってJobsレスポンスとして消費しうる。
-
-**実装方針（案）**: `shadow.cpp`と同様、`topicAccepted()`を生成して`strcmp`で厳密一致を取ってから処理する。
-
-### TODO: ota.cpp のバージョン一致判定が前方一致になっている（未着手）
-
-`Ota::handleJob()`の同一バージョンスキップ判定（[ota.cpp:321](esp32_iot_gateway/src/service/ota.cpp#L321)）が`strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0`で、`version`が`FIRMWARE_VERSION`の前方一致であれば真になる。`FIRMWARE_VERSION`は`"<base>+<githash>"`形式なので、短いversion文字列がたまたま前方一致すると誤って「同一バージョン」と判定されOTAがスキップされる可能性がある。
-
-**実装方針（案）**: `+`区切りの前半（`FIRMWARE_VERSION_BASE`相当）同士を`strcmp`で完全一致させる。
-
-### TODO: gzLog()がログ永続化をスキップしている（未着手）
-
-`gzLog()`（[ota.cpp:22-30](esp32_iot_gateway/src/service/ota.cpp#L22-L30)）は`Logger::printf`（[logger.cpp:23-32](esp32_iot_gateway/src/service/logger.cpp#L23-L32)）と同じ`vsnprintf`パターンを再実装しているが、最後に`logger.print(buf)`を呼んでおり、これは`logStorageWrite()`を呼ばずSerial出力のみで終わる。OTAのgz解凍時に出る`[OTA] gz...`系のログ行だけがSPIFFS上のデバッグログファイルに残らず、シリアルモニタを見ていないと事後調査できない。
-
-**実装方針（案）**: `gzLog()`から`logger.printf()`を呼ぶよう差し替える（`uzlib`側のログコールバック型が`void(*)(const char *)`で可変引数を取れない場合は、`gzLog()`内で一旦`vsnprintf`した文字列を`logger.printf("%s", buf)`のように渡す）。
+**対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
 
 ### TODO: device/がservice/logger.hを参照している（レイヤー依存違反・未着手）
 

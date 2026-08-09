@@ -5,6 +5,30 @@
 #include <cstdlib>
 #include <cstring>
 
+// SPIFFSログ永続化は既知の未解決問題（SPIFFS.open(path, FILE_APPEND)が既存ファイルの
+// 再オープン時に毎回失敗する。arduino-esp32/esp-idf双方に類似issueあり、原因未特定。
+// CONTEXT.md参照）により、platformio.iniのbuild_flagsで LOG_STORAGE_DISABLED が
+// 定義されている間は全機能をスタブ化して無効にする。原因判明・修正されたら
+// build_flagsから外して復元する。
+
+#ifdef LOG_STORAGE_DISABLED
+
+void logStorageInit()
+{
+  Serial.println("[LOG_STORE] 無効化中（既知のSPIFFS append問題、CONTEXT.md参照）");
+}
+
+void logStorageWrite(const char *msg)
+{
+  (void)msg;
+}
+
+void logStorageClear()
+{
+}
+
+#else
+
 static const char LOG_PREFIX[] = "/log_";
 static char       s_currentPath[32] = {};
 
@@ -137,3 +161,5 @@ void logStorageClear()
   s_currentPath[0] = '\0';
   Serial.printf("[LOG_STORE] %d ファイル削除\n", count);
 }
+
+#endif // LOG_STORAGE_DISABLED

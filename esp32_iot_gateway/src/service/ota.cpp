@@ -26,7 +26,7 @@ static void gzLog(const char *fmt, ...)
   va_start(args, fmt);
   vsnprintf(buf, sizeof(buf), fmt, args);
   va_end(args);
-  logger.print(buf);
+  logger.printf("%s", buf); // logStorageWrite()にも残すためprintではなくprintfを使う
 }
 
 struct GzStream
@@ -293,6 +293,16 @@ void Ota::reportPendingJobResult()
   }
 }
 
+// FIRMWARE_VERSIONは"<base>+<githash>"形式。'+'より前のbase部分だけをjobのversionと
+// 完全一致で比較する（strncmpの前方一致だと短いversion文字列がたまたま前方一致し、
+// 実際にはバージョンが異なるのに「同一」と誤判定される恐れがあった）
+static bool isSameFirmwareVersion(const char *version)
+{
+  const char *plus = strchr(FIRMWARE_VERSION, '+');
+  size_t baseLen = plus ? (size_t)(plus - FIRMWARE_VERSION) : strlen(FIRMWARE_VERSION);
+  return strlen(version) == baseLen && strncmp(FIRMWARE_VERSION, version, baseLen) == 0;
+}
+
 bool Ota::handleJob(const JobInfo &job)
 {
   JsonDocument doc;
@@ -324,7 +334,7 @@ bool Ota::handleJob(const JobInfo &job)
 
   // 同一バージョンならスキップ（force=true の場合は無視）
   bool force = doc["force"] | false;
-  if (!force && version && strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0)
+  if (!force && version && isSameFirmwareVersion(version))
   {
     logger.printf("[OTA] 同一バージョン (%s)、スキップ\n", version);
     jobsReport(job.id, "SUCCEEDED");

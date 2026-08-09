@@ -220,3 +220,27 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `waitShreadHeader()`（`service/https.cpp`）も`+SHREAD:`応答から解析した`actual`を、固定2048バイトの`static chunk[]`バッファの容量（呼び出し側が要求した`readLen`）と突き合わせずに`SerialAT.readBytes()`へ渡していた。上記lte.cppの`fileReadChunk()`と同一パターンのバグ。
 
 **対応**: `waitShreadHeader()`内で`actual > chunkSize`ならエラー（-1）を返すようにした。呼び出し元（`Https::get()`）は既存の`actual <= 0`エラーハンドリングをそのまま利用できる。
+
+### ~~TODO: main.cppがセンサー/CAN初期化の失敗を無視している~~ **実装済み**
+
+`setup()`内の`adsInit()`/`ina228.init()`/`canInit()`はいずれも初期化失敗を伝えるため`bool`を返す設計だが、戻り値を誰も確認していなかった。I2C接続不良等で初期化に失敗しても異常を検知する手段がどこにもなかった。
+
+**対応**: 各初期化の戻り値を見て失敗時に`logger.println()`で警告ログを出すようにした（`logger.println()`はSPIFFSログにも永続化されるため事後調査可能）。telemetryペイロードへの「センサー異常」フラグ追加やOLED警告表示は見送り（現状のログ出力で検知は可能なため）。
+
+### ~~TODO: jobs.cppがacceptedトピックを厳密一致で判定していない~~ **実装済み**
+
+`jobsGetNext()`（`service/jobs.cpp`）は`rejected`トピック文字列を生成するが使わず、`strstr(recvTopic, "rejected")`が偽であれば無条件にacceptedレスポンスとして処理していた。`shadow.cpp`の`shadowPollDelta()`が`strcmp`で厳密一致を取っているのと対照的だった。
+
+**対応**: `rejected`トピックとの一致を`strcmp`に変更し、さらに`accepted`トピックも生成して`strcmp`で厳密一致を取ってから処理するようにした。想定外のトピックはログを出して無視する。
+
+### ~~TODO: ota.cpp のバージョン一致判定が前方一致になっている~~ **実装済み**
+
+`Ota::handleJob()`の同一バージョンスキップ判定が`strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0`で、`version`が`FIRMWARE_VERSION`の前方一致であれば真になっていた。`FIRMWARE_VERSION`は`"<base>+<githash>"`形式なので、短いversion文字列がたまたま前方一致すると誤って「同一バージョン」と判定されOTAがスキップされる可能性があった。
+
+**対応**: `isSameFirmwareVersion()`ヘルパーを追加し、`FIRMWARE_VERSION`の`+`より前の部分（base部分）と`version`をサイズ込みで完全一致させるようにした。
+
+### ~~TODO: gzLog()がログ永続化をスキップしている~~ **実装済み**
+
+`gzLog()`（`service/ota.cpp`）は`Logger::printf`と同じ`vsnprintf`パターンを再実装していたが、最後に`logger.print(buf)`を呼んでおり、`logStorageWrite()`を呼ばずSerial出力のみで終わっていた。OTAのgz解凍時に出る`[OTA] gz...`系のログ行だけがSPIFFS上のデバッグログファイルに残らなかった。
+
+**対応**: `logger.print(buf)`を`logger.printf("%s", buf)`に差し替え、`logStorageWrite()`経由でも永続化されるようにした。
