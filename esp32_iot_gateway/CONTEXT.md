@@ -789,8 +789,3 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 
 **実装方針（案）**: メッセージ表示状態を専用の`MenuState`として切り出し、`millis()`で経過時間を見て次状態へ遷移させる。
 
-### TODO: main.cppのGPIO_NUM_0がピン定数化されていない（未着手）
-
-`enterDeepSleepMode()`内で`GPIO_NUM_0`が4箇所（[main.cpp:257-261](esp32_iot_gateway/src/main.cpp#L257-L261)）生の値のまま使われている。CLAUDE.mdの「ピン番号は定数化する」規約に反し、他のピンが`board_pins.h`経由で管理されているのと対照的。BOOTボタン（wake用）のピンであることがコードから読み取りにくい。
-
-**実装方針（案）**: `board_pins.h`に`wakePin`相当の定数を追加するか、`main.cpp`内で`#define WAKE_PIN GPIO_NUM_0`する。

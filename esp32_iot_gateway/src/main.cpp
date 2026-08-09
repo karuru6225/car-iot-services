@@ -54,6 +54,10 @@ static JsonTelemetryEncoder g_encoder;
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 
+// ESP32-S3モジュール内蔵のBOOTボタン。DeepSleep復帰用のEXT0 wakeupソース。
+// board_pins.hが管理する基板固有ピンとは異なりモジュール側で固定のため、ここで#define する
+#define WAKE_PIN GPIO_NUM_0
+
 // #define DEBUG_SKIP_NETWORK
 
 #ifdef DEBUG_MODE
@@ -254,11 +258,11 @@ static void enterDeepSleepMode()
 #if BOARD_VERSION == 2
   gpio_hold_en((gpio_num_t)boardPins().pwrHoldPin);
 #endif
-  rtc_gpio_init(GPIO_NUM_0);
-  rtc_gpio_set_direction(GPIO_NUM_0, RTC_GPIO_MODE_INPUT_ONLY);
-  rtc_gpio_pullup_en(GPIO_NUM_0);
-  rtc_gpio_pulldown_dis(GPIO_NUM_0);
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
+  rtc_gpio_init(WAKE_PIN);
+  rtc_gpio_set_direction(WAKE_PIN, RTC_GPIO_MODE_INPUT_ONLY);
+  rtc_gpio_pullup_en(WAKE_PIN);
+  rtc_gpio_pulldown_dis(WAKE_PIN);
+  esp_sleep_enable_ext0_wakeup(WAKE_PIN, 0);
   esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
   esp_deep_sleep_start();
 }
