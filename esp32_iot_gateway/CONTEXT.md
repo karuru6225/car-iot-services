@@ -543,9 +543,9 @@ ULP RISC-V コプロセッサで DeepSleep 中もバッテリー電圧を監視�
 - 既に `corrupted` バケットに溜まっている過去データにも遡って適用可能
 - Hamming/Reed-Solomon等の本格的なECCをファームに実装する案もあったが、テレメトリは5分おき送信で1件欠損の実害が小さいこと、実装コスト・新規依存追加のリスクを考えると見合わないため不採用
 
-### TODO: compaction後データの行単位削除対応（未着手、上記compactionに従属）
+### TODO: compaction後データの行単位削除対応（未着手、[S3 raw データの定期 Compaction](CONTEXT_ARCHIVE.md#todo-s3-raw-データの定期-compaction-実装済み)に従属）
 
-上記「S3 raw データの定期 Compaction」を実装すると、`DELETE /data` の行単位削除（`infra/lambda_src/delete/index.py` の `_delete_by_keys`）がマージ済みファイルに対しては機能しなくなる（ファイル全体＝該当時間帯の全行が削除対象になってしまう）。
+[S3 raw データの定期 Compaction](CONTEXT_ARCHIVE.md#todo-s3-raw-データの定期-compaction-実装済み)を実装すると、`DELETE /data` の行単位削除（`infra/lambda_src/delete/index.py` の `_delete_by_keys`）がマージ済みファイルに対しては機能しなくなる（ファイル全体＝該当時間帯の全行が削除対象になってしまう）。
 
 **実装方針（案）**: `_delete_by_keys` で対象keyがマージ済みNDJSONファイルかどうかを判定し、マージ済みなら `GetObject` → 削除対象行を除いて残りを `PutObject` で上書きする分岐を追加する。ファイルサイズは compaction 後も小さいままの想定なので、読み直しコストは軽微。判定方法（ファイル名規則 or 内部メタデータ）は compaction 実装時に合わせて設計する。
 
