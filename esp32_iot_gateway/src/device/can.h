@@ -11,9 +11,6 @@ bool canInit();
 // CAN 停止（TWAI 停止 → 電源 OFF）。未起動でも安全に呼べる
 void canDeinit();
 
-// Mode 01 PID リクエストを送信する
-bool canSendObdRequest(uint8_t pid);
-
 // Mode 01 で複数PIDをまとめて1フレーム(Single Frame)で要求する。count は1〜6
 // （PCIバイトの長さ制約: Mode1バイト+PID数がSF7バイト以内に収まる上限）。
 // functional addressing固定（実車で2PID要求時の動作を確認済み。HANDOFF_isotp_multipid.md

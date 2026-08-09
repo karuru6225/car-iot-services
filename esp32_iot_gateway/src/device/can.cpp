@@ -128,43 +128,6 @@ static void recoverIfBusOff()
   }
 }
 
-bool canSendObdRequest(uint8_t pid)
-{
-  if (!s_ready)
-    return false;
-
-  recoverIfBusOff();
-
-  twai_message_t tx = {};
-  tx.identifier = CAN_REQ_ID;
-  tx.extd = 1;
-  tx.data_length_code = 8;
-  tx.data[0] = 0x02; // PCI: Single Frame, length=2
-  tx.data[1] = 0x01; // Mode 01
-  tx.data[2] = pid;
-  // data[3..7] = 0x00（ISO 15765-4 パディング）
-
-  esp_err_t txErr = twai_transmit(&tx, pdMS_TO_TICKS(10));
-  bool ok = txErr == ESP_OK;
-  if (!ok)
-  {
-    logger.printf("[CAN] canSendObdRequest: 送信失敗 pid=0x%02X err=%s (連続%u回)\n",
-                  pid, esp_err_to_name(txErr), s_failCount + 1);
-    if (++s_failCount >= CAN_FAIL_ESCALATE_THRESHOLD)
-    {
-      logger.printf("[CAN] 連続送信失敗%u回 → フル再初期化\n", s_failCount);
-      canLogStatus("再初期化前");
-      canDeinit();
-      canInit();
-    }
-  }
-  else
-  {
-    s_failCount = 0;
-  }
-  return ok;
-}
-
 bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count)
 {
   if (!s_ready || count == 0 || count > 6)

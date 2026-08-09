@@ -1,4 +1,5 @@
 #include "obd.h"
+#include "../logger.h"
 
 // 応答パケットの共通チェック: [0]=0x41(Mode01応答) [1]=PID [2]=A [3]=B ...（PCIバイトはcan.cpp側で剥離済み）
 // 一致すればペイロード先頭（A）へのポインタを payload に返す
@@ -338,7 +339,13 @@ void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb c
     uint8_t pid = data[i++];
     uint8_t len;
     if (!lookupPidLength(pid, len))
-      break; // 未知PID: 以降のセグメント境界が分からないため打ち切り
+    {
+      // 未知PID: 以降のセグメント境界が分からないため打ち切り。ECUが想定外PIDを
+      // 返した際の調査用に記録する。
+      logger.printf("[OBD] obdParseMultiResponse: 未知PID 0x%02X で打ち切り（残り%uバイト）\n",
+                    pid, (unsigned)(dlc - i));
+      break;
+    }
     if ((uint16_t)i + len > dlc)
       break; // データ不足（応答が途中で切れている）
     cb(pid, data + i, len, ctx);
