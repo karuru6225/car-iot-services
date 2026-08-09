@@ -68,6 +68,8 @@ static int waitShreadHeader(uint8_t *chunk, int chunkSize,
   int actual = header.substring(idx + 8, nl).toInt();
   if (actual <= 0)
     return -1;
+  if (actual > chunkSize)
+    return -1; // モデム応答の異常値（誤応答/化け）でバッファを超える書き込みを防ぐ
 
   // ヘッダ行の後ろに先行して入ってきたデータをコピー
   preloaded = 0;
