@@ -208,3 +208,15 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `getShadowOverrideMode()`は`setup()`内で1回だけ呼ばれる（`main.cpp`）。一方`shadowPollDelta()`は`continuousLoopCore()`の1秒ティックや`enterDeepSleepMode()`、`loop()`本体でも呼ばれ、そこで`override_next_mode`のdeltaを受け取ると`s_overridePending`をセットしAWSへACK（`shadowPublishConfig(true)`）まで返してしまう（`shadow.cpp`）が、`s_overridePending`を実際にモードへ反映する`getShadowOverrideMode()`の呼び出しは起動時の1回しかないため、稼働中に送ったoverride_next_modeは「reportedは更新されたのに実際のモードは変わらない」という状態になる。
 
 **判断**: 現状の挙動（起動直後のみ反映）のまま許容することにした。`override_next_mode`は元々「次回起動時に1サイクルだけ」という起動タイミング前提の機能（`ONE_SHOT_CONTINUOUS`）であり、稼働中に送っても即座に反映される必要性は薄いと判断。
+
+### ~~TODO: lte.cpp fileReadChunk()がモデム応答サイズをバッファ容量でクランプしない~~ **実装済み**
+
+`Lte::fileReadChunk()`（`device/lte.cpp`）はSIM7080Gの`+CFSRFILE`応答から`actual`（実際のサイズ）を読み取るが、呼び出し側バッファの容量`maxLen`と突き合わせずに、先行データのコピーループ・`readBytes()`双方でその`actual`バイト分をそのまま書き込んでいた。モデムが誤応答（`actual > maxLen`）を返した場合、呼び出し元の`writeGzToOta()`（`service/ota.cpp`）が使う固定4096バイトバッファ`s_gz.buf`を越えて書き込む可能性があった。
+
+**対応**: `actual > maxLen`の場合はエラー（-1）として扱うようにした（超過分の破棄ではなくエラー扱い。誤応答は元データの信頼性も疑わしいため）。
+
+### ~~TODO: https.cpp のダウンロードチャンク受信も同様にサイズ未検証~~ **実装済み**
+
+`waitShreadHeader()`（`service/https.cpp`）も`+SHREAD:`応答から解析した`actual`を、固定2048バイトの`static chunk[]`バッファの容量（呼び出し側が要求した`readLen`）と突き合わせずに`SerialAT.readBytes()`へ渡していた。上記lte.cppの`fileReadChunk()`と同一パターンのバグ。
+
+**対応**: `waitShreadHeader()`内で`actual > chunkSize`ならエラー（-1）を返すようにした。呼び出し元（`Https::get()`）は既存の`actual <= 0`エラーハンドリングをそのまま利用できる。

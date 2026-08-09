@@ -193,6 +193,12 @@ int Lte::fileReadChunk(const char *filename, int offset, uint8_t *buf, int maxLe
     logger.printf("[FILE] CFSRFILE size=0 at %d\n", offset);
     return -1;
   }
+  if (actual > maxLen)
+  {
+    // モデム応答の異常値（誤応答/化け）でバッファを超える書き込みを防ぐ
+    logger.printf("[FILE] CFSRFILE size異常 at %d: actual=%d > maxLen=%d\n", offset, actual, maxLen);
+    return -1;
+  }
 
   // 先行データをコピー
   int preloaded = 0;

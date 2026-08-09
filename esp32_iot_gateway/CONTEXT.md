@@ -755,18 +755,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
 
-### TODO: lte.cpp fileReadChunk()がモデム応答サイズをバッファ容量でクランプしない（未着手）
-
-`Lte::fileReadChunk()`（[lte.cpp:161-226](esp32_iot_gateway/src/device/lte.cpp#L161-L226)）はSIM7080Gの`+CFSRFILE`応答から`actual`（実際のサイズ）を読み取るが、呼び出し側バッファの容量`maxLen`と突き合わせずに、先行データのコピーループ・`readBytes()`双方でその`actual`バイト分をそのまま書き込む。モデムが誤応答（`actual > maxLen`）を返した場合、呼び出し元の`writeGzToOta()`（`service/ota.cpp`）が使う固定4096バイトバッファ`s_gz.buf`を越えて書き込む可能性がある。
-
-**実装方針（案）**: `actual`を`maxLen`でクランプし、超過分は破棄またはエラー扱いにする。
-
-### TODO: https.cpp のダウンロードチャンク受信も同様にサイズ未検証（未着手）
-
-`waitShreadHeader()`（`service/https.cpp`）も`+SHREAD:`応答から解析した`actual`を、固定2048バイトの`static chunk[]`バッファの容量（呼び出し側が要求した`readLen`）と突き合わせずに`SerialAT.readBytes()`へ渡している。上記lte.cppの`fileReadChunk()`と同一パターンのバグ。OTAの`.bin`直接ダウンロード時に影響する。
-
-**実装方針（案）**: 上記lte.cppの修正と合わせて、共通の「モデム応答サイズをバッファ容量でクランプする」ヘルパーとして切り出すのも一案。
-
 ### TODO: main.cppがセンサー/CAN初期化の失敗を無視している（未着手）
 
 `setup()`内の`adsInit()`/`ina228.init()`/`canInit()`（[main.cpp:102-104](esp32_iot_gateway/src/main.cpp#L102-L104)）はいずれも初期化失敗を伝えるため`bool`を返す設計だが、戻り値を誰も確認していない。I2C接続不良等で初期化に失敗しても、以降の`readCurrent()`等が未設定デバイスに対して読み取りを続け、無効値をテレメトリとしてAWSへ送信し続けてしまう。異常を検知する手段がどこにもない。
