@@ -286,3 +286,5 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `tickCharging()`自体は`millis()`駆動の状態機械だが、遷移点3箇所（充電不可・完了・停止）で`delay(1000〜2000)`が挟まっており、その間`enterMenuMode()`の待機ループが呼ぶ`button.read()`が実行されずボタン入力を取りこぼしていた。
 
 **対応**: メッセージ表示専用の`MenuState::MESSAGE`を追加し、`beginMessage(title, body, durationMs, next)`でOLED表示・経過時間計測を開始、`tickMessage()`で`millis()`経過を見て`next`状態へ遷移させるようにした。`tickCharging()`側の3箇所は`delay()`呼び出しをこの`beginMessage()`への置き換えのみで対応でき、メッセージ表示中も`enterMenuMode()`の50msポーリングループ（`button.read()`含む）が回り続けるようになった。
+
+同じ「`oledShowMessage()`→`delay()`→次状態へ遷移」の形をしていた他4箇所（`tickBleScanResult()`のBLE登録完了、`tickBleRemoveConfirm()`の削除完了、`tickAhOffset()`/`tickChgTimeout()`の保存完了）も`beginMessage()`に置き換えた。`ConfirmDef.onConfirm`を`void(*)()`から`MenuState(*)()`に変更し、`doAhReset()`も`beginMessage()`を返す形にした。`doNvsClear()`のみ直後に`esp_restart()`で戻らないため`delay(1500)`のまま残した（再起動直前でボタン監視が止まっても実害がないため対象外とした）。`beginMessage()`/`tickMessage()`とその状態変数は全`tick*()`関数から参照できるよう`MenuState`列挙体の直後（`ConfirmDef`より前）に定義位置を移した。
