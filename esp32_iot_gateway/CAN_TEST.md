@@ -3,6 +3,12 @@
 ブレッドボード上での単体試験用ドキュメント。  
 `blank` env は他の env と接続機器が大きく異なるため独立して管理する。
 
+> **注記（2026-08-09）**: 本文書は GU0/GU1 のピン割当が確定する前の初期ドラフト段階の記録であり、
+> 以下の背景表・配線図・GPIO 番号は現行実装と TX/RX が逆になっている。実装（`device/can.cpp`）
+> では GU0（`gu00Pin`=GPIO4=TX, `gu01Pin`=GPIO5=RX, `gu0EnPin`=GPIO6=EN）を使用し、
+> GU1（GPIO7/8/9）は LTE（`device/lte.cpp`）が使用している。詳細は `OBD.md`「device/can.h
+> インターフェース」節を参照。
+
 ---
 
 ## 背景
