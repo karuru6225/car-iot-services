@@ -289,10 +289,12 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 
 同じ「`oledShowMessage()`→`delay()`→次状態へ遷移」の形をしていた他4箇所（`tickBleScanResult()`のBLE登録完了、`tickBleRemoveConfirm()`の削除完了、`tickAhOffset()`/`tickChgTimeout()`の保存完了）も`beginMessage()`に置き換えた。`ConfirmDef.onConfirm`を`void(*)()`から`MenuState(*)()`に変更し、`doAhReset()`も`beginMessage()`を返す形にした。`doNvsClear()`のみ直後に`esp_restart()`で戻らないため`delay(1500)`のまま残した（再起動直前でボタン監視が止まっても実害がないため対象外とした）。`beginMessage()`/`tickMessage()`とその状態変数は全`tick*()`関数から参照できるよう`MenuState`列挙体の直後（`ConfirmDef`より前）に定義位置を移した。
 
-### ~~TODO: CONTINUOUSモード中、5分境界ごとにOBDポーリングが10秒以上途切れる問題~~ **実装済み・実機未検証**
+### ~~TODO: CONTINUOUSモード中、5分境界ごとにOBDポーリングが10秒以上途切れる問題~~ **実装済み・実機確認済み**
 
 実車走行データ（Athena `obd_data`、2026-08-08）分析で、CONTINUOUSモードの5分境界直後だけOBDポーリング間隔が14〜19秒に伸びる欠損が判明。原因は`service/monitor.cpp`の`measure()`が呼ぶ`bleScanner.start(SCAN_TIME)`（`SCAN_TIME=10`）が`NimBLEScan::start(uint32_t, bool)`（ブロッキング同期版、NimBLE-Arduino v1.4.0のソースで確認）を使っており、スキャン中`continuousLoopCore()`の1秒ティックOBDポーリングが完全に止まっていたこと。
 
 **対応**: `device/ble_scan.h/.cpp`に非同期版`startAsync()`・`isScanning()`・`stop()`を追加（既存の`start()`はブロッキングのまま残し、`service/menu.cpp`のBLE登録画面はそちらを使い続ける）。`service/monitor.cpp`の`publish()`を`publishBattery()`/`publishBle()`に分割し、`collectBle()`（スキャン完了時のみキュー収集、未完了ならno-op）を追加。`main.cpp`に`g_blePending`フラグと`pollBleCollect()`を追加し、`continuousLoopCore()`の既存1秒ティックループ内でBLEスキャン完了を非ブロッキングに拾うようにした。`enterDeepSleepMode()`には`queue.save()`直前に有界待機（`SCAN_TIME+3`秒でタイムアウトし`bleScanner.stop()`で強制打ち切り）を追加し、DEEP_SLEEPモードが「スリープ前にそのサイクルのBLE結果をqueueに保存する」という既存の保証を崩さないようにした。
 
-**制約**: この修正はdevice/service/main.cppにまたがり、native Unityテストの対象外（ハードウェア/FreeRTOS依存のため）。`pio run`のコンパイル確認と既存native domainテスト49件のパスは確認済みだが、実機での5分境界OBD欠損解消・DEEP_SLEEPモードのBLEデータ保存継続は未検証。次回実機ログ（Athena `obd_data`の5分境界間隔）で効果を確認すること。
+**制約**: この修正はdevice/service/main.cppにまたがり、native Unityテストの対象外（ハードウェア/FreeRTOS依存のため）。`pio run`のコンパイル確認と既存native domainテスト49件のパスに加え、実機検証も実施済み。
+
+**実機検証結果（2026-08-09）**: 5分境界を2回（08:20:00・08:25:00 UTC）またぐ実車走行データをAthena `obd_data`で確認。`car-iot-aca704`の08:19:03〜08:25:35（182サンプル）で`obd_ts`間隔5秒以上のギャップは0件（修正前は境界のたびに14〜19秒の欠損が確実に発生していた）。両境界とも間隔は通常通り2〜4秒で継続しており、修正の効果を確認した。DEEP_SLEEPモード側のBLEデータ保存継続は未検証（走行中はCONTINUOUSモードが主のため、別途確認が必要）。
