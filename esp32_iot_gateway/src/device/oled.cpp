@@ -183,13 +183,13 @@ void oledShowCharging(float vMain, float vSub, int remainSec)
   display.display();
 }
 
-void oledUpdateCountdown(int remainSec)
+void oledUpdateCountdown(int remainSec, const char *nextMode)
 {
-  // y=44: カウントダウン行（"Next: Xs"）
+  // y=44: カウントダウン + 次に遷移するモード（"Xs -> CONTINUOUS/DEEP_SLEEP"）
   display.fillRect(0, 44, 128, 9, SSD1306_BLACK);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 44);
-  display.printf("Next: %ds", remainSec);
+  display.printf("%ds -> %s", remainSec, nextMode);
   // y=56: ボタンガイドを継続モード用に上書き
   display.fillRect(0, 56, 128, 8, SSD1306_BLACK);
   display.setCursor(0, 56);

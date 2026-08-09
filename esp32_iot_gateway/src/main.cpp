@@ -276,6 +276,19 @@ struct ContinuousLoopHooks
   OperationMode selfMode; // BTN1長押しでこのモードから抜ける判定に使う
 };
 
+// このサイクル終了後に遷移する動作モードを予測する（OLED表示用）。
+// 実際の遷移判定（updateBleReconnectState/runOneShotContinuousMode）と条件を揃えてある
+static const char *nextModeLabel(const ContinuousLoopHooks &hooks)
+{
+  if (hooks.selfMode == OperationMode::ONE_SHOT_CONTINUOUS)
+    return "DEEP_SLEEP"; // 1サイクルのみで必ずDEEP_SLEEPへ戻る
+  if (g_userForcedSleep)
+    return "DEEP_SLEEP"; // BTN1長押しでBLE接続中に強制スリープ選択済み
+  if (g_bleUpgradedToContinuous && !blePeripheral.isConnected())
+    return "DEEP_SLEEP"; // BLEで昇格したがBLEが切れているため次回で自動的に戻る
+  return "CONTINUOUS";
+}
+
 // 次の5分境界（UTC）まで待機しながらボタン監視・カウントダウン表示・BLE Notify
 static void continuousLoopCore(const ContinuousLoopHooks &hooks)
 {
@@ -294,7 +307,7 @@ static void continuousLoopCore(const ContinuousLoopHooks &hooks)
       handleMenuButton();
       int curRemain = (int)((waitMs - (millis() - waitStart)) / 1000);
       oledShowSensorData(g_lastResult.reading);
-      oledUpdateCountdown(curRemain);
+      oledUpdateCountdown(curRemain, nextModeLabel(hooks));
       lastRemain = curRemain;
     }
     if (ev == ButtonEvent::BTN1_LONG)
@@ -322,7 +335,7 @@ static void continuousLoopCore(const ContinuousLoopHooks &hooks)
     if (remain != lastRemain)
     {
       if (hooks.showCountdown)
-        oledUpdateCountdown(remain);
+        oledUpdateCountdown(remain, nextModeLabel(hooks));
       lastRemain = remain;
     }
 
