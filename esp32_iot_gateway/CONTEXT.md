@@ -778,3 +778,39 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 `gzLog()`（[ota.cpp:22-30](esp32_iot_gateway/src/service/ota.cpp#L22-L30)）は`Logger::printf`（[logger.cpp:23-32](esp32_iot_gateway/src/service/logger.cpp#L23-L32)）と同じ`vsnprintf`パターンを再実装しているが、最後に`logger.print(buf)`を呼んでおり、これは`logStorageWrite()`を呼ばずSerial出力のみで終わる。OTAのgz解凍時に出る`[OTA] gz...`系のログ行だけがSPIFFS上のデバッグログファイルに残らず、シリアルモニタを見ていないと事後調査できない。
 
 **実装方針（案）**: `gzLog()`から`logger.printf()`を呼ぶよう差し替える（`uzlib`側のログコールバック型が`void(*)(const char *)`で可変引数を取れない場合は、`gzLog()`内で一旦`vsnprintf`した文字列を`logger.printf("%s", buf)`のように渡す）。
+
+### TODO: device/がservice/logger.hを参照している（レイヤー依存違反・未着手）
+
+`device/lte.cpp:2`・`device/can.cpp:6`・`device/ble_peripheral.cpp:4`が`#include "../service/logger.h"`している。ARCHITECTURE.mdは「device/は上位層（domain/service）をincludeしてはいけない」と明記しており、そのNG例（`// device/lte.cpp — NG: #include "../service/mqtt.h"`）と同じパターンが3ファイルで発生している。
+
+**実装方針（案）**: `logger`を`config.h`/`board_pins.h`と同格の「全層から参照可能な横断的関心事」として扱うか、device層専用の最小限ロギングシムを別途用意する。
+
+### TODO: 充電ヒステリシスロジックがmain.cppに直書きされている（domain層へ移すべき・未着手）
+
+`updateChargingState()`（[main.cpp:212](esp32_iot_gateway/src/main.cpp#L212)）は電圧閾値によるヒステリシス判定という、ハードウェア・ネットワーク非依存の純粋ロジックだが、`domain/`ではなくエントリポイントの`main.cpp`に直接書かれている。最後の`digitalWrite()`以外はGPIO/ネットワークに依存しない。
+
+**実装方針（案）**: `domain/charging.h`に`decideCharging(vMain, vSub, isCharging, thresholds) -> bool`のような純粋関数を切り出し、`main.cpp`側は判定結果を受けて`digitalWrite()`するだけにする。単体テスト（`test/test_domain_*`と同じnative環境）も書けるようになる。
+
+### TODO: domain/obd.hのフィールド名がsnake_case（CLAUDE.md命名規約違反・未着手）
+
+`OBDReading`（[obd.h:6](esp32_iot_gateway/src/domain/obd.h#L6)）・`ObdBlePacket`（[obd.h:55](esp32_iot_gateway/src/domain/obd.h#L55)）の約55フィールド（`speed_kmh`、`map_kpa`、`sec_o2_trim_lt_pct`等）が全て`snake_case`。ルート`CLAUDE.md`の「変数名: camelCase」規約に反する。
+
+**実装方針（案）**: 一括リネームは`domain/obd.cpp`の各`obdDecode*()`関数・`service/obdpoll.cpp`・`device/ble_peripheral.cpp`（`obdReadingToBlePacket`）に波及するため影響範囲を洗い出してから着手する。優先度は低い（動作に影響しない規約違反のため）。
+
+### TODO: speaker.cpp playMelody()がdelay()でブロッキングしている（未着手）
+
+`playMelody()`（[speaker.cpp:63](esp32_iot_gateway/src/device/speaker.cpp#L63)）は`tone()`の後に`delay(n.dur)`でブロッキングする。CLAUDE.mdの「`delay()`より`millis()`利用のノンブロッキング処理を優先」に反する。`setup()`内でBLEアドバタイズ開始後に`playMelody(boot)`が呼ばれるため、起動音再生中はBLE接続要求への応答が止まる。
+
+**実装方針（案）**: `millis()`ベースの状態機械にして、`loop()`または`setup()`内のポーリングで次の音符に進める。頻度は低い（起動時のみ）ため優先度は低め。
+
+### TODO: menu.cpp tickCharging()にdelay()が残っている（未着手）
+
+`tickCharging()`（[menu.cpp:462](esp32_iot_gateway/src/service/menu.cpp#L462)）自体は`millis()`駆動の状態機械だが、遷移点3箇所（[menu.cpp:477](esp32_iot_gateway/src/service/menu.cpp#L477)充電不可・[menu.cpp:494](esp32_iot_gateway/src/service/menu.cpp#L494)完了・[menu.cpp:512](esp32_iot_gateway/src/service/menu.cpp#L512)停止）で`delay(1000〜2000)`が挟まっており、その間`button.read()`が呼ばれずボタン入力を取りこぼす。
+
+**実装方針（案）**: メッセージ表示状態を専用の`MenuState`として切り出し、`millis()`で経過時間を見て次状態へ遷移させる。
+
+### TODO: main.cppのGPIO_NUM_0がピン定数化されていない（未着手）
+
+`enterDeepSleepMode()`内で`GPIO_NUM_0`が4箇所（[main.cpp:257-261](esp32_iot_gateway/src/main.cpp#L257-L261)）生の値のまま使われている。CLAUDE.mdの「ピン番号は定数化する」規約に反し、他のピンが`board_pins.h`経由で管理されているのと対照的。BOOTボタン（wake用）のピンであることがコードから読み取りにくい。
+
+**実装方針（案）**: `board_pins.h`に`wakePin`相当の定数を追加するか、`main.cpp`内で`#define WAKE_PIN GPIO_NUM_0`する。
