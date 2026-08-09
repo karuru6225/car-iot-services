@@ -2,13 +2,16 @@ name: ESP32 Domain Tests
 
 on:
   pull_request:
-    paths:
-      - 'esp32_iot_gateway/**'
+    paths: &test_paths
+      - 'esp32_iot_gateway/src/**'
+      - 'esp32_iot_gateway/test/**'
+      - 'esp32_iot_gateway/platformio.ini'
+      - 'esp32_iot_gateway/Dockerfile.test'
+      - 'esp32_iot_gateway/docker-compose.test.yml'
   push:
     branches:
       - main
-    paths:
-      - 'esp32_iot_gateway/**'
+    paths: *test_paths
 
 jobs:
   native-test:
