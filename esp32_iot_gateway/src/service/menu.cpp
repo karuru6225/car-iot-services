@@ -29,6 +29,7 @@ enum class MenuState
   AH_OFFSET,
   CHG_TIMEOUT,
   CHARGING,
+  MESSAGE,     // 一時メッセージ表示（beginMessage()参照）
   RESTART,
   BLE_PHONE,
   DONE_CONTINUOUS,
@@ -459,6 +460,30 @@ static MenuState tickChgTimeout(ButtonEvent ev)
 }
 
 
+// ---- 一時メッセージ表示 ----
+// delay()で表示時間中ボタン監視を止めるのではなく、millis()で経過時間を見ながら
+// MESSAGE状態としてenterMenuMode()の待機ループ（button.read()呼び出し含む）に留まる
+
+static unsigned long s_msgStartMs = 0;
+static unsigned long s_msgDurationMs = 0;
+static MenuState s_msgNext = MenuState::MENU_NAV;
+
+static MenuState beginMessage(const char *title, const char *body, unsigned long durationMs, MenuState next)
+{
+  oledShowMessage(title, body);
+  s_msgDurationMs = durationMs;
+  s_msgNext = next;
+  s_msgStartMs = millis();
+  return MenuState::MESSAGE;
+}
+
+static MenuState tickMessage(ButtonEvent)
+{
+  if (millis() - s_msgStartMs >= s_msgDurationMs)
+    return s_msgNext;
+  return MenuState::MESSAGE;
+}
+
 static MenuState tickCharging(ButtonEvent ev)
 {
   static bool needsInit = true;
@@ -473,10 +498,8 @@ static MenuState tickCharging(ButtonEvent ev)
     if (vSub <= vMain) {
       char msg[24];
       snprintf(msg, sizeof(msg), "M:%.2fV S:%.2fV", vMain, vSub);
-      oledShowMessage("Cannot charge:", msg);
-      delay(2000);
       needsInit = true;
-      return MenuState::MENU_NAV;
+      return beginMessage("Cannot charge:", msg, 2000, MenuState::MENU_NAV);
     }
     digitalWrite(boardPins().chgOnPin, HIGH);
     timeoutMs  = getChgTimeoutMin() * 60UL * 1000UL;
@@ -490,10 +513,8 @@ static MenuState tickCharging(ButtonEvent ev)
   // タイムアウト
   if (elapsed >= timeoutMs) {
     digitalWrite(boardPins().chgOnPin, LOW);
-    oledShowMessage("Charge done", "");
-    delay(1500);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Charge done", "", 1500, MenuState::MENU_NAV);
   }
 
   // 2秒ごとに電圧を更新
@@ -508,10 +529,8 @@ static MenuState tickCharging(ButtonEvent ev)
   // どのボタンでも終了
   if (ev != ButtonEvent::NONE) {
     digitalWrite(boardPins().chgOnPin, LOW);
-    oledShowMessage("Charge stopped", "");
-    delay(1000);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Charge stopped", "", 1000, MenuState::MENU_NAV);
   }
   return MenuState::CHARGING;
 }
@@ -569,6 +588,7 @@ OperationMode enterMenuMode()
     case MenuState::AH_OFFSET:          next = tickAhOffset(ev);         break;
     case MenuState::CHG_TIMEOUT:        next = tickChgTimeout(ev);       break;
     case MenuState::CHARGING:           next = tickCharging(ev);         break;
+    case MenuState::MESSAGE:            next = tickMessage(ev);          break;
     case MenuState::BLE_PHONE:          next = tickBlePhone(ev);         break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;

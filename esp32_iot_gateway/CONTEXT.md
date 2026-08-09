@@ -771,9 +771,3 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 
 **実装方針（案）**: 一括リネームは`domain/obd.cpp`の各`obdDecode*()`関数・`service/obdpoll.cpp`・`device/ble_peripheral.cpp`（`obdReadingToBlePacket`）に波及するため影響範囲を洗い出してから着手する。優先度は低い（動作に影響しない規約違反のため）。
 
-### TODO: menu.cpp tickCharging()にdelay()が残っている（未着手）
-
-`tickCharging()`（[menu.cpp:462](esp32_iot_gateway/src/service/menu.cpp#L462)）自体は`millis()`駆動の状態機械だが、遷移点3箇所（[menu.cpp:477](esp32_iot_gateway/src/service/menu.cpp#L477)充電不可・[menu.cpp:494](esp32_iot_gateway/src/service/menu.cpp#L494)完了・[menu.cpp:512](esp32_iot_gateway/src/service/menu.cpp#L512)停止）で`delay(1000〜2000)`が挟まっており、その間`button.read()`が呼ばれずボタン入力を取りこぼす。
-
-**実装方針（案）**: メッセージ表示状態を専用の`MenuState`として切り出し、`millis()`で経過時間を見て次状態へ遷移させる。
-
