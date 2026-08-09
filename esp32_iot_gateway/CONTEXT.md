@@ -754,3 +754,13 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - BLEスキャンをブロッキングでなくする（`_scan->start(seconds, false)`のコールバック版に変更し、スキャン中も`continuousLoopCore()`のループへ制御を返せるようにする）
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
+
+### TODO: SPIFFSログ永続化が既知の未解決問題により無効化中（原因未特定・対応は無効化のみ）
+
+`logStorageWrite()`（[log_storage.cpp:98](esp32_iot_gateway/src/service/log_storage.cpp#L98)）の`SPIFFS.open(s_currentPath, FILE_APPEND)`が、`logStorageInit()`で一度`FILE_WRITE`モードで作成・closeした直後から毎回失敗し続ける事象を実機で確認（2026-08-09）。`[E][vfs_api.cpp:301] VFSFileImpl(): fopen(...) failed`がSerialに大量出力される。
+
+**調査結果**: ESP-IDF/arduino-esp32双方のリポジトリに同一症状の未解決issueが複数存在する（[esp-idf#1012](https://github.com/espressif/esp-idf/issues/1012) "File append not working with SPIFFS"、[esp-idf#9915](https://github.com/espressif/esp-idf/issues/9915)、[arduino-esp32#5250](https://github.com/espressif/arduino-esp32/issues/5250)）が、いずれも`Resolution: More info needed`のまま未解決で、根本原因（`spiffs_open()`内部の何が失敗しているか）は特定できていない。`vfs_api.cpp`のソース自体にもappendモード固有の特別扱いは無い。公式SPIFFSドキュメントにはappendモード特有の言及はないが、GC性能・電源断での破損リスク・利用効率75%程度という一般的な脆弱性は明記されている。
+
+**影響範囲（重要）**: この問題により`logStorageWrite()`は事実上ずっと機能しておらず、SPIFFS上のデバッグログファイルへの永続化が全て失敗していた可能性がある。シリアルモニタ接続時は`[E]`ログで気づけるが、実運用中（車載・モニタなし）は完全に不可視。**過去にSPIFFS上のログファイルを根拠にした調査結果があれば信頼できない**（他のTODOでは幸い`pio device monitor`でのシリアル直接確認を使っており、この問題の影響は受けていない）。
+
+**対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
