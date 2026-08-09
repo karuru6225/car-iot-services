@@ -238,7 +238,7 @@ static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t 
   unsigned long cfDeadline = millis() + ISO_TP_CF_TIMEOUT_MS;
   while (received < totalLen)
   {
-    if (millis() > cfDeadline)
+    if ((int32_t)(millis() - cfDeadline) > 0)
     {
       logger.println("[CAN] ISO-TP: CF受信タイムアウト");
       return false;
@@ -274,7 +274,7 @@ ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeou
   twai_message_t rx = {};
   unsigned long deadline = millis() + timeoutMs;
   uint32_t unmatchedCount = 0;
-  while (millis() < deadline)
+  while ((int32_t)(millis() - deadline) < 0)
   {
     if (twai_receive(&rx, pdMS_TO_TICKS(10)) != ESP_OK)
       continue;
