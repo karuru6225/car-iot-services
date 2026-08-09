@@ -145,6 +145,7 @@ OBDReading obdPoll()
 {
   OBDReading r = {};
   r.ts = time(nullptr);
+  unsigned long pollStartMs = millis();
 
   // 64バイト: 6PIDまとめ要求時の最大応答（ワイドバンドO2等を含む組み合わせ）や
   // 0x68等のマルチフレーム応答を受けられるだけの余裕を持たせる
@@ -189,8 +190,9 @@ OBDReading obdPoll()
         missingCount++;
   }
 
-  logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d 未応答PID=%d\n",
-                okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount, missingCount);
+  logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d 未応答PID=%d 所要%lums\n",
+                okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount, missingCount,
+                millis() - pollStartMs);
   finalizeAndLog(r);
   return r;
 }
