@@ -33,7 +33,7 @@ static void test_speed_decodes_valid_response(void)
   uint8_t data[] = {0x41, 0x0D, 0x50};
   OBDReading out = {};
   TEST_ASSERT_TRUE(obdDecodeSpeed(data, sizeof(data), out));
-  TEST_ASSERT_EQUAL_UINT8(0x50, out.speed_kmh);
+  TEST_ASSERT_EQUAL_UINT8(0x50, out.speedKmh);
 }
 
 // ─── マルチセンサーPID（bitmap検証）──────────────────────────────────────────
@@ -46,7 +46,7 @@ static void test_coolant_alt_decodes_when_sensor1_present(void)
   uint8_t data[] = {0x41, 0x67, 0x03, 90}; // bitmap=S1+S2, Sensor1=90(->50C)
   OBDReading out = {};
   TEST_ASSERT_TRUE(obdDecodeCoolantAlt(data, sizeof(data), out));
-  TEST_ASSERT_EQUAL_INT16(50, out.coolant_c);
+  TEST_ASSERT_EQUAL_INT16(50, out.coolantC);
 }
 
 static void test_coolant_alt_rejects_when_sensor1_absent(void)
@@ -61,18 +61,18 @@ static void test_charge_air_temp_decodes_both_sensors(void)
   uint8_t data[] = {0x41, 0x68, 0x03, 90, 70, 0, 0}; // bitmap=S1+S2
   OBDReading out = {};
   TEST_ASSERT_TRUE(obdDecodeChargeAirTemp(data, sizeof(data), out));
-  TEST_ASSERT_EQUAL_INT16(50, out.iat_c);
-  TEST_ASSERT_EQUAL_INT16(30, out.iat2_c);
+  TEST_ASSERT_EQUAL_INT16(50, out.iatC);
+  TEST_ASSERT_EQUAL_INT16(30, out.iat2C);
 }
 
 static void test_charge_air_temp_decodes_sensor2_only(void)
 {
   uint8_t data[] = {0x41, 0x68, 0x02, 90, 70, 0, 0}; // bitmap=S2のみ
   OBDReading out = {};
-  out.iat_c = 999; // Sensor1が更新されないことを確認するための番兵値
+  out.iatC = 999; // Sensor1が更新されないことを確認するための番兵値
   TEST_ASSERT_TRUE(obdDecodeChargeAirTemp(data, sizeof(data), out));
-  TEST_ASSERT_EQUAL_INT16(999, out.iat_c); // 非搭載センサーは書き換えない
-  TEST_ASSERT_EQUAL_INT16(30, out.iat2_c);
+  TEST_ASSERT_EQUAL_INT16(999, out.iatC); // 非搭載センサーは書き換えない
+  TEST_ASSERT_EQUAL_INT16(30, out.iat2C);
 }
 
 static void test_maf_alt_decodes_when_sensor1_present(void)
@@ -80,7 +80,7 @@ static void test_maf_alt_decodes_when_sensor1_present(void)
   uint8_t data[] = {0x41, 0x66, 0x01, 0x01, 0x00}; // sensors=S1のみ、MAF=(1*256+0)/32
   OBDReading out = {};
   TEST_ASSERT_TRUE(obdDecodeMafAlt(data, sizeof(data), out));
-  TEST_ASSERT_EQUAL_FLOAT(8.0f, out.maf_gs);
+  TEST_ASSERT_EQUAL_FLOAT(8.0f, out.mafGs);
 }
 
 static void test_maf_alt_rejects_when_sensor1_absent(void)
@@ -136,40 +136,40 @@ static void test_compute_derived_boost_uses_baro_when_available(void)
 {
   OBDReading r = {};
   r.valid = true;
-  r.map_kpa = 120;
-  r.baro_kpa = 100;
+  r.mapKpa = 120;
+  r.baroKpa = 100;
   obdComputeDerived(r);
-  TEST_ASSERT_EQUAL_INT8(20, r.boost_kpa);
+  TEST_ASSERT_EQUAL_INT8(20, r.boostKpa);
 }
 
 static void test_compute_derived_boost_falls_back_to_standard_atmosphere(void)
 {
-  // baro_kpa未取得(0)時は標準大気圧101kPaで代用
+  // baroKpa未取得(0)時は標準大気圧101kPaで代用
   OBDReading r = {};
   r.valid = true;
-  r.map_kpa = 120;
-  r.baro_kpa = 0;
+  r.mapKpa = 120;
+  r.baroKpa = 0;
   obdComputeDerived(r);
-  TEST_ASSERT_EQUAL_INT8(19, r.boost_kpa); // 120-101
+  TEST_ASSERT_EQUAL_INT8(19, r.boostKpa); // 120-101
 }
 
 static void test_compute_derived_fuel_rate_from_maf(void)
 {
   OBDReading r = {};
   r.valid = true;
-  r.maf_gs = 10.0f;
+  r.mafGs = 10.0f;
   obdComputeDerived(r);
-  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f / (14.7f * 0.745f) * 3.6f, r.fuel_rate_lph);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f / (14.7f * 0.745f) * 3.6f, r.fuelRateLph);
 }
 
 static void test_compute_derived_fuel_rate_unset_when_maf_absent(void)
 {
   OBDReading r = {};
   r.valid = true;
-  r.maf_gs = 0;
-  r.fuel_rate_lph = -1.0f; // 未変更を検出するための番兵値
+  r.mafGs = 0;
+  r.fuelRateLph = -1.0f; // 未変更を検出するための番兵値
   obdComputeDerived(r);
-  TEST_ASSERT_EQUAL_FLOAT(-1.0f, r.fuel_rate_lph);
+  TEST_ASSERT_EQUAL_FLOAT(-1.0f, r.fuelRateLph);
 }
 
 static void test_compute_derived_skips_when_invalid(void)
@@ -177,11 +177,11 @@ static void test_compute_derived_skips_when_invalid(void)
   // 応答なし(valid=false)時は派生値を計算しない
   OBDReading r = {};
   r.valid = false;
-  r.map_kpa = 120;
-  r.baro_kpa = 100;
-  r.boost_kpa = -128; // 番兵値
+  r.mapKpa = 120;
+  r.baroKpa = 100;
+  r.boostKpa = -128; // 番兵値
   obdComputeDerived(r);
-  TEST_ASSERT_EQUAL_INT8(-128, r.boost_kpa);
+  TEST_ASSERT_EQUAL_INT8(-128, r.boostKpa);
 }
 
 int main(int argc, char **argv)

@@ -26,7 +26,7 @@ bool obdDecodeSpeed(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x0D, 3, p))
     return false;
-  out.speed_kmh = p[0];
+  out.speedKmh = p[0];
   return true;
 }
 
@@ -35,7 +35,7 @@ bool obdDecodeLoad(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x04, 3, p))
     return false;
-  out.load_pct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  out.loadPct = (uint8_t)((uint16_t)p[0] * 100 / 255);
   return true;
 }
 
@@ -44,7 +44,7 @@ bool obdDecodeMap(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x0B, 3, p))
     return false;
-  out.map_kpa = p[0];
+  out.mapKpa = p[0];
   return true;
 }
 
@@ -53,7 +53,7 @@ bool obdDecodeBaro(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x33, 3, p))
     return false;
-  out.baro_kpa = p[0];
+  out.baroKpa = p[0];
   return true;
 }
 
@@ -62,7 +62,7 @@ bool obdDecodeThrottle(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x11, 3, p))
     return false;
-  out.throttle_pct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  out.throttlePct = (uint8_t)((uint16_t)p[0] * 100 / 255);
   return true;
 }
 
@@ -71,7 +71,7 @@ bool obdDecodeTiming(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x0E, 3, p))
     return false;
-  out.timing_deg = p[0] / 2.0f - 64.0f;
+  out.timingDeg = p[0] / 2.0f - 64.0f;
   return true;
 }
 
@@ -80,7 +80,7 @@ bool obdDecodeEcuVoltage(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x42, 4, p))
     return false;
-  out.ecu_voltage = ((uint16_t)p[0] * 256 + p[1]) / 1000.0f;
+  out.ecuVoltage = ((uint16_t)p[0] * 256 + p[1]) / 1000.0f;
   return true;
 }
 
@@ -91,7 +91,7 @@ bool obdDecodeMafAlt(const uint8_t *data, uint8_t dlc, OBDReading &out)
     return false;
   if (!(p[0] & 0x01)) // Sensor1 MAF 非搭載
     return false;
-  out.maf_gs = ((uint16_t)p[1] * 256 + p[2]) / 32.0f;
+  out.mafGs = ((uint16_t)p[1] * 256 + p[2]) / 32.0f;
   return true;
 }
 
@@ -102,7 +102,7 @@ bool obdDecodeCoolantAlt(const uint8_t *data, uint8_t dlc, OBDReading &out)
     return false;
   if (!(p[0] & 0x01)) // Sensor1 非搭載
     return false;
-  out.coolant_c = (int16_t)p[1] - 40;
+  out.coolantC = (int16_t)p[1] - 40;
   return true;
 }
 
@@ -111,7 +111,7 @@ bool obdDecodeShortTermFuelTrim(const uint8_t *data, uint8_t dlc, OBDReading &ou
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x06, 3, p))
     return false;
-  out.stft_pct = ((int)p[0] - 128) * 100.0f / 128.0f;
+  out.stftPct = ((int)p[0] - 128) * 100.0f / 128.0f;
   return true;
 }
 
@@ -120,7 +120,7 @@ bool obdDecodeLongTermFuelTrim(const uint8_t *data, uint8_t dlc, OBDReading &out
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x07, 3, p))
     return false;
-  out.ltft_pct = ((int)p[0] - 128) * 100.0f / 128.0f;
+  out.ltftPct = ((int)p[0] - 128) * 100.0f / 128.0f;
   return true;
 }
 
@@ -129,8 +129,8 @@ bool obdDecodeO2SensorB1S2(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x15, 4, p))
     return false;
-  out.o2_b1s2_v = p[0] / 200.0f;
-  out.o2_b1s2_trim_pct = ((int)p[1] - 128) * 100.0f / 128.0f;
+  out.o2B1s2V = p[0] / 200.0f;
+  out.o2B1s2TrimPct = ((int)p[1] - 128) * 100.0f / 128.0f;
   return true;
 }
 
@@ -139,7 +139,7 @@ bool obdDecodeEngineRunTime(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x1F, 4, p))
     return false;
-  out.engine_run_time_sec = (uint16_t)p[0] * 256 + p[1];
+  out.engineRunTimeSec = (uint16_t)p[0] * 256 + p[1];
   return true;
 }
 
@@ -148,7 +148,7 @@ bool obdDecodeMilDistance(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x21, 4, p))
     return false;
-  out.mil_distance_km = (uint16_t)p[0] * 256 + p[1];
+  out.milDistanceKm = (uint16_t)p[0] * 256 + p[1];
   return true;
 }
 
@@ -157,8 +157,8 @@ bool obdDecodeO2Sensor1WideBand(const uint8_t *data, uint8_t dlc, OBDReading &ou
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x24, 6, p))
     return false;
-  out.o2_s1_ratio = ((uint16_t)p[0] * 256 + p[1]) * 2.0f / 65536.0f;
-  out.o2_s1_voltage = ((uint16_t)p[2] * 256 + p[3]) * 8.0f / 65536.0f;
+  out.o2S1Ratio = ((uint16_t)p[0] * 256 + p[1]) * 2.0f / 65536.0f;
+  out.o2S1Voltage = ((uint16_t)p[2] * 256 + p[3]) * 8.0f / 65536.0f;
   return true;
 }
 
@@ -167,7 +167,7 @@ bool obdDecodeEvapPurge(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x2E, 3, p))
     return false;
-  out.evap_purge_pct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  out.evapPurgePct = (uint8_t)((uint16_t)p[0] * 100 / 255);
   return true;
 }
 
@@ -176,7 +176,7 @@ bool obdDecodeWarmupsSinceCleared(const uint8_t *data, uint8_t dlc, OBDReading &
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x30, 3, p))
     return false;
-  out.warmups_since_cleared = p[0];
+  out.warmupsSinceCleared = p[0];
   return true;
 }
 
@@ -185,7 +185,7 @@ bool obdDecodeDistanceSinceCleared(const uint8_t *data, uint8_t dlc, OBDReading 
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x31, 4, p))
     return false;
-  out.distance_since_cleared_km = (uint16_t)p[0] * 256 + p[1];
+  out.distanceSinceClearedKm = (uint16_t)p[0] * 256 + p[1];
   return true;
 }
 
@@ -194,7 +194,7 @@ bool obdDecodeCatalystTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x3C, 4, p))
     return false;
-  out.catalyst_temp_c = ((uint16_t)p[0] * 256 + p[1]) / 10.0f - 40.0f;
+  out.catalystTempC = ((uint16_t)p[0] * 256 + p[1]) / 10.0f - 40.0f;
   return true;
 }
 
@@ -203,7 +203,7 @@ bool obdDecodeAbsoluteLoad(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x43, 4, p))
     return false;
-  out.absolute_load_pct = ((uint16_t)p[0] * 256 + p[1]) * 100.0f / 255.0f;
+  out.absoluteLoadPct = ((uint16_t)p[0] * 256 + p[1]) * 100.0f / 255.0f;
   return true;
 }
 
@@ -212,7 +212,7 @@ bool obdDecodeCommandedAfr(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x44, 4, p))
     return false;
-  out.commanded_afr = ((uint16_t)p[0] * 256 + p[1]) * 2.0f / 65536.0f;
+  out.commandedAfr = ((uint16_t)p[0] * 256 + p[1]) * 2.0f / 65536.0f;
   return true;
 }
 
@@ -221,7 +221,7 @@ bool obdDecodeThrottleB(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x47, 3, p))
     return false;
-  out.throttle_b_pct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  out.throttleBPct = (uint8_t)((uint16_t)p[0] * 100 / 255);
   return true;
 }
 
@@ -230,7 +230,7 @@ bool obdDecodeAccelPedalD(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x49, 3, p))
     return false;
-  out.accel_pedal_d_pct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  out.accelPedalDPct = (uint8_t)((uint16_t)p[0] * 100 / 255);
   return true;
 }
 
@@ -239,7 +239,7 @@ bool obdDecodeAccelPedalE(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x4A, 3, p))
     return false;
-  out.accel_pedal_e_pct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  out.accelPedalEPct = (uint8_t)((uint16_t)p[0] * 100 / 255);
   return true;
 }
 
@@ -248,7 +248,7 @@ bool obdDecodeFuelType(const uint8_t *data, uint8_t dlc, OBDReading &out)
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x51, 3, p))
     return false;
-  out.fuel_type = p[0];
+  out.fuelType = p[0];
   return true;
 }
 
@@ -257,7 +257,7 @@ bool obdDecodeSecO2TrimShortTerm(const uint8_t *data, uint8_t dlc, OBDReading &o
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x55, 3, p))
     return false;
-  out.sec_o2_trim_st_pct = ((int)p[0] - 128) * 100.0f / 128.0f;
+  out.secO2TrimStPct = ((int)p[0] - 128) * 100.0f / 128.0f;
   return true;
 }
 
@@ -266,7 +266,7 @@ bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &ou
   const uint8_t *p;
   if (!checkHeader(data, dlc, 0x56, 3, p))
     return false;
-  out.sec_o2_trim_lt_pct = ((int)p[0] - 128) * 100.0f / 128.0f;
+  out.secO2TrimLtPct = ((int)p[0] - 128) * 100.0f / 128.0f;
   return true;
 }
 
@@ -278,12 +278,12 @@ bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
   bool any = false;
   if (p[0] & 0x01) // Sensor1 搭載
   {
-    out.iat_c = (int16_t)p[1] - 40;
+    out.iatC = (int16_t)p[1] - 40;
     any = true;
   }
   if (p[0] & 0x02) // Sensor2 搭載
   {
-    out.iat2_c = (int16_t)p[2] - 40;
+    out.iat2C = (int16_t)p[2] - 40;
     any = true;
   }
   return any;
@@ -349,44 +349,44 @@ void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb c
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 {
   out.rpm = r.rpm;
-  out.speed_kmh = r.speed_kmh;
-  out.load_pct = r.load_pct;
-  out.map_kpa = r.map_kpa;
-  out.baro_kpa = r.baro_kpa;
-  out.boost_kpa = r.boost_kpa;
-  out.throttle_pct = r.throttle_pct;
-  out.timing_deg = r.timing_deg;
-  out.ecu_voltage = r.ecu_voltage;
-  out.maf_gs = r.maf_gs;
-  out.coolant_c = r.coolant_c;
-  out.fuel_rate_lph = r.fuel_rate_lph;
+  out.speedKmh = r.speedKmh;
+  out.loadPct = r.loadPct;
+  out.mapKpa = r.mapKpa;
+  out.baroKpa = r.baroKpa;
+  out.boostKpa = r.boostKpa;
+  out.throttlePct = r.throttlePct;
+  out.timingDeg = r.timingDeg;
+  out.ecuVoltage = r.ecuVoltage;
+  out.mafGs = r.mafGs;
+  out.coolantC = r.coolantC;
+  out.fuelRateLph = r.fuelRateLph;
 
-  out.stft_pct = r.stft_pct;
-  out.ltft_pct = r.ltft_pct;
-  out.o2_b1s2_v = r.o2_b1s2_v;
-  out.o2_b1s2_trim_pct = r.o2_b1s2_trim_pct;
-  out.engine_run_time_sec = r.engine_run_time_sec;
-  out.mil_distance_km = r.mil_distance_km;
-  out.o2_s1_ratio = r.o2_s1_ratio;
-  out.o2_s1_voltage = r.o2_s1_voltage;
-  out.evap_purge_pct = r.evap_purge_pct;
-  out.warmups_since_cleared = r.warmups_since_cleared;
-  out.distance_since_cleared_km = r.distance_since_cleared_km;
-  out.catalyst_temp_c = r.catalyst_temp_c;
-  out.absolute_load_pct = r.absolute_load_pct;
-  out.commanded_afr = r.commanded_afr;
-  out.throttle_b_pct = r.throttle_b_pct;
-  out.accel_pedal_d_pct = r.accel_pedal_d_pct;
-  out.accel_pedal_e_pct = r.accel_pedal_e_pct;
-  out.fuel_type = r.fuel_type;
-  out.sec_o2_trim_st_pct = r.sec_o2_trim_st_pct;
-  out.sec_o2_trim_lt_pct = r.sec_o2_trim_lt_pct;
+  out.stftPct = r.stftPct;
+  out.ltftPct = r.ltftPct;
+  out.o2B1s2V = r.o2B1s2V;
+  out.o2B1s2TrimPct = r.o2B1s2TrimPct;
+  out.engineRunTimeSec = r.engineRunTimeSec;
+  out.milDistanceKm = r.milDistanceKm;
+  out.o2S1Ratio = r.o2S1Ratio;
+  out.o2S1Voltage = r.o2S1Voltage;
+  out.evapPurgePct = r.evapPurgePct;
+  out.warmupsSinceCleared = r.warmupsSinceCleared;
+  out.distanceSinceClearedKm = r.distanceSinceClearedKm;
+  out.catalystTempC = r.catalystTempC;
+  out.absoluteLoadPct = r.absoluteLoadPct;
+  out.commandedAfr = r.commandedAfr;
+  out.throttleBPct = r.throttleBPct;
+  out.accelPedalDPct = r.accelPedalDPct;
+  out.accelPedalEPct = r.accelPedalEPct;
+  out.fuelType = r.fuelType;
+  out.secO2TrimStPct = r.secO2TrimStPct;
+  out.secO2TrimLtPct = r.secO2TrimLtPct;
 
   out.valid = r.valid ? 1 : 0;
   out.ts = (uint32_t)r.ts;
 
-  out.iat_c = r.iat_c;
-  out.iat2_c = r.iat2_c;
+  out.iatC = r.iatC;
+  out.iat2C = r.iat2C;
 }
 
 void obdComputeDerived(OBDReading &r)
@@ -395,8 +395,8 @@ void obdComputeDerived(OBDReading &r)
     return;
 
   // boost = MAP - Baro（Baro未取得時は標準大気圧101kPaで代用）
-  r.boost_kpa = (int8_t)(r.map_kpa - (r.baro_kpa > 0 ? r.baro_kpa : 101));
+  r.boostKpa = (int8_t)(r.mapKpa - (r.baroKpa > 0 ? r.baroKpa : 101));
   // 燃費推算（MAFから）: OBD.md 参照
-  if (r.maf_gs > 0)
-    r.fuel_rate_lph = r.maf_gs / (14.7f * 0.745f) * 3.6f;
+  if (r.mafGs > 0)
+    r.fuelRateLph = r.mafGs / (14.7f * 0.745f) * 3.6f;
 }

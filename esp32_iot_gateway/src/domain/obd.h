@@ -6,46 +6,46 @@
 struct OBDReading
 {
   uint16_t rpm;           // 0x0C: (A*256+B)/4 [rpm]
-  uint8_t  speed_kmh;     // 0x0D: A [km/h]
-  uint8_t  load_pct;      // 0x04: A*100/255 [%]
-  uint8_t  map_kpa;       // 0x0B: A [kPa 絶対圧]
-  uint8_t  baro_kpa;      // 0x33: A [kPa]
-  int8_t   boost_kpa;     // map_kpa - baro_kpa [kPa]（obdComputeDerived()で計算）
-  uint8_t  throttle_pct;  // 0x11: A*100/255 [%]
-  float    timing_deg;    // 0x0E: A/2.0-64.0 [°BTDC]
-  float    ecu_voltage;   // 0x42: (A*256+B)/1000.0 [V]
-  float    maf_gs;        // 0x66: (B*256+C)/32 [g/s]（0x10 MAF 非対応のため代替）
-  int16_t  coolant_c;     // 0x67 Sensor1: B-40 [°C]（0x05 水温 非対応のため代替）
-  float    fuel_rate_lph; // MAF 推算: maf_gs / (14.7*0.745) * 3.6 [L/h]（obdComputeDerived()で計算）
+  uint8_t  speedKmh;     // 0x0D: A [km/h]
+  uint8_t  loadPct;      // 0x04: A*100/255 [%]
+  uint8_t  mapKpa;       // 0x0B: A [kPa 絶対圧]
+  uint8_t  baroKpa;      // 0x33: A [kPa]
+  int8_t   boostKpa;     // mapKpa - baroKpa [kPa]（obdComputeDerived()で計算）
+  uint8_t  throttlePct;  // 0x11: A*100/255 [%]
+  float    timingDeg;    // 0x0E: A/2.0-64.0 [°BTDC]
+  float    ecuVoltage;   // 0x42: (A*256+B)/1000.0 [V]
+  float    mafGs;        // 0x66: (B*256+C)/32 [g/s]（0x10 MAF 非対応のため代替）
+  int16_t  coolantC;     // 0x67 Sensor1: B-40 [°C]（0x05 水温 非対応のため代替）
+  float    fuelRateLph; // MAF 推算: mafGs / (14.7*0.745) * 3.6 [L/h]（obdComputeDerived()で計算）
 
   // 追加確定PID（OBD.md「確定した取得可能データ一覧」参照）
-  float    stft_pct;                 // 0x06: (A-128)*100/128 [%]
-  float    ltft_pct;                 // 0x07: (A-128)*100/128 [%]
-  float    o2_b1s2_v;                // 0x15: A/200 [V]
-  float    o2_b1s2_trim_pct;         // 0x15: (B-128)*100/128 [%]
-  uint16_t engine_run_time_sec;      // 0x1F: A*256+B [秒]
-  uint16_t mil_distance_km;          // 0x21: A*256+B [km]
-  float    o2_s1_ratio;              // 0x24: (A*256+B)*2/65536
-  float    o2_s1_voltage;            // 0x24: (C*256+D)*8/65536 [V]
-  uint8_t  evap_purge_pct;           // 0x2E: A*100/255 [%]
-  uint8_t  warmups_since_cleared;    // 0x30: A [回]
-  uint16_t distance_since_cleared_km;// 0x31: A*256+B [km]
-  float    catalyst_temp_c;          // 0x3C: (A*256+B)/10-40 [°C]
-  float    absolute_load_pct;        // 0x43: (A*256+B)*100/255 [%]
-  float    commanded_afr;            // 0x44: (A*256+B)*2/65536
-  uint8_t  throttle_b_pct;           // 0x47: A*100/255 [%]
-  uint8_t  accel_pedal_d_pct;        // 0x49: A*100/255 [%]
-  uint8_t  accel_pedal_e_pct;        // 0x4A: A*100/255 [%]
-  uint8_t  fuel_type;                // 0x51: A（1=ガソリン）
-  float    sec_o2_trim_st_pct;       // 0x55: (A-128)*100/128 [%]
-  float    sec_o2_trim_lt_pct;       // 0x56: (A-128)*100/128 [%]
+  float    stftPct;                 // 0x06: (A-128)*100/128 [%]
+  float    ltftPct;                 // 0x07: (A-128)*100/128 [%]
+  float    o2B1s2V;                // 0x15: A/200 [V]
+  float    o2B1s2TrimPct;         // 0x15: (B-128)*100/128 [%]
+  uint16_t engineRunTimeSec;      // 0x1F: A*256+B [秒]
+  uint16_t milDistanceKm;          // 0x21: A*256+B [km]
+  float    o2S1Ratio;              // 0x24: (A*256+B)*2/65536
+  float    o2S1Voltage;            // 0x24: (C*256+D)*8/65536 [V]
+  uint8_t  evapPurgePct;           // 0x2E: A*100/255 [%]
+  uint8_t  warmupsSinceCleared;    // 0x30: A [回]
+  uint16_t distanceSinceClearedKm;// 0x31: A*256+B [km]
+  float    catalystTempC;          // 0x3C: (A*256+B)/10-40 [°C]
+  float    absoluteLoadPct;        // 0x43: (A*256+B)*100/255 [%]
+  float    commandedAfr;            // 0x44: (A*256+B)*2/65536
+  uint8_t  throttleBPct;           // 0x47: A*100/255 [%]
+  uint8_t  accelPedalDPct;        // 0x49: A*100/255 [%]
+  uint8_t  accelPedalEPct;        // 0x4A: A*100/255 [%]
+  uint8_t  fuelType;                // 0x51: A（1=ガソリン）
+  float    secO2TrimStPct;       // 0x55: (A-128)*100/128 [%]
+  float    secO2TrimLtPct;       // 0x56: (A-128)*100/128 [%]
 
   bool     valid;
   time_t   ts;
 
   // 末尾追加（ObdBlePacketとのオフセット互換のため既存フィールドより後ろに置く）
-  int16_t  iat_c;  // 0x68 Sensor1: B-40 [°C]（インタークーラー前後どちらか未確定）
-  int16_t  iat2_c; // 0x68 Sensor2: C-40 [°C]（同上）
+  int16_t  iatC;  // 0x68 Sensor1: B-40 [°C]（インタークーラー前後どちらか未確定）
+  int16_t  iat2C; // 0x68 Sensor2: C-40 [°C]（同上）
 };
 
 // BLE Notify 送信用（パディングなしで詰めた固定レイアウト）。
@@ -55,51 +55,51 @@ struct OBDReading
 struct ObdBlePacket
 {
   uint16_t rpm;
-  uint8_t  speed_kmh;
-  uint8_t  load_pct;
-  uint8_t  map_kpa;
-  uint8_t  baro_kpa;
-  int8_t   boost_kpa;
-  uint8_t  throttle_pct;
-  float    timing_deg;
-  float    ecu_voltage;
-  float    maf_gs;
-  int16_t  coolant_c;
-  float    fuel_rate_lph;
+  uint8_t  speedKmh;
+  uint8_t  loadPct;
+  uint8_t  mapKpa;
+  uint8_t  baroKpa;
+  int8_t   boostKpa;
+  uint8_t  throttlePct;
+  float    timingDeg;
+  float    ecuVoltage;
+  float    mafGs;
+  int16_t  coolantC;
+  float    fuelRateLph;
 
-  float    stft_pct;
-  float    ltft_pct;
-  float    o2_b1s2_v;
-  float    o2_b1s2_trim_pct;
-  uint16_t engine_run_time_sec;
-  uint16_t mil_distance_km;
-  float    o2_s1_ratio;
-  float    o2_s1_voltage;
-  uint8_t  evap_purge_pct;
-  uint8_t  warmups_since_cleared;
-  uint16_t distance_since_cleared_km;
-  float    catalyst_temp_c;
-  float    absolute_load_pct;
-  float    commanded_afr;
-  uint8_t  throttle_b_pct;
-  uint8_t  accel_pedal_d_pct;
-  uint8_t  accel_pedal_e_pct;
-  uint8_t  fuel_type;
-  float    sec_o2_trim_st_pct;
-  float    sec_o2_trim_lt_pct;
+  float    stftPct;
+  float    ltftPct;
+  float    o2B1s2V;
+  float    o2B1s2TrimPct;
+  uint16_t engineRunTimeSec;
+  uint16_t milDistanceKm;
+  float    o2S1Ratio;
+  float    o2S1Voltage;
+  uint8_t  evapPurgePct;
+  uint8_t  warmupsSinceCleared;
+  uint16_t distanceSinceClearedKm;
+  float    catalystTempC;
+  float    absoluteLoadPct;
+  float    commandedAfr;
+  uint8_t  throttleBPct;
+  uint8_t  accelPedalDPct;
+  uint8_t  accelPedalEPct;
+  uint8_t  fuelType;
+  float    secO2TrimStPct;
+  float    secO2TrimLtPct;
 
   uint8_t  valid; // bool を1バイト固定で送る
   uint32_t ts;    // time_t は環境依存サイズのため uint32_t に固定
 
-  int16_t  iat_c;
-  int16_t  iat2_c;
+  int16_t  iatC;
+  int16_t  iat2C;
 };
 #pragma pack(pop)
 
 // OBDReading → ObdBlePacket 変換
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out);
 
-// boost_kpa/fuel_rate_lphの派生値を計算する（valid=falseの場合は何もしない）
+// boostKpa/fuelRateLphの派生値を計算する（valid=falseの場合は何もしない）
 void obdComputeDerived(OBDReading &r);
 
 // デコード共通ルール: data[0]!=0x41 または data[1]!=要求PID または dlc不足の場合は false を返す

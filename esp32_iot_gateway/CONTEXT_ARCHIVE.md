@@ -298,3 +298,9 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 **制約**: この修正はdevice/service/main.cppにまたがり、native Unityテストの対象外（ハードウェア/FreeRTOS依存のため）。`pio run`のコンパイル確認と既存native domainテスト49件のパスに加え、実機検証も実施済み。
 
 **実機検証結果（2026-08-09）**: 5分境界を2回（08:20:00・08:25:00 UTC）またぐ実車走行データをAthena `obd_data`で確認。`car-iot-aca704`の08:19:03〜08:25:35（182サンプル）で`obd_ts`間隔5秒以上のギャップは0件（修正前は境界のたびに14〜19秒の欠損が確実に発生していた）。両境界とも間隔は通常通り2〜4秒で継続しており、修正の効果を確認した。DEEP_SLEEPモード側のBLEデータ保存継続は未検証（走行中はCONTINUOUSモードが主のため、別途確認が必要）。
+
+### ~~TODO: domain/obd.hのフィールド名がsnake_case（CLAUDE.md命名規約違反）~~ **実装済み**
+
+`OBDReading`・`ObdBlePacket`の約55フィールド（`speed_kmh`、`map_kpa`、`sec_o2_trim_lt_pct`等）が全て`snake_case`で、ルート`CLAUDE.md`の「変数名: camelCase」規約に反していた。
+
+**対応**: `test/test_domain_obd/test_obd.cpp`を先にcamelCase名（`speedKmh`等）へ書き換えてビルド失敗（red）を確認してから、`domain/obd.h`・`domain/obd.cpp`・`service/obdpoll.cpp`の全フィールド参照を機械的にリネームした（sedによる一括置換＋UTF-8直後で`\b`が効かなかったコメント数箇所を手動修正）。`device/ble_peripheral.cpp`は`ObdBlePacket`をopaqueな構造体として`memcpy`するだけでフィールド名を参照していなかったため変更不要だった。`OBD.md`・`CAN_REFERENCE.md`の構造体転記箇所も合わせて更新し、ついでに`OBD.md`に残っていた「obdpoll.cpp で計算」という古いコメント（`obdComputeDerived()`切り出し前の記述）も修正した。native domainテスト49件・デフォルトenvビルドとも成功。
