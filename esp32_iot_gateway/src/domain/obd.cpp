@@ -388,3 +388,15 @@ void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
   out.iat_c = r.iat_c;
   out.iat2_c = r.iat2_c;
 }
+
+void obdComputeDerived(OBDReading &r)
+{
+  if (!r.valid)
+    return;
+
+  // boost = MAP - Baro（Baro未取得時は標準大気圧101kPaで代用）
+  r.boost_kpa = (int8_t)(r.map_kpa - (r.baro_kpa > 0 ? r.baro_kpa : 101));
+  // 燃費推算（MAFから）: OBD.md 参照
+  if (r.maf_gs > 0)
+    r.fuel_rate_lph = r.maf_gs / (14.7f * 0.745f) * 3.6f;
+}

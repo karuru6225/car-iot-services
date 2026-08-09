@@ -262,3 +262,15 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `updateChargingState()`は電圧閾値によるヒステリシス判定という、ハードウェア・ネットワーク非依存の純粋ロジックだが、`domain/`ではなくエントリポイントの`main.cpp`に直接書かれていた。
 
 **対応**: `domain/charging.h`/`.cpp`に`decideCharging(vMain, vSub, currentlyCharging, ChargingThresholds) -> bool`という純粋関数を切り出した。`main.cpp`側の`updateChargingState()`は判定結果を受けて状態が変わった場合のみ`setCharging()`/`digitalWrite()`/ログ出力するだけになった。`test/test_domain_charging/`にnative環境のユニットテスト8件を追加（起動条件・停止条件・電圧異常時の非遷移などを網羅）。
+
+### ~~TODO: service/https.cppのparseUrl()がハードウェア非依存なのにdomain/にない~~ **実装済み**
+
+`parseUrl()`はURL文字列をhost/pathに分解するだけの純粋関数で、ハードウェア・ネットワークに一切依存していなかったが、`service/https.cpp`内に`static`関数として直書きされていた。
+
+**対応**: `domain/url.h`/`.cpp`に切り出した。`service/https.cpp`は`#include "../domain/url.h"`して呼ぶだけになった。`test/test_domain_url/`にnative環境のユニットテスト5件を追加（https/httpスキーム判定、スラッシュなし時のpath="/"デフォルト、未知スキーム拒否、hostバッファ溢れ時の拒否）。
+
+### ~~TODO: service/obdpoll.cppのboost/燃費派生値計算がdomain/にない~~ **実装済み**
+
+`finalizeAndLog()`内の`boost_kpa`（MAP-Baro、Baro未取得時は標準大気圧101kPaで代用）・`fuel_rate_lph`（MAFからの燃費推算）の計算は`OBDReading`のフィールドだけで完結する純粋ロジックだったが、ログ出力と同じ関数に同居しており`domain/obd.cpp`の他の`obdDecode*()`群とは別の場所にあった。
+
+**対応**: `domain/obd.h`/`.cpp`に`obdComputeDerived(OBDReading &r)`を追加し、計算部分を移した（`r.valid`が`false`の場合は何もしない）。`obdpoll.cpp`の`finalizeAndLog()`は`obdComputeDerived(r)`を呼んだ後にログ出力するだけになった。`test/test_domain_obd/`にユニットテスト5件を追加（Baro代用、fuel_rate計算、MAF未取得時の据え置き、valid=false時のスキップ）。

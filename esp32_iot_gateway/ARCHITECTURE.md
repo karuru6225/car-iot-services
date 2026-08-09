@@ -57,6 +57,7 @@ device / service を include してはいけない。標準ライブラリのみ
 | `sensor_filter.h/.cpp` | BLE センサー値のメディアンフィルタ（`BLE_MEDIAN_FILTER`ビルドフラグ時のみ有効、直近3件のアドレス別履歴を保持）|
 | `obd.h/.cpp` | OBD-II Mode 01 PID（全29種）の構造体（`OBDReading`）とデコード関数群。BLE送信用の固定レイアウト構造体（`ObdBlePacket`）と変換関数、多PID応答をPIDセグメント単位に分解する`obdParseMultiResponse()`も含む |
 | `charging.h/.cpp` | 充電ヒステリシス判定（`decideCharging()`）。電圧・現在の充電状態・閾値から次の充電状態を返す純粋関数。`main.cpp`の`updateChargingState()`から呼ばれる |
+| `url.h/.cpp` | URL文字列をhost/pathに分解する`parseUrl()`。`service/https.cpp`から呼ばれる |
 
 ### service/
 
