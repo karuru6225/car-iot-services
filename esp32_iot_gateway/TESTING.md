@@ -25,6 +25,8 @@ docker compose -f docker-compose.test.yml run --rm test
 
 GitHub-hosted runnerは毎回まっさらな環境なので、ローカルのDockerイメージキャッシュは引き継がれない。そのため `docker/build-push-action` の `cache-from`/`cache-to: type=gha` でDockerレイヤーをGitHub Actions Cacheに保存・再利用し、`Dockerfile.test`のビルド（`pio pkg install -e native`を含む）が変更されていない限りCI側でも再ダウンロードが起きないようにしている。テストの実行自体は `docker compose` ではなく、ビルド済みイメージに対する `docker run` で行っている（`cache-from type=gha` はbuildx経由のビルドでのみ機能し、`docker compose build` からは使えないため）。
 
+**`type=gha` キャッシュはブランチ（PRのhead ref）ごとにスコープが分かれる**。`pull_request` イベントで書き込まれたキャッシュはそのPRのmerge ref専用で、`main` にも他のPRにも引き継がれない。一方ワークフローは「自分のブランチ」と「デフォルトブランチ（`main`）」のキャッシュは読める。そのため `main` へのpushでもこのワークフローを走らせて `main` 用キャッシュを書いておき、そこから枝分かれする新規PRブランチが初回からキャッシュを継承できるようにしている（このリポジトリはPublicなのでActionsの実行時間は無料・無制限）。
+
 `test/` 配下の各 `test_domain_*/` ディレクトリが個別のテストスイートとしてビルド・実行される（`pio test` が自動収集する）。
 
 ## 新しいdomainファイルのテストを追加する
