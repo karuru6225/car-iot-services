@@ -771,12 +771,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 
 **実装方針（案）**: 一括リネームは`domain/obd.cpp`の各`obdDecode*()`関数・`service/obdpoll.cpp`・`device/ble_peripheral.cpp`（`obdReadingToBlePacket`）に波及するため影響範囲を洗い出してから着手する。優先度は低い（動作に影響しない規約違反のため）。
 
-### TODO: speaker.cpp playMelody()がdelay()でブロッキングしている（未着手）
-
-`playMelody()`（[speaker.cpp:63](esp32_iot_gateway/src/device/speaker.cpp#L63)）は`tone()`の後に`delay(n.dur)`でブロッキングする。CLAUDE.mdの「`delay()`より`millis()`利用のノンブロッキング処理を優先」に反する。`setup()`内でBLEアドバタイズ開始後に`playMelody(boot)`が呼ばれるため、起動音再生中はBLE接続要求への応答が止まる。
-
-**実装方針（案）**: `millis()`ベースの状態機械にして、`loop()`または`setup()`内のポーリングで次の音符に進める。頻度は低い（起動時のみ）ため優先度は低め。
-
 ### TODO: menu.cpp tickCharging()にdelay()が残っている（未着手）
 
 `tickCharging()`（[menu.cpp:462](esp32_iot_gateway/src/service/menu.cpp#L462)）自体は`millis()`駆動の状態機械だが、遷移点3箇所（[menu.cpp:477](esp32_iot_gateway/src/service/menu.cpp#L477)充電不可・[menu.cpp:494](esp32_iot_gateway/src/service/menu.cpp#L494)完了・[menu.cpp:512](esp32_iot_gateway/src/service/menu.cpp#L512)停止）で`delay(1000〜2000)`が挟まっており、その間`button.read()`が呼ばれずボタン入力を取りこぼす。

@@ -274,3 +274,9 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `finalizeAndLog()`内の`boost_kpa`（MAP-Baro、Baro未取得時は標準大気圧101kPaで代用）・`fuel_rate_lph`（MAFからの燃費推算）の計算は`OBDReading`のフィールドだけで完結する純粋ロジックだったが、ログ出力と同じ関数に同居しており`domain/obd.cpp`の他の`obdDecode*()`群とは別の場所にあった。
 
 **対応**: `domain/obd.h`/`.cpp`に`obdComputeDerived(OBDReading &r)`を追加し、計算部分を移した（`r.valid`が`false`の場合は何もしない）。`obdpoll.cpp`の`finalizeAndLog()`は`obdComputeDerived(r)`を呼んだ後にログ出力するだけになった。`test/test_domain_obd/`にユニットテスト5件を追加（Baro代用、fuel_rate計算、MAF未取得時の据え置き、valid=false時のスキップ）。
+
+### ~~TODO: speaker.cpp playMelody()がdelay()でブロッキングしている~~ **実装済み**
+
+`playMelody()`は`tone()`の後に`delay(n.dur)`で音符ごとにブロッキングしており、CLAUDE.mdの「`delay()`より`millis()`利用のノンブロッキング処理を優先」に反していた。
+
+**対応**: `delay(n.dur)`を、`millis()`で経過時間を見ながら`delay(1)`刻みでポーリングする待機ループに置き換えた（`continuousLoopCore()`の待機ループと同じパターン）。音符ごとの実際の待機時間・呼び出し側の挙動は変わらないが、タイミング管理を固定長`delay()`から`millis()`比較へ移した。呼び出し箇所は`main.cpp`の起動時2箇所（`bootStart`/`boot`）のみで非同期再生の需要が無いため、`speakerTick()`のような外部公開の状態遷移関数は追加していない（`playMelody()`内部に閉じたポーリングループで完結）。
