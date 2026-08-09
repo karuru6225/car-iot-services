@@ -250,3 +250,9 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `device/lte.cpp`・`device/can.cpp`・`device/ble_peripheral.cpp`が`#include "../service/logger.h"`しており、ARCHITECTURE.mdの「device/は上位層（domain/service）をincludeしてはいけない」というNG例と同じパターンが3ファイルで発生していた。
 
 **対応**: `logger.h`/`logger.cpp`を`service/`から`src/`直下（`config.h`/`board_pins.h`と同格）へ移動。ARCHITECTURE.mdも元々`logger.h/.cpp`を「横断的関心事」と記述していた（物理配置だけがそれに追いついていなかった）ため、ドキュメントの意図に実装を合わせる形になった。`logger.cpp`自体は引き続き`service/log_storage.h`（ログのSPIFFS永続化）に依存するが、これは横断的関心事の実装詳細であり、レイヤー依存ルール（device/domainが上位層をincludeしてはいけない）の対象外として扱う。全14箇所のinclude（device/3、service/10、main.cpp）を更新。ARCHITECTURE.md・CLAUDE.mdのファイル構成図も合わせて更新。
+
+### ~~TODO: main.cppのGPIO_NUM_0がピン定数化されていない~~ **実装済み**
+
+`enterDeepSleepMode()`内で`GPIO_NUM_0`が4箇所生の値のまま使われており、CLAUDE.mdの「ピン番号は定数化する」規約に反していた。BOOTボタン（wake用）のピンであることがコードから読み取りにくかった。
+
+**対応**: `main.cpp`内に`#define WAKE_PIN GPIO_NUM_0`を追加し、4箇所を置き換えた。ESP32-S3モジュール内蔵のBOOTボタンで基板（v1/v2）によらず固定のため、`board_pins.h`（基板ごとに異なるピンを管理する場所）ではなく`main.cpp`側（アプリ層）での`#define`とした（CLAUDE.mdの「ピン番号は定数化する（アプリ層: `#define`）」規約に対応）。
