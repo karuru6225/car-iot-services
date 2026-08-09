@@ -318,8 +318,8 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100
 ```
 
 ピンは `boardPins()` 経由で取得する（ハードコードしない）:
-- `CAN_RX_PIN = boardPins().gu00Pin`（GPIO4、MCP2562FD RXD 側）
-- `CAN_TX_PIN = boardPins().gu01Pin`（GPIO5、MCP2562FD TXD 側）
+- `CAN_RX_PIN = boardPins().gu01Pin`（GPIO5、MCP2562FD RXD 側）
+- `CAN_TX_PIN = boardPins().gu00Pin`（GPIO4、MCP2562FD TXD 側）
 - `CAN_EN_PIN = boardPins().gu0EnPin`（GPIO6、AO3401A ゲート）
 
 `CAN_TEST.md` のブレッドボード試験章の配線（GPIO5=TXD, GPIO4=RXD）そのまま。当初ドラフトは

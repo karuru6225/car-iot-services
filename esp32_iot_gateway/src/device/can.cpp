@@ -5,8 +5,8 @@
 #include "../board_pins.h"
 #include "../logger.h"
 
-static const uint8_t CAN_RX_PIN = boardPins().gu01Pin;  // GPIO4: MCP2562FD RXD 側
-static const uint8_t CAN_TX_PIN = boardPins().gu00Pin;  // GPIO5: MCP2562FD TXD 側
+static const uint8_t CAN_RX_PIN = boardPins().gu01Pin;  // GPIO5: MCP2562FD RXD 側
+static const uint8_t CAN_TX_PIN = boardPins().gu00Pin;  // GPIO4: MCP2562FD TXD 側
 static const uint8_t CAN_EN_PIN = boardPins().gu0EnPin; // GPIO6: AO3401A ゲート（HIGH=電源ON）
 
 static const uint32_t CAN_REQ_ID = 0x18DB33F1;    // 29-bit functional addressing

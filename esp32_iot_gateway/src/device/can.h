@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 
-// GU0 コネクタ（gu00Pin=RX, gu01Pin=TX, gu0EnPin=EN）に接続した MCP2562FD 経由で
+// GU0 コネクタ（gu00Pin=TX, gu01Pin=RX, gu0EnPin=EN）に接続した MCP2562FD 経由で
 // Honda N-VAN の OBD-II（Mode 01、29bit 拡張アドレッシング）と通信する。
 // 詳細は CAN_TEST.md / CAN_REFERENCE.md / OBD.md 参照。
 
