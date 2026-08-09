@@ -3,7 +3,7 @@
 #include <driver/twai.h>
 #include <string.h>
 #include "../board_pins.h"
-#include "../service/logger.h"
+#include "../logger.h"
 
 static const uint8_t CAN_RX_PIN = boardPins().gu01Pin;  // GPIO4: MCP2562FD RXD 側
 static const uint8_t CAN_TX_PIN = boardPins().gu00Pin;  // GPIO5: MCP2562FD TXD 側

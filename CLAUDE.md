@@ -27,9 +27,10 @@ PlatformIO 操作は `/pio` スキルを使う（ビルド・書き込み・シ�
 ```text
 src/
 ├── main.cpp / config.h / config.cpp   # エントリポイント・全層共通定数・NVS
+├── logger.h/.cpp                      # 全層から参照可能なシリアルデバッグ出力（横断的関心事）
 ├── device/   # ハードウェアドライバ（lte, ads, ina228, oled, speaker）
 ├── domain/   # ビジネスロジック（measurement.h, telemetry）
-└── service/  # ユースケース（mqtt, ota, logger）
+└── service/  # ユースケース（mqtt, ota, log_storage）
 ```
 
 include パスは `src/` 基準で書く:

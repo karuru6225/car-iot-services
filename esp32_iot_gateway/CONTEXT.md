@@ -765,12 +765,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 
 **対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
 
-### TODO: device/がservice/logger.hを参照している（レイヤー依存違反・未着手）
-
-`device/lte.cpp:2`・`device/can.cpp:6`・`device/ble_peripheral.cpp:4`が`#include "../service/logger.h"`している。ARCHITECTURE.mdは「device/は上位層（domain/service）をincludeしてはいけない」と明記しており、そのNG例（`// device/lte.cpp — NG: #include "../service/mqtt.h"`）と同じパターンが3ファイルで発生している。
-
-**実装方針（案）**: `logger`を`config.h`/`board_pins.h`と同格の「全層から参照可能な横断的関心事」として扱うか、device層専用の最小限ロギングシムを別途用意する。
-
 ### TODO: 充電ヒステリシスロジックがmain.cppに直書きされている（domain層へ移すべき・未着手）
 
 `updateChargingState()`（[main.cpp:212](esp32_iot_gateway/src/main.cpp#L212)）は電圧閾値によるヒステリシス判定という、ハードウェア・ネットワーク非依存の純粋ロジックだが、`domain/`ではなくエントリポイントの`main.cpp`に直接書かれている。最後の`digitalWrite()`以外はGPIO/ネットワークに依存しない。

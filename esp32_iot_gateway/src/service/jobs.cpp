@@ -1,6 +1,6 @@
 #include "jobs.h"
 #include "mqtt.h"
-#include "logger.h"
+#include "../logger.h"
 #include "../config.h"
 #include <ArduinoJson.h>
 #include <Arduino.h>

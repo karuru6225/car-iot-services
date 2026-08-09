@@ -12,6 +12,7 @@ src/
 ├── board_pins.h      全層から参照可能なピン配置（BoardPins構造体、boardPins()）。BOARD_VERSIONに応じてboard_pins_v1.h/v2.hをinclude
 ├── board_pins_v1.h   m5atom_power_adc v1基板の実ピン値
 ├── board_pins_v2.h   m5atom_power_adc v2基板の実ピン値
+├── logger.h/.cpp     全層から参照可能なシリアルデバッグ出力（横断的関心事。実装はservice/log_storage.hに委譲）
 ├── provision.cpp     プロビジョニング専用（provision env のみビルド。通常ビルドから除外）
 ├── device/           ハードウェアドライバ層
 ├── domain/           ビジネスロジック層
@@ -75,8 +76,7 @@ device / service を include してはいけない。標準ライブラリのみ
 | `obdpoll.h/.cpp` | `obdPoll()`。全29PIDを6PIDずつ計5リクエストにバッチ化して問い合わせ（`canInit()`済み前提）。CONTINUOUSモードの1秒ティックから呼ばれる |
 | `operation_mode.h/.cpp` | `OperationModeManager`。`OperationMode` ごとの実行関数を登録・呼び出すレジストリ（`main.cpp`のloop()分岐を集約） |
 | `pubqueue.h/.cpp` | オフラインバッファ（RTC メモリ + SPIFFS）・MQTT publish キュー管理 |
-| `log_storage.h/.cpp` | デバッグログの SPIFFS 保存（起動ごと1ファイル、最大12ファイルのリングバッファ） |
-| `logger.h/.cpp` | シリアルデバッグ出力（横断的関心事） |
+| `log_storage.h/.cpp` | デバッグログの SPIFFS 保存（起動ごと1ファイル、最大12ファイルのリングバッファ）。`logger.h/.cpp`（src直下、横断的関心事）から呼ばれる |
 
 ---
 
@@ -91,7 +91,7 @@ service/  ←→  service/ （同層間は可）
    ↓
 device/
    ↓
-config.h / board_pins.h  （全層から参照可）
+config.h / board_pins.h / logger.h  （全層から参照可）
 
 domain/   （どこからでも参照可。自身は何にも依存しない）
 ```
@@ -107,6 +107,7 @@ domain/   （どこからでも参照可。自身は何にも依存しない）
 // device/lte.cpp — OK
 #include "lte.h"
 #include "../config.h"
+#include "../logger.h"         // 横断的関心事を参照
 
 // device/lte.cpp — NG
 #include "../service/mqtt.h"  // 上位層の参照は禁止

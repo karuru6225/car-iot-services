@@ -1,6 +1,6 @@
 #include "monitor.h"
 #include "pubqueue.h"
-#include "logger.h"
+#include "../logger.h"
 #include "../device/ads.h"
 #include "../device/ina228.h"
 #include "../device/ble_scan.h"

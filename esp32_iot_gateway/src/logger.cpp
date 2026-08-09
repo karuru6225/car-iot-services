@@ -1,5 +1,5 @@
 #include "logger.h"
-#include "log_storage.h"
+#include "service/log_storage.h"
 #include <stdarg.h>
 
 Logger logger;
