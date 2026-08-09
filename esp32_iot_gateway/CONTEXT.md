@@ -947,3 +947,51 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - BLEスキャンをブロッキングでなくする（`_scan->start(seconds, false)`のコールバック版に変更し、スキャン中も`continuousLoopCore()`のループへ制御を返せるようにする）
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
+
+### TODO: OTA失敗時にAWS IoT Jobsへ FAILED を報告しない（未着手）
+
+`Ota::apply()`（[ota.cpp:154-232](esp32_iot_gateway/src/service/ota.cpp#L154-L232)）の全ての失敗パス（ダウンロード失敗・`esp_ota_begin`失敗・書き込み失敗・`esp_ota_end`失敗・boot partition設定失敗）が`false`を返すだけで`jobsReport(job.id, "FAILED", ...)`を呼ばない。`handleJob()`は既に`IN_PROGRESS`を送信済み（[ota.cpp:333](esp32_iot_gateway/src/service/ota.cpp#L333)）だが、失敗時に`FAILED`が送られないため、AWS側でJobが`IN_PROGRESS`のまま永久に残り続ける。呼び出し元の`main.cpp`も`ota.handleJob(job)`の戻り値を見ていない。
+
+**実装方針（案）**: `apply()`の各失敗パスに`jobsReport(jobId, "FAILED", <理由>)`を追加する。`apply()`内で`jobId`を保持しているので、失敗理由（ダウンロード失敗/書き込み失敗/検証失敗等）を`statusDetails.reason`に含めれば運用側の切り分けにも使える。
+
+### TODO: Shadowのoverride_next_modeが起動直後しか反映されない（未着手）
+
+`getShadowOverrideMode()`は`setup()`内で1回だけ呼ばれる（[main.cpp:151](esp32_iot_gateway/src/main.cpp#L151)）。一方`shadowPollDelta()`は`continuousLoopCore()`の1秒ティック（[main.cpp:337付近](esp32_iot_gateway/src/main.cpp)）や`enterDeepSleepMode()`、`loop()`本体でも呼ばれ、そこで`override_next_mode`のdeltaを受け取ると`s_overridePending`をセットしAWSへACK（`shadowPublishConfig(true)`）まで返してしまう（[shadow.cpp:130-147](esp32_iot_gateway/src/service/shadow.cpp#L130-L147)）が、`s_overridePending`を実際にモードへ反映する`getShadowOverrideMode()`の呼び出しは起動時の1回しかないため、稼働中に送ったoverride_next_modeは「reportedは更新されたのに実際のモードは変わらない」という状態になる。
+
+**実装方針（案）**: `continuousLoopCore()`の1秒ティックや`loop()`でも`getShadowOverrideMode()`を呼び、返り値があれば`setOperationMode()`する。`continuousLoopCore()`内であれば既存の`g_mode == hooks.selfMode`ループガード（[main.cpp:302](esp32_iot_gateway/src/main.cpp#L302)）が変更を即座に反映してくれる。
+
+### TODO: lte.cpp fileReadChunk()がモデム応答サイズをバッファ容量でクランプしない（未着手）
+
+`Lte::fileReadChunk()`（[lte.cpp:161-226](esp32_iot_gateway/src/device/lte.cpp#L161-L226)）はSIM7080Gの`+CFSRFILE`応答から`actual`（実際のサイズ）を読み取るが、呼び出し側バッファの容量`maxLen`と突き合わせずに、先行データのコピーループ・`readBytes()`双方でその`actual`バイト分をそのまま書き込む。モデムが誤応答（`actual > maxLen`）を返した場合、呼び出し元の`writeGzToOta()`（`service/ota.cpp`）が使う固定4096バイトバッファ`s_gz.buf`を越えて書き込む可能性がある。
+
+**実装方針（案）**: `actual`を`maxLen`でクランプし、超過分は破棄またはエラー扱いにする。
+
+### TODO: https.cpp のダウンロードチャンク受信も同様にサイズ未検証（未着手）
+
+`waitShreadHeader()`（`service/https.cpp`）も`+SHREAD:`応答から解析した`actual`を、固定2048バイトの`static chunk[]`バッファの容量（呼び出し側が要求した`readLen`）と突き合わせずに`SerialAT.readBytes()`へ渡している。上記lte.cppの`fileReadChunk()`と同一パターンのバグ。OTAの`.bin`直接ダウンロード時に影響する。
+
+**実装方針（案）**: 上記lte.cppの修正と合わせて、共通の「モデム応答サイズをバッファ容量でクランプする」ヘルパーとして切り出すのも一案。
+
+### TODO: main.cppがセンサー/CAN初期化の失敗を無視している（未着手）
+
+`setup()`内の`adsInit()`/`ina228.init()`/`canInit()`（[main.cpp:102-104](esp32_iot_gateway/src/main.cpp#L102-L104)）はいずれも初期化失敗を伝えるため`bool`を返す設計だが、戻り値を誰も確認していない。I2C接続不良等で初期化に失敗しても、以降の`readCurrent()`等が未設定デバイスに対して読み取りを続け、無効値をテレメトリとしてAWSへ送信し続けてしまう。異常を検知する手段がどこにもない。
+
+**実装方針（案）**: 各初期化の戻り値を見てログ出力し、OLEDに警告表示する、またはtelemetryペイロードに「センサー異常」フラグを含めてクラウド側で気づけるようにする。
+
+### TODO: jobs.cppがacceptedトピックを厳密一致で判定していない（未着手）
+
+`jobsGetNext()`（[jobs.cpp:29-77](esp32_iot_gateway/src/service/jobs.cpp#L29-L77)）は`rejected`トピック文字列を生成する（[jobs.cpp:45](esp32_iot_gateway/src/service/jobs.cpp#L45)）が使わず、`strstr(recvTopic, "rejected")`が偽であれば無条件にacceptedレスポンスとして処理する。`shadow.cpp`の`shadowPollDelta()`が`strcmp(recvTopic, expected) != 0`で厳密一致を取っているのと対照的。現状`jobsGetNext()`は起動時1回しか呼ばれないため実害は限定的だが、将来ポーリング頻度を上げると別トピックのメッセージを誤ってJobsレスポンスとして消費しうる。
+
+**実装方針（案）**: `shadow.cpp`と同様、`topicAccepted()`を生成して`strcmp`で厳密一致を取ってから処理する。
+
+### TODO: ota.cpp のバージョン一致判定が前方一致になっている（未着手）
+
+`Ota::handleJob()`の同一バージョンスキップ判定（[ota.cpp:321](esp32_iot_gateway/src/service/ota.cpp#L321)）が`strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0`で、`version`が`FIRMWARE_VERSION`の前方一致であれば真になる。`FIRMWARE_VERSION`は`"<base>+<githash>"`形式なので、短いversion文字列がたまたま前方一致すると誤って「同一バージョン」と判定されOTAがスキップされる可能性がある。
+
+**実装方針（案）**: `+`区切りの前半（`FIRMWARE_VERSION_BASE`相当）同士を`strcmp`で完全一致させる。
+
+### TODO: gzLog()がログ永続化をスキップしている（未着手）
+
+`gzLog()`（[ota.cpp:22-30](esp32_iot_gateway/src/service/ota.cpp#L22-L30)）は`Logger::printf`（[logger.cpp:23-32](esp32_iot_gateway/src/service/logger.cpp#L23-L32)）と同じ`vsnprintf`パターンを再実装しているが、最後に`logger.print(buf)`を呼んでおり、これは`logStorageWrite()`を呼ばずSerial出力のみで終わる。OTAのgz解凍時に出る`[OTA] gz...`系のログ行だけがSPIFFS上のデバッグログファイルに残らず、シリアルモニタを見ていないと事後調査できない。
+
+**実装方針（案）**: `gzLog()`から`logger.printf()`を呼ぶよう差し替える（`uzlib`側のログコールバック型が`void(*)(const char *)`で可変引数を取れない場合は、`gzLog()`内で一旦`vsnprintf`した文字列を`logger.printf("%s", buf)`のように渡す）。
