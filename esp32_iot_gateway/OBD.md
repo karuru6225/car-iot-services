@@ -142,7 +142,7 @@ Honda ECU が variant 共通のビットマスクを返しているが、この�
 | 0x67 | Coolant Temp Alt | B-40 °C (Sensor1) | **0x05 の代替** |
 | 0x68 | Charge Air Cooler Temp | B-40 / C-40 °C (Sensor1/2) | 吸気温。ISO-TPマルチフレーム必須。IC前後どちらがSensor1/2かは未確定 |
 
-燃費推算: `fuelRateLph = mafGs / (14.7 × 0.745) × 3.6`
+燃費推算: `fuelRateLph = mafGs / (14.7 × λ × 0.745) × 3.6`（λ=commandedAfr、0.5〜2.0の範囲外はλ=1固定）
 
 ---
 
@@ -181,7 +181,7 @@ OBD-II 応答フレームは一切来ない（確認済み）。
 | --- | --- | --- |
 | 0x05 Coolant Temp | 0x67 Sensor1 (B-40°C) | **取得可能・確認済み** |
 | 0x10 MAF | 0x66 MAF Alt ((B×256+C)/32 g/s) | **取得可能・確認済み** |
-| 0x5E Fuel Rate | 0x66 から推算: `mafGs/(14.7×0.745)×3.6` | **推算で対応** |
+| 0x5E Fuel Rate | 0x66 から推算: `mafGs/(14.7×λ×0.745)×3.6` | **推算で対応** |
 | 0x2F Fuel Level | Mode 22 探索が必要 | 未対応 |
 | 0x5C Oil Temp | Mode 22 探索が必要 | 未対応 |
 
@@ -553,7 +553,7 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 |--------|------|
 | 冷却水温が 0x05 非対応 | 0x67 Sensor1 で代替取得可能（確認済み） |
 | MAF が 0x10 非対応 | 0x66 で代替取得可能（確認済み、1.69 g/s@idle） |
-| 燃費計算（0x5E 非対応） | 0x66 MAF から推算: `mafGs / (14.7×0.745) × 3.6` L/h |
+| 燃費計算（0x5E 非対応） | 0x66 MAF から推算: `mafGs / (14.7×λ×0.745) × 3.6` L/h |
 | CAN 未接続・IGN OFF 時のタイムアウト | 全 PID × 100ms = 最大 1秒（許容範囲。正常時は数十msで応答するためもっと短い） |
 | バスオフ状態 | 軽量リカバリ（`twai_initiate_recovery()`）→ 連続失敗20回でフル再init |
 | GU0/GU1 の配線混同 | GU0=CAN（GPIO4/5/6）、GU1=LTE（GPIO7/8/9、`device/lte.cpp` 使用中）。触るのはGU0のみ |

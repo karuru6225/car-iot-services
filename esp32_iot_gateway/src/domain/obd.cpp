@@ -398,7 +398,12 @@ void obdComputeDerived(OBDReading &r)
 
   // boost = MAP - Baro（Baro未取得時は標準大気圧101kPaで代用）
   r.boostKpa = (int8_t)(r.mapKpa - (r.baroKpa > 0 ? r.baroKpa : 101));
-  // 燃費推算（MAFから）: OBD.md 参照
+  // 燃費推算（MAFから）: OBD.md 参照。commandedAfr（=λ）を分母に反映し、
+  // 暖機増量中（λ<1）の過小評価を補正する。取得失敗（0）や異常値は
+  // λ=1固定にフォールバックする。
   if (r.mafGs > 0)
-    r.fuelRateLph = r.mafGs / (14.7f * 0.745f) * 3.6f;
+  {
+    float lambda = (r.commandedAfr > 0.5f && r.commandedAfr < 2.0f) ? r.commandedAfr : 1.0f;
+    r.fuelRateLph = r.mafGs / (14.7f * lambda * 0.745f) * 3.6f;
+  }
 }
