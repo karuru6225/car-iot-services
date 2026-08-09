@@ -948,7 +948,7 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
 
-### TODO: OTA失敗時にAWS IoT Jobsへ FAILED を報告しない（未着手）
+### ~~TODO: OTA失敗時にAWS IoT Jobsへ FAILED を報告しない~~ **実装済み**
 
 `Ota::apply()`（[ota.cpp:154-232](esp32_iot_gateway/src/service/ota.cpp#L154-L232)）の全ての失敗パス（ダウンロード失敗・`esp_ota_begin`失敗・書き込み失敗・`esp_ota_end`失敗・boot partition設定失敗）が`false`を返すだけで`jobsReport(job.id, "FAILED", ...)`を呼ばない。`handleJob()`は既に`IN_PROGRESS`を送信済み（[ota.cpp:333](esp32_iot_gateway/src/service/ota.cpp#L333)）だが、失敗時に`FAILED`が送られないため、AWS側でJobが`IN_PROGRESS`のまま永久に残り続ける。呼び出し元の`main.cpp`も`ota.handleJob(job)`の戻り値を見ていない。
 
