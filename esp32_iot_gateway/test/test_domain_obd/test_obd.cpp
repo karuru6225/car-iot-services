@@ -130,6 +130,60 @@ static void test_multi_response_stops_at_unknown_pid(void)
   TEST_ASSERT_EQUAL_UINT8(1, g_capturedCount); // 0x0Cのみ。0xFF以降は読まれない
 }
 
+// ─── 派生値計算（boost/燃費）────────────────────────────────────────────────
+
+static void test_compute_derived_boost_uses_baro_when_available(void)
+{
+  OBDReading r = {};
+  r.valid = true;
+  r.map_kpa = 120;
+  r.baro_kpa = 100;
+  obdComputeDerived(r);
+  TEST_ASSERT_EQUAL_INT8(20, r.boost_kpa);
+}
+
+static void test_compute_derived_boost_falls_back_to_standard_atmosphere(void)
+{
+  // baro_kpa未取得(0)時は標準大気圧101kPaで代用
+  OBDReading r = {};
+  r.valid = true;
+  r.map_kpa = 120;
+  r.baro_kpa = 0;
+  obdComputeDerived(r);
+  TEST_ASSERT_EQUAL_INT8(19, r.boost_kpa); // 120-101
+}
+
+static void test_compute_derived_fuel_rate_from_maf(void)
+{
+  OBDReading r = {};
+  r.valid = true;
+  r.maf_gs = 10.0f;
+  obdComputeDerived(r);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f / (14.7f * 0.745f) * 3.6f, r.fuel_rate_lph);
+}
+
+static void test_compute_derived_fuel_rate_unset_when_maf_absent(void)
+{
+  OBDReading r = {};
+  r.valid = true;
+  r.maf_gs = 0;
+  r.fuel_rate_lph = -1.0f; // 未変更を検出するための番兵値
+  obdComputeDerived(r);
+  TEST_ASSERT_EQUAL_FLOAT(-1.0f, r.fuel_rate_lph);
+}
+
+static void test_compute_derived_skips_when_invalid(void)
+{
+  // 応答なし(valid=false)時は派生値を計算しない
+  OBDReading r = {};
+  r.valid = false;
+  r.map_kpa = 120;
+  r.baro_kpa = 100;
+  r.boost_kpa = -128; // 番兵値
+  obdComputeDerived(r);
+  TEST_ASSERT_EQUAL_INT8(-128, r.boost_kpa);
+}
+
 int main(int argc, char **argv)
 {
   (void)argc;
@@ -147,5 +201,10 @@ int main(int argc, char **argv)
   RUN_TEST(test_maf_alt_rejects_when_sensor1_absent);
   RUN_TEST(test_multi_response_parses_two_known_pids);
   RUN_TEST(test_multi_response_stops_at_unknown_pid);
+  RUN_TEST(test_compute_derived_boost_uses_baro_when_available);
+  RUN_TEST(test_compute_derived_boost_falls_back_to_standard_atmosphere);
+  RUN_TEST(test_compute_derived_fuel_rate_from_maf);
+  RUN_TEST(test_compute_derived_fuel_rate_unset_when_maf_absent);
+  RUN_TEST(test_compute_derived_skips_when_invalid);
   return UNITY_END();
 }

@@ -103,17 +103,13 @@ void handleSegment(uint8_t pid, const uint8_t *segData, uint8_t len, void *ctxPt
   }
 }
 
-// boost/燃費の派生値計算とログ出力
+// 派生値計算（domain/obd.cppに委譲）とログ出力
 void finalizeAndLog(OBDReading &r)
 {
+  obdComputeDerived(r);
+
   if (r.valid)
   {
-    // boost = MAP - Baro（Baro未取得時は標準大気圧101kPaで代用）
-    r.boost_kpa = (int8_t)(r.map_kpa - (r.baro_kpa > 0 ? r.baro_kpa : 101));
-    // 燃費推算（MAFから）: OBD.md 参照
-    if (r.maf_gs > 0)
-      r.fuel_rate_lph = r.maf_gs / (14.7f * 0.745f) * 3.6f;
-
     logger.printf("[OBD] rpm=%u speed=%ukm/h load=%u%% map=%ukPa boost=%dkPa throttle=%u%% "
                   "timing=%.1f ecu=%.2fV maf=%.2fg/s coolant=%dC fuel=%.2fL/h\n",
                   r.rpm, r.speed_kmh, r.load_pct, r.map_kpa, r.boost_kpa, r.throttle_pct,

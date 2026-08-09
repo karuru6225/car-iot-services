@@ -10,13 +10,13 @@ struct OBDReading
   uint8_t  load_pct;      // 0x04: A*100/255 [%]
   uint8_t  map_kpa;       // 0x0B: A [kPa 絶対圧]
   uint8_t  baro_kpa;      // 0x33: A [kPa]
-  int8_t   boost_kpa;     // map_kpa - baro_kpa [kPa]（呼び出し側で計算）
+  int8_t   boost_kpa;     // map_kpa - baro_kpa [kPa]（obdComputeDerived()で計算）
   uint8_t  throttle_pct;  // 0x11: A*100/255 [%]
   float    timing_deg;    // 0x0E: A/2.0-64.0 [°BTDC]
   float    ecu_voltage;   // 0x42: (A*256+B)/1000.0 [V]
   float    maf_gs;        // 0x66: (B*256+C)/32 [g/s]（0x10 MAF 非対応のため代替）
   int16_t  coolant_c;     // 0x67 Sensor1: B-40 [°C]（0x05 水温 非対応のため代替）
-  float    fuel_rate_lph; // MAF 推算: maf_gs / (14.7*0.745) * 3.6 [L/h]（呼び出し側で計算）
+  float    fuel_rate_lph; // MAF 推算: maf_gs / (14.7*0.745) * 3.6 [L/h]（obdComputeDerived()で計算）
 
   // 追加確定PID（OBD.md「確定した取得可能データ一覧」参照）
   float    stft_pct;                 // 0x06: (A-128)*100/128 [%]
@@ -98,6 +98,9 @@ struct ObdBlePacket
 
 // OBDReading → ObdBlePacket 変換
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out);
+
+// boost_kpa/fuel_rate_lphの派生値を計算する（valid=falseの場合は何もしない）
+void obdComputeDerived(OBDReading &r);
 
 // デコード共通ルール: data[0]!=0x41 または data[1]!=要求PID または dlc不足の場合は false を返す
 // （data は can.cpp 側で ISO-TP PCI バイトを剥がし済み。data[2]以降がA,B,C...のペイロード）
