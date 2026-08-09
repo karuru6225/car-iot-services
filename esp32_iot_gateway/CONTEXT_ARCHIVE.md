@@ -304,3 +304,19 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `OBDReading`・`ObdBlePacket`の約55フィールド（`speed_kmh`、`map_kpa`、`sec_o2_trim_lt_pct`等）が全て`snake_case`で、ルート`CLAUDE.md`の「変数名: camelCase」規約に反していた。
 
 **対応**: `test/test_domain_obd/test_obd.cpp`を先にcamelCase名（`speedKmh`等）へ書き換えてビルド失敗（red）を確認してから、`domain/obd.h`・`domain/obd.cpp`・`service/obdpoll.cpp`の全フィールド参照を機械的にリネームした（sedによる一括置換＋UTF-8直後で`\b`が効かなかったコメント数箇所を手動修正）。`device/ble_peripheral.cpp`は`ObdBlePacket`をopaqueな構造体として`memcpy`するだけでフィールド名を参照していなかったため変更不要だった。`OBD.md`・`CAN_REFERENCE.md`の構造体転記箇所も合わせて更新し、ついでに`OBD.md`に残っていた「obdpoll.cpp で計算」という古いコメント（`obdComputeDerived()`切り出し前の記述）も修正した。native domainテスト49件・デフォルトenvビルドとも成功。
+
+### コードレビュー対応: CAN/OBD実装（device/can.{h,cpp}, domain/obd.{h,cpp}, service/obdpoll.{h,cpp}） **対応済み**
+
+第三者視点でのコードレビュー（2026-08-09時点、計1,113行）を実施し、9件の指摘に対応した。総評は「device/domain/serviceの層分離が守られており、直ちに壊れるバグは無い」というもので、以下は堅牢性・精度・規格準拠面の改善。
+
+1. **ピンコメント・文書が実装と矛盾**: `can.cpp`/`can.h`/`OBD.md`のCAN_RX_PIN/CAN_TX_PINのGPIO番号コメントが実装（TX=GPIO4=gu00Pin, RX=GPIO5=gu01Pin）と逆だったため修正。実車で動作している以上コードが正であり、コメント・文書側の誤りだった。
+2. **SF/FF長の検証不足による範囲外read**: ISO-TP Single FrameのPCI下位ニブルは0-15を取りうるが正当な長さは1-7のみ。壊れたフレームで15等が来るとrx.data（8バイト配列）の範囲外を読みうる不具合を修正。First Frameのtotal lenも8バイト未満（規格上SFで送られるはず）を異常値として弾くようにした。
+3. **CFの送信元IDをFF送信元に固定**: 機能アドレッシング（`0x18DB33F1`）はブロードキャストのため複数ECUが応答しうる。First Frame受信時の`rx.identifier`をラッチし、Consecutive Frameの送信元一致を要求するようにした（Mode 22でTCU等の別ECU応答が混入する前提工事）。
+4. **部分失敗時にゼロが正値と区別不能**: 5リクエスト中1グループでもタイムアウトすると該当PID群が0初期値のまま下流（ログ・BLE）に流れ、本物の0と区別できなかった。`OBDReading`/`ObdBlePacket`に`validMask`（`kPids[]`配列順のPIDごとデコード成否ビットマスク）を追加。`ObdBlePacket`は末尾4バイト追加で91→95バイトになったため、mobile側`ObdReading.fromBytes()`のオフセットも追従させた。
+5. **否定応答(0x7F)の非認識**: `canReceiveObdResponse()`の戻り値を`bool`から`ObdRecvResult`（`Ok`/`Timeout`/`NegativeResponse`/`Error`）に変更し、`7F [SID] [NRC]`受信時にNRCを呼び出し側へ返せるようにした（Mode 22 DIDスキャンで`7F 22 31`/`7F 22 78`の識別が必須になるための前提工事）。
+6. **燃費推算にλ未反映**: `fuelRateLph`計算がλ=1固定の仮定だったが、既に取得している`commandedAfr`（=λ）を分母に反映し、暖機増量中（λ<1）の過小評価を補正した。減速フューエルカット考慮（レビュー内の修正案2）は判定ヒューリスティックが実車未検証のため見送り。
+7. **millis()比較のオーバーフロー作法**: 直接比較（`millis() < deadline`等）は約49.7日でラップした際に誤動作するため、減算イディオム（`(int32_t)(millis()-deadline)`）へ変更。
+8. **バッファ超過時にFC overflow未送信**: 応答長がバッファ上限を超えた際に黙って打ち切ると、ECUがN_Bsタイムアウト（規格上1秒）まで送信状態を保持し続ける。`sendFlowControl()`にflowStatus引数を追加し、FS=2（overflow）を送ってECUに即座の打ち切りを通知できるようにした。
+9. **その他**: 死にコード（`can.cpp`外から呼ばれていなかった単発版`canSendObdRequest()`）を削除。`obdParseMultiResponse()`が未知PIDで打ち切る際にログを追加した。
+
+**対象外とした指摘**: フューエルカット判定・`boost_kpa`のint16_t化検討はレビュー内でも「任意」「将来実装するなら検討」とされていた項目で、実車未検証のため今回は見送り。
