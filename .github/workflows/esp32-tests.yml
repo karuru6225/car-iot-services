@@ -38,3 +38,30 @@ jobs:
             -w /work \
             esp32-domain-test:ci \
             pio test -e native
+
+  firmware-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [esp32-s3-devkitc-1-v1-release, esp32-s3-devkitc-1-v2-release]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: PlatformIO キャッシュ
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            esp32_iot_gateway/.pio/libdeps
+          key: pio-${{ hashFiles('esp32_iot_gateway/platformio.ini') }}-${{ matrix.env }}
+
+      - name: PlatformIO インストール
+        run: pip install platformio
+
+      - name: 実機ファームウェアビルド確認（${{ matrix.env }}）
+        run: pio run -e ${{ matrix.env }}
+        working-directory: esp32_iot_gateway
