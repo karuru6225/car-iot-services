@@ -226,3 +226,15 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `setup()`内の`adsInit()`/`ina228.init()`/`canInit()`はいずれも初期化失敗を伝えるため`bool`を返す設計だが、戻り値を誰も確認していなかった。I2C接続不良等で初期化に失敗しても異常を検知する手段がどこにもなかった。
 
 **対応**: 各初期化の戻り値を見て失敗時に`logger.println()`で警告ログを出すようにした（`logger.println()`はSPIFFSログにも永続化されるため事後調査可能）。telemetryペイロードへの「センサー異常」フラグ追加やOLED警告表示は見送り（現状のログ出力で検知は可能なため）。
+
+### ~~TODO: jobs.cppがacceptedトピックを厳密一致で判定していない~~ **実装済み**
+
+`jobsGetNext()`（`service/jobs.cpp`）は`rejected`トピック文字列を生成するが使わず、`strstr(recvTopic, "rejected")`が偽であれば無条件にacceptedレスポンスとして処理していた。`shadow.cpp`の`shadowPollDelta()`が`strcmp`で厳密一致を取っているのと対照的だった。
+
+**対応**: `rejected`トピックとの一致を`strcmp`に変更し、さらに`accepted`トピックも生成して`strcmp`で厳密一致を取ってから処理するようにした。想定外のトピックはログを出して無視する。
+
+### ~~TODO: ota.cpp のバージョン一致判定が前方一致になっている~~ **実装済み**
+
+`Ota::handleJob()`の同一バージョンスキップ判定が`strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0`で、`version`が`FIRMWARE_VERSION`の前方一致であれば真になっていた。`FIRMWARE_VERSION`は`"<base>+<githash>"`形式なので、短いversion文字列がたまたま前方一致すると誤って「同一バージョン」と判定されOTAがスキップされる可能性があった。
+
+**対応**: `isSameFirmwareVersion()`ヘルパーを追加し、`FIRMWARE_VERSION`の`+`より前の部分（base部分）と`version`をサイズ込みで完全一致させるようにした。

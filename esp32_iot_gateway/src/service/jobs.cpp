@@ -43,9 +43,17 @@ bool jobsGetNext(JobInfo &out)
 
   char rejected[128];
   topicRejected(rejected, sizeof(rejected));
-  if (strstr(recvTopic, "rejected"))
+  if (strcmp(recvTopic, rejected) == 0)
   {
     logger.println("[JOBS] リクエスト拒否");
+    return false;
+  }
+
+  char accepted[128];
+  topicAccepted(accepted, sizeof(accepted));
+  if (strcmp(recvTopic, accepted) != 0)
+  {
+    logger.printf("[JOBS] 想定外のトピック: %s\n", recvTopic);
     return false;
   }
 

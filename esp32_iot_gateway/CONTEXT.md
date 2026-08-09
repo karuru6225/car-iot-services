@@ -755,18 +755,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
 
-### TODO: jobs.cppがacceptedトピックを厳密一致で判定していない（未着手）
-
-`jobsGetNext()`（[jobs.cpp:29-77](esp32_iot_gateway/src/service/jobs.cpp#L29-L77)）は`rejected`トピック文字列を生成する（[jobs.cpp:45](esp32_iot_gateway/src/service/jobs.cpp#L45)）が使わず、`strstr(recvTopic, "rejected")`が偽であれば無条件にacceptedレスポンスとして処理する。`shadow.cpp`の`shadowPollDelta()`が`strcmp(recvTopic, expected) != 0`で厳密一致を取っているのと対照的。現状`jobsGetNext()`は起動時1回しか呼ばれないため実害は限定的だが、将来ポーリング頻度を上げると別トピックのメッセージを誤ってJobsレスポンスとして消費しうる。
-
-**実装方針（案）**: `shadow.cpp`と同様、`topicAccepted()`を生成して`strcmp`で厳密一致を取ってから処理する。
-
-### TODO: ota.cpp のバージョン一致判定が前方一致になっている（未着手）
-
-`Ota::handleJob()`の同一バージョンスキップ判定（[ota.cpp:321](esp32_iot_gateway/src/service/ota.cpp#L321)）が`strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0`で、`version`が`FIRMWARE_VERSION`の前方一致であれば真になる。`FIRMWARE_VERSION`は`"<base>+<githash>"`形式なので、短いversion文字列がたまたま前方一致すると誤って「同一バージョン」と判定されOTAがスキップされる可能性がある。
-
-**実装方針（案）**: `+`区切りの前半（`FIRMWARE_VERSION_BASE`相当）同士を`strcmp`で完全一致させる。
-
 ### TODO: gzLog()がログ永続化をスキップしている（未着手）
 
 `gzLog()`（[ota.cpp:22-30](esp32_iot_gateway/src/service/ota.cpp#L22-L30)）は`Logger::printf`（[logger.cpp:23-32](esp32_iot_gateway/src/service/logger.cpp#L23-L32)）と同じ`vsnprintf`パターンを再実装しているが、最後に`logger.print(buf)`を呼んでおり、これは`logStorageWrite()`を呼ばずSerial出力のみで終わる。OTAのgz解凍時に出る`[OTA] gz...`系のログ行だけがSPIFFS上のデバッグログファイルに残らず、シリアルモニタを見ていないと事後調査できない。
