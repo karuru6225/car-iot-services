@@ -31,7 +31,7 @@ src/
 | ファイル | 役割 |
 |----------|------|
 | `lte.h/.cpp` | SIM7080G ATコマンド制御（GPRS接続, 証明書アップロード, 電源管理, ファイル読み取り・削除） |
-| `ble_scan.h/.cpp` | BLE スキャナー（SwitchBot Manufacturer Data 受信、FreeRTOS キュー経由で domain に渡す） |
+| `ble_scan.h/.cpp` | BLE スキャナー（SwitchBot Manufacturer Data 受信、FreeRTOS キュー経由で domain に渡す）。`start()`はブロッキング版（menu.cppのBLE登録画面用）、`startAsync()`/`isScanning()`/`stop()`は非同期版（monitor.cpp/main.cppが使用） |
 | `ble_peripheral.h/.cpp` | `BlePeripheral` クラス。GATT Peripheral（計測値 Notify + 設定 R/W）、Passkey ペアリング |
 | `ads.h/.cpp` | ADS1115 I2Cドライバ（`adsReadDiffMain()` = AIN0/AIN1 = メイン、`adsReadDiffSub()` = AIN2/AIN3 = サブ） |
 | `ina228.h/.cpp` | `Ina228` クラス。INA228 I2Cドライバ（電流・電力・温度・積算電荷量の読み取り、電荷リセット） |
@@ -72,7 +72,7 @@ device / service を include してはいけない。標準ライブラリのみ
 | `ota.h/.cpp` | OTA 固有ロジック（ファームウェア適用・ロールバック管理・前回結果報告）。Jobs プロトコルは jobs.h に委譲 |
 | `command.h/.cpp` | Jobs コマンドのディスパッチと実行（`ah_reset`、`charge_main_batt`） |
 | `shadow.h/.cpp` | Shadow config publish・delta subscribe・設定変更の適用 |
-| `monitor.h/.cpp` | 計測サイクル（`measure()` / `publish()`）・`MeasureResult` 定義 |
+| `monitor.h/.cpp` | 計測サイクル（`measure()`＝非同期BLEスキャン開始＋アナログ計測 / `collectBle()`＝スキャン完了時のみ収集 / `publishBattery()` / `publishBle()`）・`MeasureResult` 定義 |
 | `menu.h/.cpp` | OLED + 2ボタン設定メニュー、`enterMenuMode()` → `OperationMode` を返す |
 | `menu_util.h/.cpp` | メニュー用パスユーティリティ（pathPush / pathPop / pathTitle 等） |
 | `obdpoll.h/.cpp` | `obdPoll()`。全29PIDを6PIDずつ計5リクエストにバッチ化して問い合わせ（`canInit()`済み前提）。CONTINUOUSモードの1秒ティックから呼ばれる |

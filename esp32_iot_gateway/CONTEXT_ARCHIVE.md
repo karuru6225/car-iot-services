@@ -288,3 +288,11 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 **対応**: メッセージ表示専用の`MenuState::MESSAGE`を追加し、`beginMessage(title, body, durationMs, next)`でOLED表示・経過時間計測を開始、`tickMessage()`で`millis()`経過を見て`next`状態へ遷移させるようにした。`tickCharging()`側の3箇所は`delay()`呼び出しをこの`beginMessage()`への置き換えのみで対応でき、メッセージ表示中も`enterMenuMode()`の50msポーリングループ（`button.read()`含む）が回り続けるようになった。
 
 同じ「`oledShowMessage()`→`delay()`→次状態へ遷移」の形をしていた他4箇所（`tickBleScanResult()`のBLE登録完了、`tickBleRemoveConfirm()`の削除完了、`tickAhOffset()`/`tickChgTimeout()`の保存完了）も`beginMessage()`に置き換えた。`ConfirmDef.onConfirm`を`void(*)()`から`MenuState(*)()`に変更し、`doAhReset()`も`beginMessage()`を返す形にした。`doNvsClear()`のみ直後に`esp_restart()`で戻らないため`delay(1500)`のまま残した（再起動直前でボタン監視が止まっても実害がないため対象外とした）。`beginMessage()`/`tickMessage()`とその状態変数は全`tick*()`関数から参照できるよう`MenuState`列挙体の直後（`ConfirmDef`より前）に定義位置を移した。
+
+### ~~TODO: CONTINUOUSモード中、5分境界ごとにOBDポーリングが10秒以上途切れる問題~~ **実装済み・実機未検証**
+
+実車走行データ（Athena `obd_data`、2026-08-08）分析で、CONTINUOUSモードの5分境界直後だけOBDポーリング間隔が14〜19秒に伸びる欠損が判明。原因は`service/monitor.cpp`の`measure()`が呼ぶ`bleScanner.start(SCAN_TIME)`（`SCAN_TIME=10`）が`NimBLEScan::start(uint32_t, bool)`（ブロッキング同期版、NimBLE-Arduino v1.4.0のソースで確認）を使っており、スキャン中`continuousLoopCore()`の1秒ティックOBDポーリングが完全に止まっていたこと。
+
+**対応**: `device/ble_scan.h/.cpp`に非同期版`startAsync()`・`isScanning()`・`stop()`を追加（既存の`start()`はブロッキングのまま残し、`service/menu.cpp`のBLE登録画面はそちらを使い続ける）。`service/monitor.cpp`の`publish()`を`publishBattery()`/`publishBle()`に分割し、`collectBle()`（スキャン完了時のみキュー収集、未完了ならno-op）を追加。`main.cpp`に`g_blePending`フラグと`pollBleCollect()`を追加し、`continuousLoopCore()`の既存1秒ティックループ内でBLEスキャン完了を非ブロッキングに拾うようにした。`enterDeepSleepMode()`には`queue.save()`直前に有界待機（`SCAN_TIME+3`秒でタイムアウトし`bleScanner.stop()`で強制打ち切り）を追加し、DEEP_SLEEPモードが「スリープ前にそのサイクルのBLE結果をqueueに保存する」という既存の保証を崩さないようにした。
+
+**制約**: この修正はdevice/service/main.cppにまたがり、native Unityテストの対象外（ハードウェア/FreeRTOS依存のため）。`pio run`のコンパイル確認と既存native domainテスト49件のパスは確認済みだが、実機での5分境界OBD欠損解消・DEEP_SLEEPモードのBLEデータ保存継続は未検証。次回実機ログ（Athena `obd_data`の5分境界間隔）で効果を確認すること。

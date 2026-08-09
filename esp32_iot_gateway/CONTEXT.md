@@ -743,18 +743,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 
 **次にできること**: 次回developビルドで同様の事象が起きたら、`pio device monitor`でログを見ながら同じdevelopビルドのまま複数回Restartして再現するか確認する。再現すれば develop 固有（`-Os`有無等のビルド差）を疑う根拠になる。
 
-### TODO: CONTINUOUSモード中、5分境界ごとにOBDポーリングが10秒以上途切れる問題（未着手）
-
-2026-08-08 10:45〜13:45 JSTの実走行データ（Athena `obd_data`）を分析したところ、`obd_ts`の間隔が通常2〜3秒のところ、毎回ちょうど5分境界（`xx:x0:0x`/`xx:x5:0x`）の直後だけ14〜19秒に伸びる欠損が計6回見つかった（走行中・速度変動中でも発生、コールドソーク明けの再始動直後にも無関係に発生）。CANデコード失敗や`coolant_c=0`汚染は伴わず、単にその区間だけサンプルが取れていない。
-
-原因は`loop()`（[main.cpp:361-402](esp32_iot_gateway/src/main.cpp#L361-L402)）先頭の`measure()`（[monitor.cpp:13-22](esp32_iot_gateway/src/service/monitor.cpp#L13-L22)）が呼ぶ`bleScanner.start(SCAN_TIME)`（`SCAN_TIME=10`、[config.h:37](esp32_iot_gateway/src/config.h#L37)）。NimBLEの同期スキャン呼び出し（[ble_scan.cpp:53-56](esp32_iot_gateway/src/device/ble_scan.cpp#L53-L56)）で10秒ブロックし、そこにADS/INA228読み取りや`shadowPollDelta()`のネットワーク往復が加わって14〜19秒になっていると見られる。CONTINUOUSモードは`continuousLoopCore()`が次の5分境界まで内部whileループに留まり続ける設計（[main.cpp:274-343](esp32_iot_gateway/src/main.cpp#L274-L343)）のため、`loop()`自体も5分境界でしか再実行されず、`measure()`のBLEスキャンがちょうどその瞬間にOBDポーリング（`obdTick()`→`obdPoll()`）を含む全処理を止めてしまう。
-
-**実装方針（案）**:
-
-- BLEスキャンをブロッキングでなくする（`_scan->start(seconds, false)`のコールバック版に変更し、スキャン中も`continuousLoopCore()`のループへ制御を返せるようにする）
-- または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
-- ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
-
 ### TODO: SPIFFSログ永続化が既知の未解決問題により無効化中（原因未特定・対応は無効化のみ）
 
 `logStorageWrite()`（[log_storage.cpp:98](esp32_iot_gateway/src/service/log_storage.cpp#L98)）の`SPIFFS.open(s_currentPath, FILE_APPEND)`が、`logStorageInit()`で一度`FILE_WRITE`モードで作成・closeした直後から毎回失敗し続ける事象を実機で確認（2026-08-09）。`[E][vfs_api.cpp:301] VFSFileImpl(): fopen(...) failed`がSerialに大量出力される。

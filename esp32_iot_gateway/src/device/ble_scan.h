@@ -13,7 +13,10 @@ public:
   std::atomic<bool> registrationMode{false}; // true のとき bleTargets フィルタをスキップ
 
   void setup();
-  void start(int seconds);
+  void start(int seconds);      // ブロッキング版。menu.cppのBLE登録画面が使用
+  void startAsync(int seconds); // 非同期版。即座に戻る。完了確認はisScanning()をポーリングする
+  bool isScanning();
+  void stop(); // 強制停止（タイムアウト時のフェイルセーフ）
   void clearResults();
   void deinit();
 
