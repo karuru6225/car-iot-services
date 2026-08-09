@@ -387,6 +387,8 @@ void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 
   out.iatC = r.iatC;
   out.iat2C = r.iat2C;
+
+  out.validMask = r.validMask;
 }
 
 void obdComputeDerived(OBDReading &r)

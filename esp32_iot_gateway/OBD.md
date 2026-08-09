@@ -383,6 +383,9 @@ struct OBDReading {
 
   // 末尾追加分（1PID・2フィールド。ObdBlePacketとのオフセット互換のため末尾に配置）
   int16_t  iatC, iat2C;                               // 0x68（IC前後どちらか未確定）
+
+  // kPids[]（service/obdpoll.cpp）配列順のPIDごとのデコード成否ビットマスク
+  uint32_t validMask;
 };
 ```
 
@@ -479,7 +482,8 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 `OBDReading`をそのまま`memcpy`するとコンパイラのパディングに依存してしまうため、送信専用の
 パディングなし構造体に変換してから送る（`obdReadingToBlePacket()`、`domain/obd.cpp`）。
 フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`に固定。
-合計91バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/models/obd_reading.dart`の
+末尾に`validMask`（uint32_t、`kPids[]`配列順のPIDごとのデコード成否ビットマスク）を持つ。
+合計95バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/models/obd_reading.dart`の
 `ObdReading.fromBytes()`のオフセットと完全一致させること）。
 
 ### チャンクフォーマット

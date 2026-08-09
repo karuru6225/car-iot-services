@@ -45,6 +45,8 @@ const PidDecoder kPids[] = {
     {0x68, obdDecodeChargeAirTemp},
 };
 const int kPidCount = sizeof(kPids) / sizeof(kPids[0]);
+// OBDReading::validMask（uint32_t）はkPidsの配列順にビット割当するため32PIDが上限
+static_assert(sizeof(kPids) / sizeof(kPids[0]) <= 32, "kPidsが32件を超えるとvalidMask(uint32_t)に収まらない");
 
 // 1リクエストにまとめるPID数の上限。SFリクエストのPCI長（1+N）が7バイトに収まる上限（N<=6）。
 const uint8_t kMaxPidsPerRequest = 6;
@@ -95,6 +97,7 @@ void handleSegment(uint8_t pid, const uint8_t *segData, uint8_t len, void *ctxPt
   if (dec->decode(tmp, 2 + len, *ctx->r))
   {
     ctx->r->valid = true;
+    ctx->r->validMask |= (1u << (uint32_t)(dec - kPids));
     ctx->okCount++;
   }
   else

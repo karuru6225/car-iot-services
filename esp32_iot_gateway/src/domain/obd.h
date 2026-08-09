@@ -46,6 +46,11 @@ struct OBDReading
   // 末尾追加（ObdBlePacketとのオフセット互換のため既存フィールドより後ろに置く）
   int16_t  iatC;  // 0x68 Sensor1: B-40 [°C]（インタークーラー前後どちらか未確定）
   int16_t  iat2C; // 0x68 Sensor2: C-40 [°C]（同上）
+
+  // kPids[]（service/obdpoll.cpp）の配列順に対応するビットマスク。ビットiが立っていれば
+  // kPids[i]のPIDはデコード成功。valid=trueでも一部グループがタイムアウトした場合は
+  // 該当PID分のフィールドが0初期値のまま残るため、本物の0とタイムアウトを区別するのに使う。
+  uint32_t validMask;
 };
 
 // BLE Notify 送信用（パディングなしで詰めた固定レイアウト）。
@@ -93,6 +98,8 @@ struct ObdBlePacket
 
   int16_t  iatC;
   int16_t  iat2C;
+
+  uint32_t validMask;
 };
 #pragma pack(pop)
 
