@@ -54,7 +54,7 @@ include パスは `src/` 基準で書く:
 
 ## Claude への指示の解釈
 
-- **「todo を更新/追記して」** → `esp32_iot_gateway/CONTEXT.md` の `### TODO:` セクション（プロジェクトバックログ）を編集すること。会話内の内部タスクリストだけ更新して終わりにしない。
+- **「todo を更新/追記して」** → `esp32_iot_gateway/CONTEXT.md` の `### TODO:` セクション（プロジェクトバックログ）を編集すること。会話内の内部タスクリストだけ更新して終わりにしない。TODOが実装済み/対応済みになったら `esp32_iot_gateway/CONTEXT_ARCHIVE.md` へ移し、CONTEXT.md側は未完了のものだけを保つ。
 
 ## 開発フロー上の制約
 
@@ -82,6 +82,7 @@ AWS CLI の `--` オプションのパースエラーや presigned URL の生成
 - `ARCHITECTURE.md` — システム全体構成図（デバイス＋クラウド）・クラウドインフラ一覧
 - `esp32_iot_gateway/ARCHITECTURE.md` — レイヤー構成・依存ルール・命名規則
 - `esp32_iot_gateway/CONTEXT.md` — ハードウェア詳細・GPIO ピン・実装状態・設計ノート
+- `esp32_iot_gateway/CONTEXT_ARCHIVE.md` — CONTEXT.mdから移動した実装済み/対応済みTODOのアーカイブ
 - `esp32_iot_gateway/OTA.md` — OTA 仕様
 - `esp32_iot_gateway/TESTING.md` — domain層のnativeユニットテスト（Docker実行方法・スタブライブラリの追加方法）
 - `esp32_iot_gateway/FLEET_PROVISIONING.md` — キッティング省略のための Fleet Provisioning 移行検討（未実装）
