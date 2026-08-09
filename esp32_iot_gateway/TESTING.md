@@ -21,7 +21,10 @@ docker compose -f docker-compose.test.yml run --rm test
 
 ## CI
 
-`esp32_iot_gateway/**` に変更があるPRで [.github/workflows/esp32-tests.yml](../.github/workflows/esp32-tests.yml) が自動実行される。失敗するとPRのチェックがREDになる。
+`esp32_iot_gateway/src/**`・`test/**`・`platformio.ini`・`Dockerfile.test`・`docker-compose.test.yml` に変更があるPRで [.github/workflows/esp32-tests.yml](../.github/workflows/esp32-tests.yml) が自動実行される（`*.md`等ドキュメントだけの変更では走らない）。失敗するとPRのチェックがREDになる。2つのジョブが並列で動く:
+
+- **native-test**: 本ドキュメントで説明しているdomain層のnativeユニットテスト
+- **firmware-build**: 実機向けファームウェアが実際にビルドできるかの確認（`esp32-s3-devkitc-1-v1-release`/`v2-release`を`strategy.matrix`で並列ビルド）。native testは`domain/`層しかカバーできないため、`device/`/`service/`/`main.cpp`のコンパイルエラーはこちらでしか検知できない。releaseのみ対象で、developはreleaseと`-D DEBUG_MODE`程度の差しかないため対象外にしている
 
 GitHub-hosted runnerは毎回まっさらな環境なので、ローカルのDockerイメージキャッシュは引き継がれない。そのため `docker/build-push-action` の `cache-from`/`cache-to: type=gha` でDockerレイヤーをGitHub Actions Cacheに保存・再利用し、`Dockerfile.test`のビルド（`pio pkg install -e native`を含む）が変更されていない限りCI側でも再ダウンロードが起きないようにしている。テストの実行自体は `docker compose` ではなく、ビルド済みイメージに対する `docker run` で行っている（`cache-from type=gha` はbuildx経由のビルドでのみ機能し、`docker compose build` からは使えないため）。
 
