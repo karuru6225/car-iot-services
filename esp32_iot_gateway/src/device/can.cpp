@@ -289,6 +289,11 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
     if (pciType == ISO_TP_PCI_SF)
     {
       uint8_t len = rx.data[0] & 0x0F;
+      if (len == 0 || len > 7)
+      {
+        logger.printf("[CAN] ISO-TP: 不正なSF長%u（1-7の範囲外）\n", len);
+        return false;
+      }
       if (len > maxLen)
       {
         logger.printf("[CAN] ISO-TP: SF長%uがバッファ上限%uを超過\n", len, maxLen);
@@ -308,6 +313,11 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
         continue;
       }
       uint16_t totalLen = ((uint16_t)(rx.data[0] & 0x0F) << 8) | rx.data[1];
+      if (totalLen < 8)
+      {
+        logger.printf("[CAN] ISO-TP: 不正なFF長%u（8バイト未満はSFで送られるはず）\n", totalLen);
+        return false;
+      }
       if (totalLen > maxLen)
       {
         logger.printf("[CAN] ISO-TP: 応答長%uがバッファ上限%uを超過\n", totalLen, maxLen);
