@@ -157,6 +157,7 @@ bool Ota::apply(const char *url, const char *jobId)
   if (!partition)
   {
     logger.println("[OTA] 更新パーティションなし");
+    jobsReport(jobId, "FAILED", "no update partition");
     return false;
   }
   logger.printf("[OTA] 書き込み先: %s\n", partition->label);
@@ -174,6 +175,7 @@ bool Ota::apply(const char *url, const char *jobId)
   {
     logger.println("[OTA] ダウンロード失敗");
     oledPrint("OTA DL failed");
+    jobsReport(jobId, "FAILED", "download failed");
     return false;
   }
   logger.printf("[OTA] Phase1(DL): %u ms  %d bytes\n", millis() - t0, dlSize);
@@ -183,6 +185,7 @@ bool Ota::apply(const char *url, const char *jobId)
   if (err != ESP_OK)
   {
     logger.printf("[OTA] begin 失敗: 0x%x\n", err);
+    jobsReport(jobId, "FAILED", "ota begin failed");
     return false;
   }
 
@@ -202,6 +205,7 @@ bool Ota::apply(const char *url, const char *jobId)
     esp_ota_abort(handle);
     oledPrint("OTA write failed");
     lte.deleteFile(tmpFile);
+    jobsReport(jobId, "FAILED", "write failed");
     return false;
   }
 
@@ -210,6 +214,7 @@ bool Ota::apply(const char *url, const char *jobId)
   {
     logger.printf("[OTA] 検証失敗: 0x%x\n", err);
     oledPrint("OTA verify failed");
+    jobsReport(jobId, "FAILED", "verify failed");
     return false;
   }
 
@@ -218,6 +223,7 @@ bool Ota::apply(const char *url, const char *jobId)
   {
     logger.printf("[OTA] boot partition 設定失敗: 0x%x\n", err);
     oledPrint("OTA boot set fail");
+    jobsReport(jobId, "FAILED", "boot partition set failed");
     return false;
   }
 
