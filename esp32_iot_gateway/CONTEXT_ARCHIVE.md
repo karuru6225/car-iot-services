@@ -1,6 +1,6 @@
 # 完了TODOアーカイブ
 
-`CONTEXT.md` の「作業中・引き継ぎ事項」セクションから、実装済み/対応済みになったTODOをここに移した。現在進行中のTODOは `CONTEXT.md` を参照。
+`CONTEXT.md` の「作業中・引き継ぎ事項」セクションから、実装済み/対応済みになったTODO、および対応しない方針に決めたTODOをここに移した。現在進行中のTODOは `CONTEXT.md` を参照。
 
 ### ~~TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）~~ **設計変更により対応済み**
 
@@ -202,3 +202,9 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `Ota::apply()`（[ota.cpp:154-232](esp32_iot_gateway/src/service/ota.cpp#L154-L232)）の全ての失敗パス（ダウンロード失敗・`esp_ota_begin`失敗・書き込み失敗・`esp_ota_end`失敗・boot partition設定失敗）が`false`を返すだけで`jobsReport(job.id, "FAILED", ...)`を呼ばない。`handleJob()`は既に`IN_PROGRESS`を送信済み（[ota.cpp:333](esp32_iot_gateway/src/service/ota.cpp#L333)）だが、失敗時に`FAILED`が送られないため、AWS側でJobが`IN_PROGRESS`のまま永久に残り続ける。呼び出し元の`main.cpp`も`ota.handleJob(job)`の戻り値を見ていない。
 
 **実装方針（案）**: `apply()`の各失敗パスに`jobsReport(jobId, "FAILED", <理由>)`を追加する。`apply()`内で`jobId`を保持しているので、失敗理由（ダウンロード失敗/書き込み失敗/検証失敗等）を`statusDetails.reason`に含めれば運用側の切り分けにも使える。
+
+### ~~TODO: Shadowのoverride_next_modeが起動直後しか反映されない~~ **対応しない方針**
+
+`getShadowOverrideMode()`は`setup()`内で1回だけ呼ばれる（`main.cpp`）。一方`shadowPollDelta()`は`continuousLoopCore()`の1秒ティックや`enterDeepSleepMode()`、`loop()`本体でも呼ばれ、そこで`override_next_mode`のdeltaを受け取ると`s_overridePending`をセットしAWSへACK（`shadowPublishConfig(true)`）まで返してしまう（`shadow.cpp`）が、`s_overridePending`を実際にモードへ反映する`getShadowOverrideMode()`の呼び出しは起動時の1回しかないため、稼働中に送ったoverride_next_modeは「reportedは更新されたのに実際のモードは変わらない」という状態になる。
+
+**判断**: 現状の挙動（起動直後のみ反映）のまま許容することにした。`override_next_mode`は元々「次回起動時に1サイクルだけ」という起動タイミング前提の機能（`ONE_SHOT_CONTINUOUS`）であり、稼働中に送っても即座に反映される必要性は薄いと判断。

@@ -755,12 +755,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
 
-### TODO: Shadowのoverride_next_modeが起動直後しか反映されない（未着手）
-
-`getShadowOverrideMode()`は`setup()`内で1回だけ呼ばれる（[main.cpp:151](esp32_iot_gateway/src/main.cpp#L151)）。一方`shadowPollDelta()`は`continuousLoopCore()`の1秒ティック（[main.cpp:337付近](esp32_iot_gateway/src/main.cpp)）や`enterDeepSleepMode()`、`loop()`本体でも呼ばれ、そこで`override_next_mode`のdeltaを受け取ると`s_overridePending`をセットしAWSへACK（`shadowPublishConfig(true)`）まで返してしまう（[shadow.cpp:130-147](esp32_iot_gateway/src/service/shadow.cpp#L130-L147)）が、`s_overridePending`を実際にモードへ反映する`getShadowOverrideMode()`の呼び出しは起動時の1回しかないため、稼働中に送ったoverride_next_modeは「reportedは更新されたのに実際のモードは変わらない」という状態になる。
-
-**実装方針（案）**: `continuousLoopCore()`の1秒ティックや`loop()`でも`getShadowOverrideMode()`を呼び、返り値があれば`setOperationMode()`する。`continuousLoopCore()`内であれば既存の`g_mode == hooks.selfMode`ループガード（[main.cpp:302](esp32_iot_gateway/src/main.cpp#L302)）が変更を即座に反映してくれる。
-
 ### TODO: lte.cpp fileReadChunk()がモデム応答サイズをバッファ容量でクランプしない（未着手）
 
 `Lte::fileReadChunk()`（[lte.cpp:161-226](esp32_iot_gateway/src/device/lte.cpp#L161-L226)）はSIM7080Gの`+CFSRFILE`応答から`actual`（実際のサイズ）を読み取るが、呼び出し側バッファの容量`maxLen`と突き合わせずに、先行データのコピーループ・`readBytes()`双方でその`actual`バイト分をそのまま書き込む。モデムが誤応答（`actual > maxLen`）を返した場合、呼び出し元の`writeGzToOta()`（`service/ota.cpp`）が使う固定4096バイトバッファ`s_gz.buf`を越えて書き込む可能性がある。
