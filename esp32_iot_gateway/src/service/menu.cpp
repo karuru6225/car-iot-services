@@ -29,10 +29,35 @@ enum class MenuState
   AH_OFFSET,
   CHG_TIMEOUT,
   CHARGING,
+  MESSAGE,     // 一時メッセージ表示（beginMessage()参照）
   RESTART,
   BLE_PHONE,
   DONE_CONTINUOUS,
 };
+
+// ---- 一時メッセージ表示 ----
+// delay()で表示時間中ボタン監視を止めるのではなく、millis()で経過時間を見ながら
+// MESSAGE状態としてenterMenuMode()の待機ループ（button.read()呼び出し含む）に留まる
+
+static unsigned long s_msgStartMs = 0;
+static unsigned long s_msgDurationMs = 0;
+static MenuState s_msgNext = MenuState::MENU_NAV;
+
+static MenuState beginMessage(const char *title, const char *body, unsigned long durationMs, MenuState next)
+{
+  oledShowMessage(title, body);
+  s_msgDurationMs = durationMs;
+  s_msgNext = next;
+  s_msgStartMs = millis();
+  return MenuState::MESSAGE;
+}
+
+static MenuState tickMessage(ButtonEvent)
+{
+  if (millis() - s_msgStartMs >= s_msgDurationMs)
+    return s_msgNext;
+  return MenuState::MESSAGE;
+}
 
 // ---- 確認ダイアログ定義 ----
 
@@ -40,22 +65,22 @@ struct ConfirmDef
 {
   const char *title;
   const char *message;
-  void (*onConfirm)();
+  MenuState (*onConfirm)();
 };
 
-static void doNvsClear()
+static MenuState doNvsClear()
 {
   clearMenuData();
   oledShowMessage("NVS Cleared", "Restarting...");
-  delay(1500);
+  delay(1500); // 直後にesp_restart()で再起動するため、ボタン監視が止まっても実害はない
   esp_restart();
+  return MenuState::MENU_NAV; // 到達しない（esp_restart()は戻らない）
 }
 
-static void doAhReset()
+static MenuState doAhReset()
 {
   ina228.resetCharge();
-  oledShowMessage("Ah Reset", "Done");
-  delay(1000);
+  return beginMessage("Ah Reset", "Done", 1000, MenuState::MENU_NAV);
 }
 
 // ---- メニュー定義 ----
@@ -237,10 +262,9 @@ static MenuState tickBleScanResult(ButtonEvent ev)
   {
     bleTargets.add(s_scanResults[cursor].addr);
     bleTargets.save();
-    oledShowMessage("Registered!", s_scanResults[cursor].addr);
-    delay(1500);
+    MenuState next = beginMessage("Registered!", s_scanResults[cursor].addr, 1500, MenuState::MENU_NAV);
     cursor = 0;
-    return MenuState::MENU_NAV;
+    return next;
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
@@ -300,14 +324,13 @@ static MenuState tickBleRemoveConfirm(ButtonEvent ev)
   }
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
+    needsInit = true;
     if (cursor == 0)
     {
       bleTargets.remove(bleTargets.data[s_bleRemoveTarget]);
       bleTargets.save();
-      oledShowMessage("Deleted!", nullptr);
-      delay(1000);
+      return beginMessage("Deleted!", "", 1000, MenuState::BLE_REMOVE);
     }
-    needsInit = true;
     return MenuState::BLE_REMOVE;
   }
   else if (ev == ButtonEvent::BTN1_LONG)
@@ -372,8 +395,8 @@ static MenuState tickConfirm(ButtonEvent ev)
   }
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
-    if (cursor == 0) s_confirm.onConfirm();
     needsInit = true;
+    if (cursor == 0) return s_confirm.onConfirm();
     return MenuState::MENU_NAV;
   }
   else if (ev == ButtonEvent::BTN1_LONG)
@@ -405,10 +428,8 @@ static MenuState tickAhOffset(ButtonEvent ev)
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
     setAhOffset(edit);
-    oledShowMessage("Ah Offset", "Saved");
-    delay(1000);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Ah Offset", "Saved", 1000, MenuState::MENU_NAV);
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
@@ -445,10 +466,8 @@ static MenuState tickChgTimeout(ButtonEvent ev)
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
     setChgTimeoutMin(CHG_TIMEOUT_OPTS[editIdx]);
-    oledShowMessage("Chg Timeout", "Saved");
-    delay(1000);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Chg Timeout", "Saved", 1000, MenuState::MENU_NAV);
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
@@ -473,10 +492,8 @@ static MenuState tickCharging(ButtonEvent ev)
     if (vSub <= vMain) {
       char msg[24];
       snprintf(msg, sizeof(msg), "M:%.2fV S:%.2fV", vMain, vSub);
-      oledShowMessage("Cannot charge:", msg);
-      delay(2000);
       needsInit = true;
-      return MenuState::MENU_NAV;
+      return beginMessage("Cannot charge:", msg, 2000, MenuState::MENU_NAV);
     }
     digitalWrite(boardPins().chgOnPin, HIGH);
     timeoutMs  = getChgTimeoutMin() * 60UL * 1000UL;
@@ -490,10 +507,8 @@ static MenuState tickCharging(ButtonEvent ev)
   // タイムアウト
   if (elapsed >= timeoutMs) {
     digitalWrite(boardPins().chgOnPin, LOW);
-    oledShowMessage("Charge done", "");
-    delay(1500);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Charge done", "", 1500, MenuState::MENU_NAV);
   }
 
   // 2秒ごとに電圧を更新
@@ -508,10 +523,8 @@ static MenuState tickCharging(ButtonEvent ev)
   // どのボタンでも終了
   if (ev != ButtonEvent::NONE) {
     digitalWrite(boardPins().chgOnPin, LOW);
-    oledShowMessage("Charge stopped", "");
-    delay(1000);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Charge stopped", "", 1000, MenuState::MENU_NAV);
   }
   return MenuState::CHARGING;
 }
@@ -569,6 +582,7 @@ OperationMode enterMenuMode()
     case MenuState::AH_OFFSET:          next = tickAhOffset(ev);         break;
     case MenuState::CHG_TIMEOUT:        next = tickChgTimeout(ev);       break;
     case MenuState::CHARGING:           next = tickCharging(ev);         break;
+    case MenuState::MESSAGE:            next = tickMessage(ev);          break;
     case MenuState::BLE_PHONE:          next = tickBlePhone(ev);         break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
