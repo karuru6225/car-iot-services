@@ -765,12 +765,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 
 **対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
 
-### TODO: 充電ヒステリシスロジックがmain.cppに直書きされている（domain層へ移すべき・未着手）
-
-`updateChargingState()`（[main.cpp:212](esp32_iot_gateway/src/main.cpp#L212)）は電圧閾値によるヒステリシス判定という、ハードウェア・ネットワーク非依存の純粋ロジックだが、`domain/`ではなくエントリポイントの`main.cpp`に直接書かれている。最後の`digitalWrite()`以外はGPIO/ネットワークに依存しない。
-
-**実装方針（案）**: `domain/charging.h`に`decideCharging(vMain, vSub, isCharging, thresholds) -> bool`のような純粋関数を切り出し、`main.cpp`側は判定結果を受けて`digitalWrite()`するだけにする。単体テスト（`test/test_domain_*`と同じnative環境）も書けるようになる。
-
 ### TODO: domain/obd.hのフィールド名がsnake_case（CLAUDE.md命名規約違反・未着手）
 
 `OBDReading`（[obd.h:6](esp32_iot_gateway/src/domain/obd.h#L6)）・`ObdBlePacket`（[obd.h:55](esp32_iot_gateway/src/domain/obd.h#L55)）の約55フィールド（`speed_kmh`、`map_kpa`、`sec_o2_trim_lt_pct`等）が全て`snake_case`。ルート`CLAUDE.md`の「変数名: camelCase」規約に反する。
