@@ -20,6 +20,10 @@ static const uint8_t ISO_TP_PCI_FF = 0x10; // First Frame
 static const uint8_t ISO_TP_PCI_CF = 0x20; // Consecutive Frame
 static const uint8_t ISO_TP_PCI_FC = 0x30; // Flow Control
 
+// Flow Control の FlowStatus（PCIバイト下位ニブル）
+static const uint8_t ISO_TP_FS_CTS = 0x00;      // Clear To Send
+static const uint8_t ISO_TP_FS_OVERFLOW = 0x02; // Overflow（受信側バッファ不足、送信側は即打ち切り）
+
 // FF受信後、CFが届かない場合に打ち切るまでの間隔
 static const uint32_t ISO_TP_CF_TIMEOUT_MS = 50;
 
@@ -207,18 +211,21 @@ static bool isObdResponseFrame(const twai_message_t &rx)
   return is29bit || is11bit;
 }
 
-// First Frame受信直後にFlow Control（CTS, BS=0, STmin=0固定）を送信する。
+// First Frame受信直後にFlow Controlを送信する（既定はCTS, BS=0, STmin=0固定）。
 // 宛先IDは受信したFFの応答元ID（0x18DAF1xx）の下位バイト＝ECUアドレスから組む。
-static bool sendFlowControl(uint32_t respId)
+// flowStatus=ISO_TP_FS_OVERFLOWを渡すとECUに即座の送信打ち切りを要求できる
+// （バッファ超過でCFを受信できない場合。指定しなければECUはN_Bsタイムアウト＝規格上1秒まで
+// 送信状態を保持し続ける）。
+static bool sendFlowControl(uint32_t respId, uint8_t flowStatus = ISO_TP_FS_CTS)
 {
   uint32_t ecuAddr = respId & 0xFF;
   twai_message_t fc = {};
   fc.identifier = CAN_FC_ID_BASE | (ecuAddr << 8) | CAN_TESTER_ADDR;
   fc.extd = 1;
   fc.data_length_code = 8;
-  fc.data[0] = ISO_TP_PCI_FC; // CTS
-  fc.data[1] = 0x00;          // BlockSize=0（全フレーム連続送信可）
-  fc.data[2] = 0x00;          // STmin=0
+  fc.data[0] = ISO_TP_PCI_FC | (flowStatus & 0x0F);
+  fc.data[1] = 0x00; // BlockSize=0（全フレーム連続送信可）
+  fc.data[2] = 0x00; // STmin=0
   // data[3..7] = 0x00（パディング）
 
   esp_err_t err = twai_transmit(&fc, pdMS_TO_TICKS(10));
@@ -333,6 +340,8 @@ ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeou
       if (totalLen > maxLen)
       {
         logger.printf("[CAN] ISO-TP: 応答長%uがバッファ上限%uを超過\n", totalLen, maxLen);
+        // FS=Overflowを送り、ECUがN_Bsタイムアウト（規格上1秒）を待たず即座に打ち切れるようにする
+        sendFlowControl(rx.identifier, ISO_TP_FS_OVERFLOW);
         return ObdRecvResult::Error;
       }
       memcpy(data, rx.data + 2, 6);
