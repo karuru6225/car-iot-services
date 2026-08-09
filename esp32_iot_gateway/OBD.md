@@ -142,7 +142,7 @@ Honda ECU が variant 共通のビットマスクを返しているが、この�
 | 0x67 | Coolant Temp Alt | B-40 °C (Sensor1) | **0x05 の代替** |
 | 0x68 | Charge Air Cooler Temp | B-40 / C-40 °C (Sensor1/2) | 吸気温。ISO-TPマルチフレーム必須。IC前後どちらがSensor1/2かは未確定 |
 
-燃費推算: `fuel_rate_lph = maf_gs / (14.7 × 0.745) × 3.6`
+燃費推算: `fuelRateLph = mafGs / (14.7 × 0.745) × 3.6`
 
 ---
 
@@ -181,7 +181,7 @@ OBD-II 応答フレームは一切来ない（確認済み）。
 | --- | --- | --- |
 | 0x05 Coolant Temp | 0x67 Sensor1 (B-40°C) | **取得可能・確認済み** |
 | 0x10 MAF | 0x66 MAF Alt ((B×256+C)/32 g/s) | **取得可能・確認済み** |
-| 0x5E Fuel Rate | 0x66 から推算: `maf_gs/(14.7×0.745)×3.6` | **推算で対応** |
+| 0x5E Fuel Rate | 0x66 から推算: `mafGs/(14.7×0.745)×3.6` | **推算で対応** |
 | 0x2F Fuel Level | Mode 22 探索が必要 | 未対応 |
 | 0x5C Oil Temp | Mode 22 探索が必要 | 未対応 |
 
@@ -349,40 +349,40 @@ install/uninstall・GPIO 電源トグルのオーバーヘッドが大きいた�
 struct OBDReading {
   // 初期実装分（10PID）
   uint16_t rpm;           // 0x0C: (A*256+B)/4 [rpm]
-  uint8_t  speed_kmh;     // 0x0D: A [km/h]
-  uint8_t  load_pct;      // 0x04: A*100/255 [%]
-  uint8_t  map_kpa;       // 0x0B: A [kPa 絶対圧]
-  uint8_t  baro_kpa;      // 0x33: A [kPa]
-  int8_t   boost_kpa;     // map_kpa - baro_kpa [kPa]（obdpoll.cpp で計算）
-  uint8_t  throttle_pct;  // 0x11: A*100/255 [%]
-  float    timing_deg;    // 0x0E: A/2.0-64.0 [°BTDC]
-  float    ecu_voltage;   // 0x42: (A*256+B)/1000.0 [V]
-  float    maf_gs;        // 0x66: (B*256+C)/32 [g/s]（0x10 非対応のため代替）
-  int16_t  coolant_c;     // 0x67 Sensor1: B-40 [°C]（0x05 非対応のため代替）
-  float    fuel_rate_lph; // MAF 推算: maf_gs / (14.7×0.745) × 3.6 [L/h]（obdpoll.cpp で計算）
+  uint8_t  speedKmh;     // 0x0D: A [km/h]
+  uint8_t  loadPct;      // 0x04: A*100/255 [%]
+  uint8_t  mapKpa;       // 0x0B: A [kPa 絶対圧]
+  uint8_t  baroKpa;      // 0x33: A [kPa]
+  int8_t   boostKpa;     // mapKpa - baroKpa [kPa]（obdComputeDerived()で計算）
+  uint8_t  throttlePct;  // 0x11: A*100/255 [%]
+  float    timingDeg;    // 0x0E: A/2.0-64.0 [°BTDC]
+  float    ecuVoltage;   // 0x42: (A*256+B)/1000.0 [V]
+  float    mafGs;        // 0x66: (B*256+C)/32 [g/s]（0x10 非対応のため代替）
+  int16_t  coolantC;     // 0x67 Sensor1: B-40 [°C]（0x05 非対応のため代替）
+  float    fuelRateLph; // MAF 推算: mafGs / (14.7×0.745) × 3.6 [L/h]（obdComputeDerived()で計算）
 
   // 追加実装分（18PID・20フィールド。デコード式は「確定した取得可能データ一覧」参照）
-  float    stft_pct, ltft_pct;                          // 0x06, 0x07
-  float    o2_b1s2_v, o2_b1s2_trim_pct;                 // 0x15
-  uint16_t engine_run_time_sec;                         // 0x1F
-  uint16_t mil_distance_km;                             // 0x21
-  float    o2_s1_ratio, o2_s1_voltage;                  // 0x24
-  uint8_t  evap_purge_pct;                              // 0x2E
-  uint8_t  warmups_since_cleared;                       // 0x30
-  uint16_t distance_since_cleared_km;                   // 0x31
-  float    catalyst_temp_c;                             // 0x3C
-  float    absolute_load_pct;                           // 0x43
-  float    commanded_afr;                               // 0x44
-  uint8_t  throttle_b_pct;                              // 0x47
-  uint8_t  accel_pedal_d_pct, accel_pedal_e_pct;        // 0x49, 0x4A
-  uint8_t  fuel_type;                                   // 0x51
-  float    sec_o2_trim_st_pct, sec_o2_trim_lt_pct;      // 0x55, 0x56
+  float    stftPct, ltftPct;                          // 0x06, 0x07
+  float    o2B1s2V, o2B1s2TrimPct;                 // 0x15
+  uint16_t engineRunTimeSec;                         // 0x1F
+  uint16_t milDistanceKm;                             // 0x21
+  float    o2S1Ratio, o2S1Voltage;                  // 0x24
+  uint8_t  evapPurgePct;                              // 0x2E
+  uint8_t  warmupsSinceCleared;                       // 0x30
+  uint16_t distanceSinceClearedKm;                   // 0x31
+  float    catalystTempC;                             // 0x3C
+  float    absoluteLoadPct;                           // 0x43
+  float    commandedAfr;                               // 0x44
+  uint8_t  throttleBPct;                              // 0x47
+  uint8_t  accelPedalDPct, accelPedalEPct;        // 0x49, 0x4A
+  uint8_t  fuelType;                                   // 0x51
+  float    secO2TrimStPct, secO2TrimLtPct;      // 0x55, 0x56
 
   bool     valid;
   time_t   ts;
 
   // 末尾追加分（1PID・2フィールド。ObdBlePacketとのオフセット互換のため末尾に配置）
-  int16_t  iat_c, iat2_c;                               // 0x68（IC前後どちらか未確定）
+  int16_t  iatC, iat2C;                               // 0x68（IC前後どちらか未確定）
 };
 ```
 
@@ -543,7 +543,7 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 |--------|------|
 | 冷却水温が 0x05 非対応 | 0x67 Sensor1 で代替取得可能（確認済み） |
 | MAF が 0x10 非対応 | 0x66 で代替取得可能（確認済み、1.69 g/s@idle） |
-| 燃費計算（0x5E 非対応） | 0x66 MAF から推算: `maf_gs / (14.7×0.745) × 3.6` L/h |
+| 燃費計算（0x5E 非対応） | 0x66 MAF から推算: `mafGs / (14.7×0.745) × 3.6` L/h |
 | CAN 未接続・IGN OFF 時のタイムアウト | 全 PID × 100ms = 最大 1秒（許容範囲。正常時は数十msで応答するためもっと短い） |
 | バスオフ状態 | 軽量リカバリ（`twai_initiate_recovery()`）→ 連続失敗20回でフル再init |
 | GU0/GU1 の配線混同 | GU0=CAN（GPIO4/5/6）、GU1=LTE（GPIO7/8/9、`device/lte.cpp` 使用中）。触るのはGU0のみ |

@@ -112,22 +112,22 @@ void finalizeAndLog(OBDReading &r)
   {
     logger.printf("[OBD] rpm=%u speed=%ukm/h load=%u%% map=%ukPa boost=%dkPa throttle=%u%% "
                   "timing=%.1f ecu=%.2fV maf=%.2fg/s coolant=%dC fuel=%.2fL/h\n",
-                  r.rpm, r.speed_kmh, r.load_pct, r.map_kpa, r.boost_kpa, r.throttle_pct,
-                  r.timing_deg, r.ecu_voltage, r.maf_gs, r.coolant_c, r.fuel_rate_lph);
+                  r.rpm, r.speedKmh, r.loadPct, r.mapKpa, r.boostKpa, r.throttlePct,
+                  r.timingDeg, r.ecuVoltage, r.mafGs, r.coolantC, r.fuelRateLph);
 
     // 追加確定PID（1行が長大になるため既存サマリ行とは分けて出力）
     logger.printf("[OBD2] stft=%.1f%% ltft=%.1f%% o2b1s2=%.2fV/%.1f%% o2s1=%.3f/%.2fV "
                   "runtime=%us milDist=%ukm evap=%u%% warmups=%u distCleared=%ukm "
                   "cat=%.0fC absLoad=%.1f%% afr=%.2f tpsB=%u%% padD=%u%% padE=%u%% "
                   "fuelType=%u secO2st=%.1f%% secO2lt=%.1f%% iat=%dC/%dC\n",
-                  r.stft_pct, r.ltft_pct, r.o2_b1s2_v, r.o2_b1s2_trim_pct,
-                  r.o2_s1_ratio, r.o2_s1_voltage,
-                  r.engine_run_time_sec, r.mil_distance_km, r.evap_purge_pct,
-                  r.warmups_since_cleared, r.distance_since_cleared_km,
-                  r.catalyst_temp_c, r.absolute_load_pct, r.commanded_afr,
-                  r.throttle_b_pct, r.accel_pedal_d_pct, r.accel_pedal_e_pct,
-                  r.fuel_type, r.sec_o2_trim_st_pct, r.sec_o2_trim_lt_pct,
-                  r.iat_c, r.iat2_c);
+                  r.stftPct, r.ltftPct, r.o2B1s2V, r.o2B1s2TrimPct,
+                  r.o2S1Ratio, r.o2S1Voltage,
+                  r.engineRunTimeSec, r.milDistanceKm, r.evapPurgePct,
+                  r.warmupsSinceCleared, r.distanceSinceClearedKm,
+                  r.catalystTempC, r.absoluteLoadPct, r.commandedAfr,
+                  r.throttleBPct, r.accelPedalDPct, r.accelPedalEPct,
+                  r.fuelType, r.secO2TrimStPct, r.secO2TrimLtPct,
+                  r.iatC, r.iat2C);
   }
   else
   {
