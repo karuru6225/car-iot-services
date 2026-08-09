@@ -114,9 +114,10 @@ void finalizeAndLog(OBDReading &r)
   if (r.valid)
   {
     logger.printf("[OBD] rpm=%u speed=%ukm/h load=%u%% map=%ukPa boost=%dkPa throttle=%u%% "
-                  "timing=%.1f ecu=%.2fV maf=%.2fg/s coolant=%dC fuel=%.2fL/h\n",
+                  "timing=%.1f ecu=%.2fV maf=%.2fg/s coolant=%dC fuel=%.2fL/h mask=0x%08X\n",
                   r.rpm, r.speedKmh, r.loadPct, r.mapKpa, r.boostKpa, r.throttlePct,
-                  r.timingDeg, r.ecuVoltage, r.mafGs, r.coolantC, r.fuelRateLph);
+                  r.timingDeg, r.ecuVoltage, r.mafGs, r.coolantC, r.fuelRateLph,
+                  (unsigned)r.validMask);
 
     // 追加確定PID（1行が長大になるため既存サマリ行とは分けて出力）
     logger.printf("[OBD2] stft=%.1f%% ltft=%.1f%% o2b1s2=%.2fV/%.1f%% o2s1=%.3f/%.2fV "
@@ -177,7 +178,9 @@ OBDReading obdPoll()
     ctx.r = &r;
     ctx.groupPids = groupPids;
     ctx.groupCount = groupCount;
-    obdParseMultiResponse(data, dlc, handleSegment, &ctx);
+    uint8_t unknownPid = 0;
+    if (obdParseMultiResponse(data, dlc, handleSegment, &ctx, &unknownPid))
+      logger.printf("[OBD] obdParseMultiResponse: 未知PID 0x%02X で打ち切り\n", unknownPid);
 
     okCount += ctx.okCount;
     decodeFailCount += ctx.decodeFailCount;

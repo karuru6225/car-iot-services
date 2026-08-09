@@ -1,5 +1,4 @@
 #include "obd.h"
-#include "../logger.h"
 
 // 応答パケットの共通チェック: [0]=0x41(Mode01応答) [1]=PID [2]=A [3]=B ...（PCIバイトはcan.cpp側で剥離済み）
 // 一致すればペイロード先頭（A）へのポインタを payload に返す
@@ -328,10 +327,11 @@ bool lookupPidLength(uint8_t pid, uint8_t &lenOut)
 }
 } // namespace
 
-void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx)
+bool obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx,
+                            uint8_t *unknownPidOut)
 {
   if (dlc < 1 || data[0] != 0x41)
-    return;
+    return false;
 
   uint8_t i = 1;
   while (i < dlc)
@@ -340,17 +340,17 @@ void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb c
     uint8_t len;
     if (!lookupPidLength(pid, len))
     {
-      // 未知PID: 以降のセグメント境界が分からないため打ち切り。ECUが想定外PIDを
-      // 返した際の調査用に記録する。
-      logger.printf("[OBD] obdParseMultiResponse: 未知PID 0x%02X で打ち切り（残り%uバイト）\n",
-                    pid, (unsigned)(dlc - i));
-      break;
+      // 未知PID: 以降のセグメント境界が分からないため打ち切り
+      if (unknownPidOut)
+        *unknownPidOut = pid;
+      return true;
     }
     if ((uint16_t)i + len > dlc)
       break; // データ不足（応答が途中で切れている）
     cb(pid, data + i, len, ctx);
     i += len;
   }
+  return false;
 }
 
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)

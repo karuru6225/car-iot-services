@@ -156,5 +156,10 @@ bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out); 
 // 位置固定では解釈できず、内蔵のPID→データ長テーブルを頼りにTLV的に歩く。
 // テーブルに無いPIDに遭遇した場合はそこで安全に打ち切る（以降のセグメント境界が不明なため）。
 // data は canReceiveObdResponse() が返す `41 ...` から始まるペイロード。
+// 戻り値: 未知PIDに遭遇して打ち切った場合はtrueを返し、unknownPidOutが非nullptrなら
+// そのPID値を書き込む（データ不足による打ち切り・正常終了時はfalse）。domain層はログを
+// 出さない（ハードウェア非依存の純粋関数という制約のため）。ログ出力は呼び出し側（service層）
+// の責務。
 typedef void (*ObdMultiSegmentCb)(uint8_t pid, const uint8_t *data, uint8_t len, void *ctx);
-void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx);
+bool obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx,
+                            uint8_t *unknownPidOut = nullptr);
