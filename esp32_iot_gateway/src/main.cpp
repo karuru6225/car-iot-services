@@ -99,9 +99,12 @@ void setup()
                 FIRMWARE_VERSION, (int)g_wakeupCause);
 
   oledInit();
-  adsInit();
-  ina228.init();
-  canInit(); // CAN通信は起動直後から常時試みる。停止するのはDeepSleep突入時のみ（enterDeepSleepMode参照）
+  if (!adsInit())
+    logger.println("[MAIN] ADS1115 初期化失敗");
+  if (!ina228.init())
+    logger.println("[MAIN] INA228 初期化失敗");
+  if (!canInit()) // CAN通信は起動直後から常時試みる。停止するのはDeepSleep突入時のみ（enterDeepSleepMode参照）
+    logger.println("[MAIN] CAN 初期化失敗");
   oledPrint("FW: " FIRMWARE_VERSION);
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
   {

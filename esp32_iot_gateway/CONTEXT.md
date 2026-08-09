@@ -755,12 +755,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
 
-### TODO: main.cppがセンサー/CAN初期化の失敗を無視している（未着手）
-
-`setup()`内の`adsInit()`/`ina228.init()`/`canInit()`（[main.cpp:102-104](esp32_iot_gateway/src/main.cpp#L102-L104)）はいずれも初期化失敗を伝えるため`bool`を返す設計だが、戻り値を誰も確認していない。I2C接続不良等で初期化に失敗しても、以降の`readCurrent()`等が未設定デバイスに対して読み取りを続け、無効値をテレメトリとしてAWSへ送信し続けてしまう。異常を検知する手段がどこにもない。
-
-**実装方針（案）**: 各初期化の戻り値を見てログ出力し、OLEDに警告表示する、またはtelemetryペイロードに「センサー異常」フラグを含めてクラウド側で気づけるようにする。
-
 ### TODO: jobs.cppがacceptedトピックを厳密一致で判定していない（未着手）
 
 `jobsGetNext()`（[jobs.cpp:29-77](esp32_iot_gateway/src/service/jobs.cpp#L29-L77)）は`rejected`トピック文字列を生成する（[jobs.cpp:45](esp32_iot_gateway/src/service/jobs.cpp#L45)）が使わず、`strstr(recvTopic, "rejected")`が偽であれば無条件にacceptedレスポンスとして処理する。`shadow.cpp`の`shadowPollDelta()`が`strcmp(recvTopic, expected) != 0`で厳密一致を取っているのと対照的。現状`jobsGetNext()`は起動時1回しか呼ばれないため実害は限定的だが、将来ポーリング頻度を上げると別トピックのメッセージを誤ってJobsレスポンスとして消費しうる。
