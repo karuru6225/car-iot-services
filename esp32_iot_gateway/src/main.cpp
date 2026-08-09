@@ -65,6 +65,9 @@ static OperationMode g_mode = OperationMode::DEEP_SLEEP;
 static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
 static MeasureResult g_lastResult = {};
 static bool g_bleUpgradedToContinuous = false;
+// BTN1長押しでBLE接続中にDEEP_SLEEPへ強制した場合true。
+// trueの間はloop()側のBLE自動昇格を止め、ユーザーの選択をBLE切断まで尊重する
+static bool g_userForcedSleep = false;
 
 // モード遷移を一箇所に集約する。CAN は DeepSleep 突入時のみ deinit するため、
 // ここではモードの切り替えのみ行う（init/deinit には関与しない）
@@ -179,7 +182,8 @@ void setup()
   modeManager.registerMode(OperationMode::ONE_SHOT_CONTINUOUS, runOneShotContinuousMode);
 }
 
-// BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）
+// BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）。
+// 切断をもってg_userForcedSleepもリセットし、次回接続時は通常通り自動昇格させる
 static void updateBleReconnectState()
 {
   if (g_bleUpgradedToContinuous && !blePeripheral.isConnected())
@@ -187,6 +191,8 @@ static void updateBleReconnectState()
     setOperationMode(OperationMode::DEEP_SLEEP);
     g_bleUpgradedToContinuous = false;
   }
+  if (!blePeripheral.isConnected())
+    g_userForcedSleep = false;
 }
 
 // 次の5分境界（UTC）までの秒数を返す。時刻未同期なら SLEEP_INTERVAL_SEC を返す
@@ -278,7 +284,9 @@ static void continuousLoopCore(const ContinuousLoopHooks &hooks)
   unsigned long lastNotify = 0;
   int lastRemain = -1;
 
-  while (millis() - waitStart < waitMs)
+  // g_modeがhooks.selfModeから変わった時点で即座に抜け、modeManagerへ制御を返す
+  // （そのままだと最大waitMs経過するまでモード変更が実際には反映されない）
+  while (millis() - waitStart < waitMs && g_mode == hooks.selfMode)
   {
     ButtonEvent ev = button.read();
     if (ev == ButtonEvent::BTN0_SHORT)
@@ -302,6 +310,11 @@ static void continuousLoopCore(const ContinuousLoopHooks &hooks)
         logger.println("[MAIN] BTN1 長押し → DEEP_SLEEP モードへ切り替え");
         oledPrint("Switching sleep...");
         setOperationMode(OperationMode::DEEP_SLEEP);
+        g_bleUpgradedToContinuous = false;
+        // BLE接続中の手動切り替えは、loop()側の自動昇格に即座に上書きされてしまうため
+        // (BLE接続 && DEEP_SLEEP の条件が真になる)、切断されるまでは尊重する
+        if (blePeripheral.isConnected())
+          g_userForcedSleep = true;
       }
     }
 
@@ -377,13 +390,14 @@ void loop()
 #endif
 
   // BLE 接続 → CONTINUOUS 昇格。未接続なら DeepSleep 突入前に BLE_WAKE_WINDOW_SEC 秒だけ
-  // 接続を待つ（起床直後の setup() 中もアドバタイズ済みのため、実際の待受はそれより長い）
-  if (blePeripheral.isConnected() && g_mode == OperationMode::DEEP_SLEEP)
+  // 接続を待つ（起床直後の setup() 中もアドバタイズ済みのため、実際の待受はそれより長い）。
+  // g_userForcedSleep中はBTN1でのDEEP_SLEEP選択をBLE接続中でも尊重し、自動昇格させない
+  if (blePeripheral.isConnected() && g_mode == OperationMode::DEEP_SLEEP && !g_userForcedSleep)
   {
     setOperationMode(OperationMode::CONTINUOUS);
     g_bleUpgradedToContinuous = true;
   }
-  else if (g_mode == OperationMode::DEEP_SLEEP)
+  else if (g_mode == OperationMode::DEEP_SLEEP && !g_userForcedSleep)
   {
     unsigned long waitStart = millis();
     while (millis() - waitStart < BLE_WAKE_WINDOW_SEC * 1000UL)
