@@ -229,7 +229,9 @@ static bool sendFlowControl(uint32_t respId)
 
 // First Frame受信後、Consecutive Frameを組み立てて data に追記していく。
 // data には既にFF由来の先頭6バイトが書き込み済み（received=6）である前提。
-static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t received)
+// senderId: FFを送ってきたECUの応答ID（rx.identifier）。機能アドレッシングは複数ECUが
+// 応答しうるため、CFはこのIDに一致するものだけを採用する（別ECUのCF混入を防ぐ）。
+static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t received, uint32_t senderId)
 {
   uint8_t expectedSeq = 1;
   twai_message_t rx = {};
@@ -245,6 +247,8 @@ static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t 
       continue;
     if (!isObdResponseFrame(rx) || (rx.data[0] & 0xF0) != ISO_TP_PCI_CF)
       continue; // 無関係フレーム・想定外PCIは無視して待ち続ける
+    if (rx.identifier != senderId)
+      continue; // FFを送ってきたECUと異なるECUからのCFは無視
 
     uint8_t seq = rx.data[0] & 0x0F;
     if (seq != (expectedSeq & 0x0F))
@@ -327,7 +331,7 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
 
       if (!sendFlowControl(rx.identifier))
         return false;
-      if (!receiveConsecutiveFrames(data, totalLen, 6))
+      if (!receiveConsecutiveFrames(data, totalLen, 6, rx.identifier))
         return false;
 
       *dlc = (uint8_t)totalLen;
