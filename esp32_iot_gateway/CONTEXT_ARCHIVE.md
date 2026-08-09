@@ -256,3 +256,9 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `enterDeepSleepMode()`内で`GPIO_NUM_0`が4箇所生の値のまま使われており、CLAUDE.mdの「ピン番号は定数化する」規約に反していた。BOOTボタン（wake用）のピンであることがコードから読み取りにくかった。
 
 **対応**: `main.cpp`内に`#define WAKE_PIN GPIO_NUM_0`を追加し、4箇所を置き換えた。ESP32-S3モジュール内蔵のBOOTボタンで基板（v1/v2）によらず固定のため、`board_pins.h`（基板ごとに異なるピンを管理する場所）ではなく`main.cpp`側（アプリ層）での`#define`とした（CLAUDE.mdの「ピン番号は定数化する（アプリ層: `#define`）」規約に対応）。
+
+### ~~TODO: 充電ヒステリシスロジックがmain.cppに直書きされている~~ **実装済み**
+
+`updateChargingState()`は電圧閾値によるヒステリシス判定という、ハードウェア・ネットワーク非依存の純粋ロジックだが、`domain/`ではなくエントリポイントの`main.cpp`に直接書かれていた。
+
+**対応**: `domain/charging.h`/`.cpp`に`decideCharging(vMain, vSub, currentlyCharging, ChargingThresholds) -> bool`という純粋関数を切り出した。`main.cpp`側の`updateChargingState()`は判定結果を受けて状態が変わった場合のみ`setCharging()`/`digitalWrite()`/ログ出力するだけになった。`test/test_domain_charging/`にnative環境のユニットテスト8件を追加（起動条件・停止条件・電圧異常時の非遷移などを網羅）。

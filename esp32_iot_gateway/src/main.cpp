@@ -38,6 +38,7 @@
 
 #include "domain/ble_targets.h"
 #include "domain/telemetry.h"
+#include "domain/charging.h"
 #include "service/menu.h"
 #include "service/pubqueue.h"
 #include "service/log_storage.h"
@@ -212,29 +213,27 @@ static uint32_t secsToNextBoundary()
   return (uint32_t)(next - now);
 }
 
-// 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）
+// 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）。判定ロジック自体は
+// domain/charging.h の decideCharging()（ハードウェア非依存の純粋関数）に委譲する
 static void updateChargingState()
 {
   float vMain = g_lastResult.reading.main.voltage;
   float vSub = g_lastResult.reading.sub.voltage;
-  float startV = getChgStartV();
-  float stopV = getChgStopV();
-  float minDiff = getChgMinDiffV();
-  float diff = vSub - vMain;
+  ChargingThresholds th{getChgStartV(), getChgStopV(), getChgMinDiffV()};
 
-  if (vMain >= 10.0f && !isCharging() && vMain < startV && diff >= minDiff)
-  {
-    setCharging(true);
-    digitalWrite(boardPins().chgOnPin, HIGH);
-    logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV diff=%.2fV\n", vMain, startV, diff);
-  }
-  else if (vMain >= 10.0f && isCharging() && (vMain >= stopV || diff < minDiff))
-  {
-    setCharging(false);
-    digitalWrite(boardPins().chgOnPin, LOW);
+  bool wasCharging = isCharging();
+  bool shouldCharge = decideCharging(vMain, vSub, wasCharging, th);
+  if (shouldCharge == wasCharging)
+    return;
+
+  setCharging(shouldCharge);
+  digitalWrite(boardPins().chgOnPin, shouldCharge ? HIGH : LOW);
+  float diff = vSub - vMain;
+  if (shouldCharge)
+    logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV diff=%.2fV\n", vMain, th.startV, diff);
+  else
     logger.printf("[MAIN] auto charge OFF vMain=%.2fV stopV=%.2fV diff=%.2fV minDiff=%.2fV\n",
-                  vMain, stopV, diff, minDiff);
-  }
+                  vMain, th.stopV, diff, th.minDiff);
 }
 
 // shadow 同期 → LTE 切断 → DeepSleep（戻らない）
