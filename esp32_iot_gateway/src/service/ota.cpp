@@ -26,7 +26,7 @@ static void gzLog(const char *fmt, ...)
   va_start(args, fmt);
   vsnprintf(buf, sizeof(buf), fmt, args);
   va_end(args);
-  logger.print(buf);
+  logger.printf("%s", buf); // logStorageWrite()にも残すためprintではなくprintfを使う
 }
 
 struct GzStream

@@ -238,3 +238,9 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `Ota::handleJob()`の同一バージョンスキップ判定が`strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0`で、`version`が`FIRMWARE_VERSION`の前方一致であれば真になっていた。`FIRMWARE_VERSION`は`"<base>+<githash>"`形式なので、短いversion文字列がたまたま前方一致すると誤って「同一バージョン」と判定されOTAがスキップされる可能性があった。
 
 **対応**: `isSameFirmwareVersion()`ヘルパーを追加し、`FIRMWARE_VERSION`の`+`より前の部分（base部分）と`version`をサイズ込みで完全一致させるようにした。
+
+### ~~TODO: gzLog()がログ永続化をスキップしている~~ **実装済み**
+
+`gzLog()`（`service/ota.cpp`）は`Logger::printf`と同じ`vsnprintf`パターンを再実装していたが、最後に`logger.print(buf)`を呼んでおり、`logStorageWrite()`を呼ばずSerial出力のみで終わっていた。OTAのgz解凍時に出る`[OTA] gz...`系のログ行だけがSPIFFS上のデバッグログファイルに残らなかった。
+
+**対応**: `logger.print(buf)`を`logger.printf("%s", buf)`に差し替え、`logStorageWrite()`経由でも永続化されるようにした。

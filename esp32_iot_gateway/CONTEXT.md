@@ -754,9 +754,3 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - BLEスキャンをブロッキングでなくする（`_scan->start(seconds, false)`のコールバック版に変更し、スキャン中も`continuousLoopCore()`のループへ制御を返せるようにする）
 - または5分境界の`measure()`呼び出しとOBDポーリングの実行順序・タイミングを分離し、スキャン中はOBDポーリングを一時停止ではなく別サイクルにずらす
 - ダイノモード（`HANDOFF_isotp_multipid.md` §5、10Hz級高レートポーリング構想）に着手する前提であれば、この10秒ブロックは致命的なので優先度を上げて対応する
-
-### TODO: gzLog()がログ永続化をスキップしている（未着手）
-
-`gzLog()`（[ota.cpp:22-30](esp32_iot_gateway/src/service/ota.cpp#L22-L30)）は`Logger::printf`（[logger.cpp:23-32](esp32_iot_gateway/src/service/logger.cpp#L23-L32)）と同じ`vsnprintf`パターンを再実装しているが、最後に`logger.print(buf)`を呼んでおり、これは`logStorageWrite()`を呼ばずSerial出力のみで終わる。OTAのgz解凍時に出る`[OTA] gz...`系のログ行だけがSPIFFS上のデバッグログファイルに残らず、シリアルモニタを見ていないと事後調査できない。
-
-**実装方針（案）**: `gzLog()`から`logger.printf()`を呼ぶよう差し替える（`uzlib`側のログコールバック型が`void(*)(const char *)`で可変引数を取れない場合は、`gzLog()`内で一旦`vsnprintf`した文字列を`logger.printf("%s", buf)`のように渡す）。
