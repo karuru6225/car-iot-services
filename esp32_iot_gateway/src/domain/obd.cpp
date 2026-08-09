@@ -327,10 +327,11 @@ bool lookupPidLength(uint8_t pid, uint8_t &lenOut)
 }
 } // namespace
 
-void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx)
+bool obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx,
+                            uint8_t *unknownPidOut)
 {
   if (dlc < 1 || data[0] != 0x41)
-    return;
+    return false;
 
   uint8_t i = 1;
   while (i < dlc)
@@ -338,12 +339,18 @@ void obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb c
     uint8_t pid = data[i++];
     uint8_t len;
     if (!lookupPidLength(pid, len))
-      break; // 未知PID: 以降のセグメント境界が分からないため打ち切り
+    {
+      // 未知PID: 以降のセグメント境界が分からないため打ち切り
+      if (unknownPidOut)
+        *unknownPidOut = pid;
+      return true;
+    }
     if ((uint16_t)i + len > dlc)
       break; // データ不足（応答が途中で切れている）
     cb(pid, data + i, len, ctx);
     i += len;
   }
+  return false;
 }
 
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
@@ -387,6 +394,8 @@ void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 
   out.iatC = r.iatC;
   out.iat2C = r.iat2C;
+
+  out.validMask = r.validMask;
 }
 
 void obdComputeDerived(OBDReading &r)
@@ -396,7 +405,12 @@ void obdComputeDerived(OBDReading &r)
 
   // boost = MAP - Baro（Baro未取得時は標準大気圧101kPaで代用）
   r.boostKpa = (int8_t)(r.mapKpa - (r.baroKpa > 0 ? r.baroKpa : 101));
-  // 燃費推算（MAFから）: OBD.md 参照
+  // 燃費推算（MAFから）: OBD.md 参照。commandedAfr（=λ）を分母に反映し、
+  // 暖機増量中（λ<1）の過小評価を補正する。取得失敗（0）や異常値は
+  // λ=1固定にフォールバックする。
   if (r.mafGs > 0)
-    r.fuelRateLph = r.mafGs / (14.7f * 0.745f) * 3.6f;
+  {
+    float lambda = (r.commandedAfr > 0.5f && r.commandedAfr < 2.0f) ? r.commandedAfr : 1.0f;
+    r.fuelRateLph = r.mafGs / (14.7f * lambda * 0.745f) * 3.6f;
+  }
 }

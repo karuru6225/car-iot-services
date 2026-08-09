@@ -45,6 +45,8 @@ const PidDecoder kPids[] = {
     {0x68, obdDecodeChargeAirTemp},
 };
 const int kPidCount = sizeof(kPids) / sizeof(kPids[0]);
+// OBDReading::validMask（uint32_t）はkPidsの配列順にビット割当するため32PIDが上限
+static_assert(sizeof(kPids) / sizeof(kPids[0]) <= 32, "kPidsが32件を超えるとvalidMask(uint32_t)に収まらない");
 
 // 1リクエストにまとめるPID数の上限。SFリクエストのPCI長（1+N）が7バイトに収まる上限（N<=6）。
 const uint8_t kMaxPidsPerRequest = 6;
@@ -95,6 +97,7 @@ void handleSegment(uint8_t pid, const uint8_t *segData, uint8_t len, void *ctxPt
   if (dec->decode(tmp, 2 + len, *ctx->r))
   {
     ctx->r->valid = true;
+    ctx->r->validMask |= (1u << (uint32_t)(dec - kPids));
     ctx->okCount++;
   }
   else
@@ -111,9 +114,10 @@ void finalizeAndLog(OBDReading &r)
   if (r.valid)
   {
     logger.printf("[OBD] rpm=%u speed=%ukm/h load=%u%% map=%ukPa boost=%dkPa throttle=%u%% "
-                  "timing=%.1f ecu=%.2fV maf=%.2fg/s coolant=%dC fuel=%.2fL/h\n",
+                  "timing=%.1f ecu=%.2fV maf=%.2fg/s coolant=%dC fuel=%.2fL/h mask=0x%08X\n",
                   r.rpm, r.speedKmh, r.loadPct, r.mapKpa, r.boostKpa, r.throttlePct,
-                  r.timingDeg, r.ecuVoltage, r.mafGs, r.coolantC, r.fuelRateLph);
+                  r.timingDeg, r.ecuVoltage, r.mafGs, r.coolantC, r.fuelRateLph,
+                  (unsigned)r.validMask);
 
     // 追加確定PID（1行が長大になるため既存サマリ行とは分けて出力）
     logger.printf("[OBD2] stft=%.1f%% ltft=%.1f%% o2b1s2=%.2fV/%.1f%% o2s1=%.3f/%.2fV "
@@ -164,7 +168,7 @@ OBDReading obdPoll()
       sendFailCount += groupCount;
       continue;
     }
-    if (!canReceiveObdResponse(data, &dlc, 50, sizeof(data)))
+    if (canReceiveObdResponse(data, &dlc, 50, sizeof(data)) != ObdRecvResult::Ok)
     {
       recvFailCount += groupCount;
       continue;
@@ -174,7 +178,9 @@ OBDReading obdPoll()
     ctx.r = &r;
     ctx.groupPids = groupPids;
     ctx.groupCount = groupCount;
-    obdParseMultiResponse(data, dlc, handleSegment, &ctx);
+    uint8_t unknownPid = 0;
+    if (obdParseMultiResponse(data, dlc, handleSegment, &ctx, &unknownPid))
+      logger.printf("[OBD] obdParseMultiResponse: 未知PID 0x%02X で打ち切り\n", unknownPid);
 
     okCount += ctx.okCount;
     decodeFailCount += ctx.decodeFailCount;

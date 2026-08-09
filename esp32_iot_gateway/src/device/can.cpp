@@ -5,8 +5,8 @@
 #include "../board_pins.h"
 #include "../logger.h"
 
-static const uint8_t CAN_RX_PIN = boardPins().gu01Pin;  // GPIO4: MCP2562FD RXD 側
-static const uint8_t CAN_TX_PIN = boardPins().gu00Pin;  // GPIO5: MCP2562FD TXD 側
+static const uint8_t CAN_RX_PIN = boardPins().gu01Pin;  // GPIO5: MCP2562FD RXD 側
+static const uint8_t CAN_TX_PIN = boardPins().gu00Pin;  // GPIO4: MCP2562FD TXD 側
 static const uint8_t CAN_EN_PIN = boardPins().gu0EnPin; // GPIO6: AO3401A ゲート（HIGH=電源ON）
 
 static const uint32_t CAN_REQ_ID = 0x18DB33F1;    // 29-bit functional addressing
@@ -19,6 +19,10 @@ static const uint8_t ISO_TP_PCI_SF = 0x00; // Single Frame
 static const uint8_t ISO_TP_PCI_FF = 0x10; // First Frame
 static const uint8_t ISO_TP_PCI_CF = 0x20; // Consecutive Frame
 static const uint8_t ISO_TP_PCI_FC = 0x30; // Flow Control
+
+// Flow Control の FlowStatus（PCIバイト下位ニブル）
+static const uint8_t ISO_TP_FS_CTS = 0x00;      // Clear To Send
+static const uint8_t ISO_TP_FS_OVERFLOW = 0x02; // Overflow（受信側バッファ不足、送信側は即打ち切り）
 
 // FF受信後、CFが届かない場合に打ち切るまでの間隔
 static const uint32_t ISO_TP_CF_TIMEOUT_MS = 50;
@@ -124,43 +128,6 @@ static void recoverIfBusOff()
   }
 }
 
-bool canSendObdRequest(uint8_t pid)
-{
-  if (!s_ready)
-    return false;
-
-  recoverIfBusOff();
-
-  twai_message_t tx = {};
-  tx.identifier = CAN_REQ_ID;
-  tx.extd = 1;
-  tx.data_length_code = 8;
-  tx.data[0] = 0x02; // PCI: Single Frame, length=2
-  tx.data[1] = 0x01; // Mode 01
-  tx.data[2] = pid;
-  // data[3..7] = 0x00（ISO 15765-4 パディング）
-
-  esp_err_t txErr = twai_transmit(&tx, pdMS_TO_TICKS(10));
-  bool ok = txErr == ESP_OK;
-  if (!ok)
-  {
-    logger.printf("[CAN] canSendObdRequest: 送信失敗 pid=0x%02X err=%s (連続%u回)\n",
-                  pid, esp_err_to_name(txErr), s_failCount + 1);
-    if (++s_failCount >= CAN_FAIL_ESCALATE_THRESHOLD)
-    {
-      logger.printf("[CAN] 連続送信失敗%u回 → フル再初期化\n", s_failCount);
-      canLogStatus("再初期化前");
-      canDeinit();
-      canInit();
-    }
-  }
-  else
-  {
-    s_failCount = 0;
-  }
-  return ok;
-}
-
 bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count)
 {
   if (!s_ready || count == 0 || count > 6)
@@ -207,18 +174,21 @@ static bool isObdResponseFrame(const twai_message_t &rx)
   return is29bit || is11bit;
 }
 
-// First Frame受信直後にFlow Control（CTS, BS=0, STmin=0固定）を送信する。
+// First Frame受信直後にFlow Controlを送信する（既定はCTS, BS=0, STmin=0固定）。
 // 宛先IDは受信したFFの応答元ID（0x18DAF1xx）の下位バイト＝ECUアドレスから組む。
-static bool sendFlowControl(uint32_t respId)
+// flowStatus=ISO_TP_FS_OVERFLOWを渡すとECUに即座の送信打ち切りを要求できる
+// （バッファ超過でCFを受信できない場合。指定しなければECUはN_Bsタイムアウト＝規格上1秒まで
+// 送信状態を保持し続ける）。
+static bool sendFlowControl(uint32_t respId, uint8_t flowStatus = ISO_TP_FS_CTS)
 {
   uint32_t ecuAddr = respId & 0xFF;
   twai_message_t fc = {};
   fc.identifier = CAN_FC_ID_BASE | (ecuAddr << 8) | CAN_TESTER_ADDR;
   fc.extd = 1;
   fc.data_length_code = 8;
-  fc.data[0] = ISO_TP_PCI_FC; // CTS
-  fc.data[1] = 0x00;          // BlockSize=0（全フレーム連続送信可）
-  fc.data[2] = 0x00;          // STmin=0
+  fc.data[0] = ISO_TP_PCI_FC | (flowStatus & 0x0F);
+  fc.data[1] = 0x00; // BlockSize=0（全フレーム連続送信可）
+  fc.data[2] = 0x00; // STmin=0
   // data[3..7] = 0x00（パディング）
 
   esp_err_t err = twai_transmit(&fc, pdMS_TO_TICKS(10));
@@ -229,14 +199,16 @@ static bool sendFlowControl(uint32_t respId)
 
 // First Frame受信後、Consecutive Frameを組み立てて data に追記していく。
 // data には既にFF由来の先頭6バイトが書き込み済み（received=6）である前提。
-static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t received)
+// senderId: FFを送ってきたECUの応答ID（rx.identifier）。機能アドレッシングは複数ECUが
+// 応答しうるため、CFはこのIDに一致するものだけを採用する（別ECUのCF混入を防ぐ）。
+static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t received, uint32_t senderId)
 {
   uint8_t expectedSeq = 1;
   twai_message_t rx = {};
   unsigned long cfDeadline = millis() + ISO_TP_CF_TIMEOUT_MS;
   while (received < totalLen)
   {
-    if (millis() > cfDeadline)
+    if ((int32_t)(millis() - cfDeadline) > 0)
     {
       logger.println("[CAN] ISO-TP: CF受信タイムアウト");
       return false;
@@ -245,6 +217,8 @@ static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t 
       continue;
     if (!isObdResponseFrame(rx) || (rx.data[0] & 0xF0) != ISO_TP_PCI_CF)
       continue; // 無関係フレーム・想定外PCIは無視して待ち続ける
+    if (rx.identifier != senderId)
+      continue; // FFを送ってきたECUと異なるECUからのCFは無視
 
     uint8_t seq = rx.data[0] & 0x0F;
     if (seq != (expectedSeq & 0x0F))
@@ -262,15 +236,15 @@ static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t 
   return true;
 }
 
-bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint8_t maxLen)
+ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint8_t maxLen, uint8_t *nrcOut)
 {
   if (!s_ready)
-    return false;
+    return ObdRecvResult::Error;
 
   twai_message_t rx = {};
   unsigned long deadline = millis() + timeoutMs;
   uint32_t unmatchedCount = 0;
-  while (millis() < deadline)
+  while ((int32_t)(millis() - deadline) < 0)
   {
     if (twai_receive(&rx, pdMS_TO_TICKS(10)) != ESP_OK)
       continue;
@@ -289,15 +263,28 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
     if (pciType == ISO_TP_PCI_SF)
     {
       uint8_t len = rx.data[0] & 0x0F;
+      if (len == 0 || len > 7)
+      {
+        logger.printf("[CAN] ISO-TP: 不正なSF長%u（1-7の範囲外）\n", len);
+        return ObdRecvResult::Error;
+      }
       if (len > maxLen)
       {
         logger.printf("[CAN] ISO-TP: SF長%uがバッファ上限%uを超過\n", len, maxLen);
-        return false;
+        return ObdRecvResult::Error;
       }
       // PCIバイト（1バイト目）を剥がし、ペイロード（41 PID data...）のみを返す
       memcpy(data, rx.data + 1, len);
       *dlc = len;
-      return true;
+      // 否定応答: `7F [SID] [NRC]`（常にSFで収まる3バイト）
+      if (len >= 3 && data[0] == 0x7F)
+      {
+        logger.printf("[CAN] ISO-TP: 否定応答受信 SID=0x%02X NRC=0x%02X\n", data[1], data[2]);
+        if (nrcOut)
+          *nrcOut = data[2];
+        return ObdRecvResult::NegativeResponse;
+      }
+      return ObdRecvResult::Ok;
     }
 
     if (pciType == ISO_TP_PCI_FF)
@@ -308,20 +295,27 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
         continue;
       }
       uint16_t totalLen = ((uint16_t)(rx.data[0] & 0x0F) << 8) | rx.data[1];
+      if (totalLen < 8)
+      {
+        logger.printf("[CAN] ISO-TP: 不正なFF長%u（8バイト未満はSFで送られるはず）\n", totalLen);
+        return ObdRecvResult::Error;
+      }
       if (totalLen > maxLen)
       {
         logger.printf("[CAN] ISO-TP: 応答長%uがバッファ上限%uを超過\n", totalLen, maxLen);
-        return false;
+        // FS=Overflowを送り、ECUがN_Bsタイムアウト（規格上1秒）を待たず即座に打ち切れるようにする
+        sendFlowControl(rx.identifier, ISO_TP_FS_OVERFLOW);
+        return ObdRecvResult::Error;
       }
       memcpy(data, rx.data + 2, 6);
 
       if (!sendFlowControl(rx.identifier))
-        return false;
-      if (!receiveConsecutiveFrames(data, totalLen, 6))
-        return false;
+        return ObdRecvResult::Error;
+      if (!receiveConsecutiveFrames(data, totalLen, 6, rx.identifier))
+        return ObdRecvResult::Error;
 
       *dlc = (uint8_t)totalLen;
-      return true;
+      return ObdRecvResult::Ok;
     }
 
     // CF/FC等、FFに先行されないマルチフレーム断片は想定外 → 無視して待ち続ける
@@ -329,5 +323,5 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
   }
   if (unmatchedCount > 0)
     logger.printf("[CAN] canReceiveObdResponse: タイムアウト（未一致%u件受信、一致なし）\n", unmatchedCount);
-  return false;
+  return ObdRecvResult::Timeout;
 }

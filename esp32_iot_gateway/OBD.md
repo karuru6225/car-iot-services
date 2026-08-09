@@ -142,7 +142,7 @@ Honda ECU が variant 共通のビットマスクを返しているが、この�
 | 0x67 | Coolant Temp Alt | B-40 °C (Sensor1) | **0x05 の代替** |
 | 0x68 | Charge Air Cooler Temp | B-40 / C-40 °C (Sensor1/2) | 吸気温。ISO-TPマルチフレーム必須。IC前後どちらがSensor1/2かは未確定 |
 
-燃費推算: `fuelRateLph = mafGs / (14.7 × 0.745) × 3.6`
+燃費推算: `fuelRateLph = mafGs / (14.7 × λ × 0.745) × 3.6`（λ=commandedAfr、0.5〜2.0の範囲外はλ=1固定）
 
 ---
 
@@ -181,7 +181,7 @@ OBD-II 応答フレームは一切来ない（確認済み）。
 | --- | --- | --- |
 | 0x05 Coolant Temp | 0x67 Sensor1 (B-40°C) | **取得可能・確認済み** |
 | 0x10 MAF | 0x66 MAF Alt ((B×256+C)/32 g/s) | **取得可能・確認済み** |
-| 0x5E Fuel Rate | 0x66 から推算: `mafGs/(14.7×0.745)×3.6` | **推算で対応** |
+| 0x5E Fuel Rate | 0x66 から推算: `mafGs/(14.7×λ×0.745)×3.6` | **推算で対応** |
 | 0x2F Fuel Level | Mode 22 探索が必要 | 未対応 |
 | 0x5C Oil Temp | Mode 22 探索が必要 | 未対応 |
 
@@ -313,13 +313,18 @@ Honda N-VAN は 29ビット拡張アドレッシングが必須（11ビット 0x
 
 bool canInit();   // 冪等: 既に起動済みなら即 true
 void canDeinit(); // 未起動でも安全に呼べる（GPIO6 を確実に LOW にする）
-bool canSendObdRequest(uint8_t pid);
-bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100);
+
+enum class ObdRecvResult : uint8_t { Ok, Timeout, NegativeResponse, Error };
+ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100,
+                                     uint8_t maxLen = 8, uint8_t *nrcOut = nullptr);
 ```
 
+否定応答（`7F [SID] [NRC]`）を受信した場合は `NegativeResponse` を返し、`nrcOut` が
+非nullptrならNRCを書き込む。既存呼び出し側は `== ObdRecvResult::Ok` で成否判定する。
+
 ピンは `boardPins()` 経由で取得する（ハードコードしない）:
-- `CAN_RX_PIN = boardPins().gu00Pin`（GPIO4、MCP2562FD RXD 側）
-- `CAN_TX_PIN = boardPins().gu01Pin`（GPIO5、MCP2562FD TXD 側）
+- `CAN_RX_PIN = boardPins().gu01Pin`（GPIO5、MCP2562FD RXD 側）
+- `CAN_TX_PIN = boardPins().gu00Pin`（GPIO4、MCP2562FD TXD 側）
 - `CAN_EN_PIN = boardPins().gu0EnPin`（GPIO6、AO3401A ゲート）
 
 `CAN_TEST.md` のブレッドボード試験章の配線（GPIO5=TXD, GPIO4=RXD）そのまま。当初ドラフトは
@@ -383,6 +388,9 @@ struct OBDReading {
 
   // 末尾追加分（1PID・2フィールド。ObdBlePacketとのオフセット互換のため末尾に配置）
   int16_t  iatC, iat2C;                               // 0x68（IC前後どちらか未確定）
+
+  // kPids[]（service/obdpoll.cpp）配列順のPIDごとのデコード成否ビットマスク
+  uint32_t validMask;
 };
 ```
 
@@ -479,7 +487,8 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 `OBDReading`をそのまま`memcpy`するとコンパイラのパディングに依存してしまうため、送信専用の
 パディングなし構造体に変換してから送る（`obdReadingToBlePacket()`、`domain/obd.cpp`）。
 フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`に固定。
-合計91バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/models/obd_reading.dart`の
+末尾に`validMask`（uint32_t、`kPids[]`配列順のPIDごとのデコード成否ビットマスク）を持つ。
+合計95バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/models/obd_reading.dart`の
 `ObdReading.fromBytes()`のオフセットと完全一致させること）。
 
 ### チャンクフォーマット
@@ -543,7 +552,7 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 |--------|------|
 | 冷却水温が 0x05 非対応 | 0x67 Sensor1 で代替取得可能（確認済み） |
 | MAF が 0x10 非対応 | 0x66 で代替取得可能（確認済み、1.69 g/s@idle） |
-| 燃費計算（0x5E 非対応） | 0x66 MAF から推算: `mafGs / (14.7×0.745) × 3.6` L/h |
+| 燃費計算（0x5E 非対応） | 0x66 MAF から推算: `mafGs / (14.7×λ×0.745) × 3.6` L/h |
 | CAN 未接続・IGN OFF 時のタイムアウト | 全 PID × 100ms = 最大 1秒（許容範囲。正常時は数十msで応答するためもっと短い） |
 | バスオフ状態 | 軽量リカバリ（`twai_initiate_recovery()`）→ 連続失敗20回でフル再init |
 | GU0/GU1 の配線混同 | GU0=CAN（GPIO4/5/6）、GU1=LTE（GPIO7/8/9、`device/lte.cpp` 使用中）。触るのはGU0のみ |

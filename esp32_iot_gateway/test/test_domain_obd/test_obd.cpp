@@ -126,8 +126,21 @@ static void test_multi_response_stops_at_unknown_pid(void)
   // 0xFF はkPidLengthsに無い未知PID → 以降のセグメント境界が分からないため打ち切り
   uint8_t data[] = {0x41, 0x0C, 0x1A, 0xF8, 0xFF, 0x99, 0x0D, 0x50};
   g_capturedCount = 0;
-  obdParseMultiResponse(data, sizeof(data), multiCb, nullptr);
+  uint8_t unknownPid = 0;
+  bool hitUnknown = obdParseMultiResponse(data, sizeof(data), multiCb, nullptr, &unknownPid);
+  TEST_ASSERT_TRUE(hitUnknown);
+  TEST_ASSERT_EQUAL_UINT8(0xFF, unknownPid);
   TEST_ASSERT_EQUAL_UINT8(1, g_capturedCount); // 0x0Cのみ。0xFF以降は読まれない
+}
+
+static void test_multi_response_reports_no_unknown_pid_when_all_known(void)
+{
+  uint8_t data[] = {0x41, 0x0C, 0x1A, 0xF8, 0x0D, 0x50};
+  g_capturedCount = 0;
+  uint8_t unknownPid = 0xAA; // 番兵値（書き換えられないことを確認）
+  bool hitUnknown = obdParseMultiResponse(data, sizeof(data), multiCb, nullptr, &unknownPid);
+  TEST_ASSERT_FALSE(hitUnknown);
+  TEST_ASSERT_EQUAL_UINT8(0xAA, unknownPid);
 }
 
 // ─── 派生値計算（boost/燃費）────────────────────────────────────────────────
@@ -158,6 +171,28 @@ static void test_compute_derived_fuel_rate_from_maf(void)
   OBDReading r = {};
   r.valid = true;
   r.mafGs = 10.0f;
+  obdComputeDerived(r);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f / (14.7f * 0.745f) * 3.6f, r.fuelRateLph);
+}
+
+static void test_compute_derived_fuel_rate_reflects_lambda(void)
+{
+  // commandedAfr(=λ)が0.5〜2.0の範囲内なら分母に反映する（暖機増量中λ<1の過小評価補正）
+  OBDReading r = {};
+  r.valid = true;
+  r.mafGs = 10.0f;
+  r.commandedAfr = 0.9f;
+  obdComputeDerived(r);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f / (14.7f * 0.9f * 0.745f) * 3.6f, r.fuelRateLph);
+}
+
+static void test_compute_derived_fuel_rate_falls_back_to_lambda_one_when_out_of_range(void)
+{
+  // commandedAfrが0.5未満・2.0以上（未取得の0含む異常値）はλ=1にフォールバック
+  OBDReading r = {};
+  r.valid = true;
+  r.mafGs = 10.0f;
+  r.commandedAfr = 3.0f; // 異常値
   obdComputeDerived(r);
   TEST_ASSERT_FLOAT_WITHIN(0.001f, 10.0f / (14.7f * 0.745f) * 3.6f, r.fuelRateLph);
 }
@@ -201,9 +236,12 @@ int main(int argc, char **argv)
   RUN_TEST(test_maf_alt_rejects_when_sensor1_absent);
   RUN_TEST(test_multi_response_parses_two_known_pids);
   RUN_TEST(test_multi_response_stops_at_unknown_pid);
+  RUN_TEST(test_multi_response_reports_no_unknown_pid_when_all_known);
   RUN_TEST(test_compute_derived_boost_uses_baro_when_available);
   RUN_TEST(test_compute_derived_boost_falls_back_to_standard_atmosphere);
   RUN_TEST(test_compute_derived_fuel_rate_from_maf);
+  RUN_TEST(test_compute_derived_fuel_rate_reflects_lambda);
+  RUN_TEST(test_compute_derived_fuel_rate_falls_back_to_lambda_one_when_out_of_range);
   RUN_TEST(test_compute_derived_fuel_rate_unset_when_maf_absent);
   RUN_TEST(test_compute_derived_skips_when_invalid);
   return UNITY_END();
