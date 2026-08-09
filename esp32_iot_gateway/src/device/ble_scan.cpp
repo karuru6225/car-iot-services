@@ -55,6 +55,22 @@ void BleScanner::start(int seconds)
   _scan->start(seconds, false);
 }
 
+void BleScanner::startAsync(int seconds)
+{
+  // コールバックなしの3引数オーバーロード。即座に戻る。完了確認はisScanning()で行う
+  _scan->start(seconds, nullptr, false);
+}
+
+bool BleScanner::isScanning()
+{
+  return _scan->isScanning();
+}
+
+void BleScanner::stop()
+{
+  _scan->stop();
+}
+
 void BleScanner::clearResults()
 {
   _scan->clearResults();

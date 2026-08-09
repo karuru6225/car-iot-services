@@ -3,8 +3,10 @@
 // 起動 → (BTN0 長押し) メニュー → LTE 接続 → OTA チェック → loop()
 //
 // loop() の動作モード:
-//   DEEP_SLEEP          : measure() + publish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
-//   CONTINUOUS          : measure() + publish() + OBD-II(CAN)ポーリングを1秒間隔で実行 → 5分待機 →
+//   DEEP_SLEEP          : measure()(非同期BLEスキャン開始+アナログ計測) + publishBattery()
+//                         → enterDeepSleepMode()内でBLEスキャン完了を待って収集・publish → DeepSleep（次の5分境界まで、デフォルト本番動作）
+//   CONTINUOUS          : measure() + publishBattery() → continuousLoopCore()の1秒ティックで
+//                         pollBleCollect()（BLEスキャン完了を非ブロッキングで収集）+ OBD-II(CAN)ポーリングを実行 → 5分待機 →
 //                         繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
 //   ONE_SHOT_CONTINUOUS : Shadow ble_mode から指定。1サイクルだけ CONTINUOUS → 自動で DEEP_SLEEP
 //
@@ -69,6 +71,10 @@ static OperationMode g_mode = OperationMode::DEEP_SLEEP;
 
 static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
 static MeasureResult g_lastResult = {};
+// measure()で非同期BLEスキャンを開始した後、まだcollectBle()で収集していない間true。
+// #ifndef DEBUG_SKIP_NETWORK内でのみtrueになるため、DEBUG_SKIP_NETWORKビルドでは
+// pollBleCollect()/enterDeepSleepMode()のBLE待機は自然にno-opになる（bleScannerが未初期化のため）
+static bool g_blePending = false;
 static bool g_bleUpgradedToContinuous = false;
 // BTN1長押しでBLE接続中にDEEP_SLEEPへ強制した場合true。
 // trueの間はloop()側のBLE自動昇格を止め、ユーザーの選択をBLE切断まで尊重する
@@ -236,6 +242,18 @@ static void updateChargingState()
                   vMain, th.stopV, diff, th.minDiff);
 }
 
+// measure()で開始した非同期BLEスキャンの完了を確認し、完了していれば収集してpublishする。
+// スキャン中または既に収集済み（g_blePending=false）なら何もしない
+static void pollBleCollect()
+{
+  if (!g_blePending)
+    return;
+  if (!collectBle(g_lastResult))
+    return;
+  publishBle(g_lastResult);
+  g_blePending = false;
+}
+
 // shadow 同期 → LTE 切断 → DeepSleep（戻らない）
 static void enterDeepSleepMode()
 {
@@ -244,6 +262,24 @@ static void enterDeepSleepMode()
   shadowPollDelta();
   delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
 #ifndef DEBUG_SKIP_NETWORK
+  // このサイクルのBLEスキャン結果をqueue.save()に含めるため、非同期スキャンの完了を待って収集する。
+  // NimBLEスタック異常時に無限待機しないようSCAN_TIME+マージンで打ち切り、強制停止する
+  if (g_blePending)
+  {
+    unsigned long bleWaitStart = millis();
+    const unsigned long bleWaitTimeoutMs = (SCAN_TIME + 3) * 1000UL;
+    while (!collectBle(g_lastResult) && millis() - bleWaitStart < bleWaitTimeoutMs)
+      delay(50);
+    if (bleScanner.isScanning())
+    {
+      logger.println("[MAIN] BLEスキャン完了待ちタイムアウト → 強制停止しこの周期はBLEデータなしで続行");
+      bleScanner.stop();
+      collectBle(g_lastResult);
+    }
+    publishBle(g_lastResult);
+    g_blePending = false;
+  }
+
   queue.save();
   lte.disconnect();
   lte.radioOff();
@@ -350,6 +386,7 @@ static void continuousLoopCore(const ContinuousLoopHooks &hooks)
     {
       lastNotify = now;
       updateChargingState();
+      pollBleCollect(); // measure()で開始した非同期BLEスキャンの完了をここで拾う
 
 #ifndef DEBUG_SKIP_NETWORK
       // 継続モード中は5分待機ループに留まり続けるため、1秒ティックでもShadow deltaを確認する
@@ -402,7 +439,8 @@ void loop()
     lte.connect();
   }
   g_lastResult = measure();
-  publish(g_lastResult);
+  g_blePending = true; // BLE分はpollBleCollect()/enterDeepSleepMode()側で非同期に収集する
+  publishBattery(g_lastResult.reading);
   queue.flush();
   shadowPollDelta();
   oledShowSensorData(g_lastResult.reading);
