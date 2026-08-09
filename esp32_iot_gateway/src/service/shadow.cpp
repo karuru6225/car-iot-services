@@ -1,6 +1,6 @@
 #include "shadow.h"
 #include "mqtt.h"
-#include "logger.h"
+#include "../logger.h"
 #include "../config.h"
 #include "../domain/telemetry.h"
 #include <ArduinoJson.h>

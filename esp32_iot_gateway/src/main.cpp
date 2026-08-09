@@ -19,7 +19,7 @@
 #include "config.h"
 #include "board_pins.h"
 #include "device/lte.h"
-#include "service/logger.h"
+#include "logger.h"
 #include "service/ota.h"
 #include "service/jobs.h"
 #include "service/command.h"

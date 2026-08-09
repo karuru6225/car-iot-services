@@ -1,6 +1,6 @@
 #include "pubqueue.h"
 #include "mqtt.h"
-#include "logger.h"
+#include "../logger.h"
 #include "../device/lte.h"
 #include "../config.h"
 #include "../domain/telemetry.h"

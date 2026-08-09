@@ -244,3 +244,9 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 `gzLog()`（`service/ota.cpp`）は`Logger::printf`と同じ`vsnprintf`パターンを再実装していたが、最後に`logger.print(buf)`を呼んでおり、`logStorageWrite()`を呼ばずSerial出力のみで終わっていた。OTAのgz解凍時に出る`[OTA] gz...`系のログ行だけがSPIFFS上のデバッグログファイルに残らなかった。
 
 **対応**: `logger.print(buf)`を`logger.printf("%s", buf)`に差し替え、`logStorageWrite()`経由でも永続化されるようにした。
+
+### ~~TODO: device/がservice/logger.hを参照している（レイヤー依存違反）~~ **実装済み**
+
+`device/lte.cpp`・`device/can.cpp`・`device/ble_peripheral.cpp`が`#include "../service/logger.h"`しており、ARCHITECTURE.mdの「device/は上位層（domain/service）をincludeしてはいけない」というNG例と同じパターンが3ファイルで発生していた。
+
+**対応**: `logger.h`/`logger.cpp`を`service/`から`src/`直下（`config.h`/`board_pins.h`と同格）へ移動。ARCHITECTURE.mdも元々`logger.h/.cpp`を「横断的関心事」と記述していた（物理配置だけがそれに追いついていなかった）ため、ドキュメントの意図に実装を合わせる形になった。`logger.cpp`自体は引き続き`service/log_storage.h`（ログのSPIFFS永続化）に依存するが、これは横断的関心事の実装詳細であり、レイヤー依存ルール（device/domainが上位層をincludeしてはいけない）の対象外として扱う。全14箇所のinclude（device/3、service/10、main.cpp）を更新。ARCHITECTURE.md・CLAUDE.mdのファイル構成図も合わせて更新。

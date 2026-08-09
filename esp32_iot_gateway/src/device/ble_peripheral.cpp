@@ -1,7 +1,7 @@
 #include "ble_peripheral.h"
 #include "oled.h"
 #include "../config.h"
-#include "../service/logger.h"
+#include "../logger.h"
 #include <NimBLEDevice.h>
 
 #define MEAS_SERVICE_UUID    "f3a8b2c1-d4e5-4f6a-7b8c-9d0e1f2a3b4c"
