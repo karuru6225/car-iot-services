@@ -167,7 +167,7 @@ OBDReading obdPoll()
       sendFailCount += groupCount;
       continue;
     }
-    if (!canReceiveObdResponse(data, &dlc, 50, sizeof(data)))
+    if (canReceiveObdResponse(data, &dlc, 50, sizeof(data)) != ObdRecvResult::Ok)
     {
       recvFailCount += groupCount;
       continue;

@@ -266,10 +266,10 @@ static bool receiveConsecutiveFrames(uint8_t *data, uint16_t totalLen, uint16_t 
   return true;
 }
 
-bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint8_t maxLen)
+ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint8_t maxLen, uint8_t *nrcOut)
 {
   if (!s_ready)
-    return false;
+    return ObdRecvResult::Error;
 
   twai_message_t rx = {};
   unsigned long deadline = millis() + timeoutMs;
@@ -296,17 +296,25 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
       if (len == 0 || len > 7)
       {
         logger.printf("[CAN] ISO-TP: 不正なSF長%u（1-7の範囲外）\n", len);
-        return false;
+        return ObdRecvResult::Error;
       }
       if (len > maxLen)
       {
         logger.printf("[CAN] ISO-TP: SF長%uがバッファ上限%uを超過\n", len, maxLen);
-        return false;
+        return ObdRecvResult::Error;
       }
       // PCIバイト（1バイト目）を剥がし、ペイロード（41 PID data...）のみを返す
       memcpy(data, rx.data + 1, len);
       *dlc = len;
-      return true;
+      // 否定応答: `7F [SID] [NRC]`（常にSFで収まる3バイト）
+      if (len >= 3 && data[0] == 0x7F)
+      {
+        logger.printf("[CAN] ISO-TP: 否定応答受信 SID=0x%02X NRC=0x%02X\n", data[1], data[2]);
+        if (nrcOut)
+          *nrcOut = data[2];
+        return ObdRecvResult::NegativeResponse;
+      }
+      return ObdRecvResult::Ok;
     }
 
     if (pciType == ISO_TP_PCI_FF)
@@ -320,22 +328,22 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
       if (totalLen < 8)
       {
         logger.printf("[CAN] ISO-TP: 不正なFF長%u（8バイト未満はSFで送られるはず）\n", totalLen);
-        return false;
+        return ObdRecvResult::Error;
       }
       if (totalLen > maxLen)
       {
         logger.printf("[CAN] ISO-TP: 応答長%uがバッファ上限%uを超過\n", totalLen, maxLen);
-        return false;
+        return ObdRecvResult::Error;
       }
       memcpy(data, rx.data + 2, 6);
 
       if (!sendFlowControl(rx.identifier))
-        return false;
+        return ObdRecvResult::Error;
       if (!receiveConsecutiveFrames(data, totalLen, 6, rx.identifier))
-        return false;
+        return ObdRecvResult::Error;
 
       *dlc = (uint8_t)totalLen;
-      return true;
+      return ObdRecvResult::Ok;
     }
 
     // CF/FC等、FFに先行されないマルチフレーム断片は想定外 → 無視して待ち続ける
@@ -343,5 +351,5 @@ bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs, uint
   }
   if (unmatchedCount > 0)
     logger.printf("[CAN] canReceiveObdResponse: タイムアウト（未一致%u件受信、一致なし）\n", unmatchedCount);
-  return false;
+  return ObdRecvResult::Timeout;
 }

@@ -314,8 +314,14 @@ Honda N-VAN は 29ビット拡張アドレッシングが必須（11ビット 0x
 bool canInit();   // 冪等: 既に起動済みなら即 true
 void canDeinit(); // 未起動でも安全に呼べる（GPIO6 を確実に LOW にする）
 bool canSendObdRequest(uint8_t pid);
-bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100);
+
+enum class ObdRecvResult : uint8_t { Ok, Timeout, NegativeResponse, Error };
+ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100,
+                                     uint8_t maxLen = 8, uint8_t *nrcOut = nullptr);
 ```
+
+否定応答（`7F [SID] [NRC]`）を受信した場合は `NegativeResponse` を返し、`nrcOut` が
+非nullptrならNRCを書き込む。既存呼び出し側は `== ObdRecvResult::Ok` で成否判定する。
 
 ピンは `boardPins()` 経由で取得する（ハードコードしない）:
 - `CAN_RX_PIN = boardPins().gu01Pin`（GPIO5、MCP2562FD RXD 側）

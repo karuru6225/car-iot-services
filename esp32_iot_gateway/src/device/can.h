@@ -20,11 +20,21 @@ bool canSendObdRequest(uint8_t pid);
 // §4テスト1参照。物理アドレッシングは未対応）。
 bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count);
 
-// 応答を受信する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）。timeoutMs 内に届かなければ false
+enum class ObdRecvResult : uint8_t
+{
+  Ok,              // 正常応答（data/dlcに`41 PID data...`等が入っている）
+  Timeout,         // timeoutMs内に一致する応答が来なかった
+  NegativeResponse,// 否定応答（`7F [SID] [NRC]`）。nrcOutにNRCを返す
+  Error,           // 未起動・不正なフレーム長など、上記以外の失敗
+};
+
+// 応答を受信する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）。
 // ISO-TP マルチフレーム（First Frame + Consecutive Frame）にも対応し、Flow Controlを自動送信する。
 // data には ISO-TP の PCI バイトを除いたペイロード（41 PID data...）を返す。
-// maxLen は data バッファの最大サイズ。応答長がこれを超える場合は false を返す（バッファ溢れ防止）
-bool canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100, uint8_t maxLen = 8);
+// maxLen は data バッファの最大サイズ。応答長がこれを超える場合は Error を返す（バッファ溢れ防止）。
+// 否定応答（`7F [SID] [NRC]`）を受信した場合は NegativeResponse を返し、nrcOutが非nullptrならNRCを書き込む。
+ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeoutMs = 100,
+                                     uint8_t maxLen = 8, uint8_t *nrcOut = nullptr);
 
 // TWAIコントローラの状態・エラーカウンタ（TEC/REC等）をログ出力する（診断用）
 void canLogStatus(const char *tag);
