@@ -30,6 +30,11 @@ class ObdUploader {
   static const _flushInterval = Duration(minutes: 5);
   static const _maxBufferHardCap = 6000; // 異常系（長時間送信失敗が続いた場合）の保険
 
+  // valid=falseに変わった直後だけ、この時間だけ「尾流し」としてアップロードを許す。
+  // クラウド側でIGN OFF（エンジン停止）のタイミングを検知できるようにするため
+  // （valid=falseを送らないと単なるデータ欠損になり、停車と区別がつかない）。
+  static const _invalidTailWindow = Duration(seconds: 10);
+
   final AuthService _auth;
   void Function(String msg)? onLog;
 
@@ -40,13 +45,22 @@ class ObdUploader {
   final _buffer = <_BufferedReading>[];
   Timer? _flushTimer;
   bool _uploading = false;
+  DateTime? _invalidSince; // valid=falseが連続し始めた時刻（valid=trueに戻ったらnullへ）
 
   void start() {
     _flushTimer ??= Timer.periodic(_flushInterval, (_) => flush());
   }
 
   void add(ObdReading reading, {Position? position}) {
-    if (!reading.valid) return; // IGN OFF等の無応答データはアップロード対象外
+    if (!reading.valid) {
+      final now = DateTime.now();
+      _invalidSince ??= now;
+      if (now.difference(_invalidSince!) > _invalidTailWindow) {
+        return; // 尾流し期間を過ぎたら通常通り破棄
+      }
+    } else {
+      _invalidSince = null;
+    }
     _buffer.add(_BufferedReading(reading, position));
     if (_buffer.length >= _maxBatchSize) {
       flush();
