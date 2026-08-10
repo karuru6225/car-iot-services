@@ -54,9 +54,17 @@ class ObdUploader {
   void add(ObdReading reading, {Position? position}) {
     if (!reading.valid) {
       final now = DateTime.now();
+      final justInvalidated = _invalidSince == null;
       _invalidSince ??= now;
       if (now.difference(_invalidSince!) > _invalidTailWindow) {
         return; // 尾流し期間を過ぎたら通常通り破棄
+      }
+      // valid=trueからfalseへ変わった直後は、定期flush()（最大5分間隔）を待たず
+      // クラウド側がIGN OFFをできるだけ早く検知できるよう即座にアップロードする
+      if (justInvalidated) {
+        _buffer.add(_BufferedReading(reading, position));
+        flush();
+        return;
       }
     } else {
       _invalidSince = null;
