@@ -11,6 +11,7 @@ data "archive_file" "obd_ingest" {
   type        = "zip"
   source_dir  = local.obd_ingest_src_dir
   output_path = "${local.build_dir}/obd_ingest.zip"
+  excludes    = ["tests"]
 }
 
 # ─── Lambda ───────────────────────────────────────────────────────────────────
@@ -26,7 +27,8 @@ resource "aws_lambda_function" "obd_ingest" {
 
   environment {
     variables = {
-      S3_BUCKET = aws_s3_bucket.main.bucket
+      S3_BUCKET        = aws_s3_bucket.main.bucket
+      WATERMARK_TABLE  = aws_dynamodb_table.device_watermark.name
     }
   }
 }
@@ -79,6 +81,15 @@ resource "aws_iam_role_policy" "lambda_obd_ingest" {
         Effect   = "Allow"
         Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.main.arn}/obd/*"
+      },
+      {
+        # device-watermarkの読み書き（トリップ終了検知用のウォッチ状態更新）
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+        ]
+        Resource = aws_dynamodb_table.device_watermark.arn
       },
     ]
   })

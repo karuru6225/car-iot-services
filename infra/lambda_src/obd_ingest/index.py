@@ -34,6 +34,9 @@ import boto3
 s3 = boto3.client("s3")
 BUCKET = os.environ["S3_BUCKET"]
 
+dynamodb = boto3.resource("dynamodb")
+watermark_table = dynamodb.Table(os.environ["WATERMARK_TABLE"])
+
 MAX_READINGS_PER_BATCH = 500  # モバイル側上限100件に対する安全マージン
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")  # S3キーインジェクション対策
 
@@ -75,6 +78,63 @@ def _error(status: int, msg: str) -> dict:
         "headers": {"Content-Type": "application/json"},
         "body": json.dumps({"error": msg}),
     }
+
+
+def _update_watermark(device_id: str, readings: list) -> None:
+    """デバイスごとの最終受信状態（device-watermarkテーブル）を更新する。
+    trip_sweep Lambda（infra/lambda_src/trip_sweep）がこの状態からトリップ終了を
+    検知する。バッチ内のreadingsをts昇順に見て、valid=true→falseへの最初の遷移
+    タイミング（invalid_since）を特定する。
+
+    open_markerは「このセッションがまだtrip_sweepに処理されていない」間だけ
+    "OPEN"を持たせる属性で、trip_sweep側がREMOVEするまでは常に"OPEN"を書き戻す
+    （スパースGSI用、infra/trip_analysis.tf参照）。
+    """
+    ordered = sorted(readings, key=lambda r: int(r["ts"]))
+
+    item = watermark_table.get_item(Key={"device_id": device_id}).get("Item", {})
+    last_valid = item.get("last_valid", True)  # 初回は直前状態不明のためTrue扱い
+    invalid_since = item.get("invalid_since")
+    session_start = item.get("session_start")
+
+    for r in ordered:
+        ts = int(r["ts"])
+        valid = bool(r.get("valid", True))
+        if valid:
+            invalid_since = None
+            if session_start is None:
+                session_start = ts
+        elif last_valid:
+            invalid_since = ts  # true→falseへ最初に転じた瞬間のみセット
+        last_valid = valid
+
+    last_ts = int(ordered[-1]["ts"])
+
+    set_parts = ["last_ts = :last_ts", "last_valid = :last_valid", "open_marker = :open_marker"]
+    values = {":last_ts": last_ts, ":last_valid": last_valid, ":open_marker": "OPEN"}
+    remove_parts = []
+
+    if session_start is not None:
+        set_parts.append("session_start = :session_start")
+        values[":session_start"] = session_start
+    else:
+        remove_parts.append("session_start")
+
+    if invalid_since is not None:
+        set_parts.append("invalid_since = :invalid_since")
+        values[":invalid_since"] = invalid_since
+    else:
+        remove_parts.append("invalid_since")
+
+    update_expr = "SET " + ", ".join(set_parts)
+    if remove_parts:
+        update_expr += " REMOVE " + ", ".join(remove_parts)
+
+    watermark_table.update_item(
+        Key={"device_id": device_id},
+        UpdateExpression=update_expr,
+        ExpressionAttributeValues=values,
+    )
 
 
 def handler(event, context):
@@ -140,6 +200,13 @@ def handler(event, context):
     except Exception as e:
         print(f"[ERROR] {e}")
         return _error(500, "internal error")
+
+    # S3書き込み成功後のウォッチ更新。ここが失敗してもモバイル側への応答は成功のまま返す
+    # （既にS3へ書き込み済みのため500で再送させるとS3側に重複オブジェクトが増えるだけ）
+    try:
+        _update_watermark(device_id, readings)
+    except Exception as e:
+        print(f"[ERROR] watermark update failed: {e}")
 
     return {
         "statusCode": 200,
