@@ -27,8 +27,8 @@ resource "aws_lambda_function" "obd_ingest" {
 
   environment {
     variables = {
-      S3_BUCKET        = aws_s3_bucket.main.bucket
-      WATERMARK_TABLE  = aws_dynamodb_table.device_watermark.name
+      S3_BUCKET       = aws_s3_bucket.main.bucket
+      WATERMARK_TABLE = aws_dynamodb_table.device_watermark.name
     }
   }
 }
