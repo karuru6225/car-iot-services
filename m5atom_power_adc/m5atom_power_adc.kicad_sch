@@ -8288,6 +8288,12 @@
 		(uuid "0346998e-e034-42a3-9b8a-648d14e7e8b4")
 	)
 	(junction
+		(at 359.41 120.65)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "042f3eb8-3fea-404d-aca7-bd622b5fd9a6")
+	)
+	(junction
 		(at 289.56 63.5)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -8610,12 +8616,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "f7310dfb-b741-450d-bf45-c777fba346ee")
-	)
-	(junction
-		(at 359.41 114.3)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "fa507a20-be36-4d33-883a-ae4f7fc522cc")
 	)
 	(no_connect
 		(at 91.44 172.72)
@@ -9191,7 +9191,7 @@
 	)
 	(wire
 		(pts
-			(xy 359.41 114.3) (xy 369.57 114.3)
+			(xy 359.41 120.65) (xy 369.57 120.65)
 		)
 		(stroke
 			(width 0)
@@ -10321,6 +10321,16 @@
 	)
 	(wire
 		(pts
+			(xy 369.57 120.65) (xy 369.57 114.3)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b2072bbb-b460-40e5-8f21-70483c3a7b06")
+	)
+	(wire
+		(pts
 			(xy 185.42 138.43) (xy 185.42 140.97)
 		)
 		(stroke
@@ -10671,6 +10681,16 @@
 	)
 	(wire
 		(pts
+			(xy 359.41 120.65) (xy 359.41 119.38)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d0b5bb54-cede-44b9-b84c-5d3c23da3e28")
+	)
+	(wire
+		(pts
 			(xy 238.76 93.98) (xy 242.57 93.98)
 		)
 		(stroke
@@ -11008,16 +11028,6 @@
 			(type default)
 		)
 		(uuid "ea7dde72-4d34-488a-9df3-b902781a75e8")
-	)
-	(wire
-		(pts
-			(xy 359.41 114.3) (xy 359.41 120.65)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "eb07fe12-c4e8-4833-be9f-91fe84a2ce04")
 	)
 	(wire
 		(pts
@@ -19018,6 +19028,84 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R_Small")
+		(at 359.41 116.84 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "a5897698-fdad-4e16-bcce-1d8356a465bd")
+		(property "Reference" "R115"
+			(at 353.314 115.824 0)
+			(effects
+				(font
+					(size 1.016 1.016)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "1k"
+			(at 354.838 118.11 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 359.41 116.84 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 359.41 116.84 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 359.41 116.84 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC" "C21190"
+			(at 359.41 116.84 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "d18aa8b2-186a-4122-9d60-105d4b643b72")
+		)
+		(pin "1"
+			(uuid "edfe7fea-3ff3-48bb-a57b-08a5c35f13e4")
+		)
+		(instances
+			(project "m5atom_power_adc"
+				(path "/d0098cfc-b338-460c-a156-403456706079"
+					(reference "R115")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "RF_Module:ESP32-S3-MINI-1")
 		(at 185.42 107.95 0)
 		(unit 1)
@@ -20655,7 +20743,7 @@
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
-		(dnp no)
+		(dnp yes)
 		(fields_autoplaced yes)
 		(uuid "cc9400bf-122a-4291-ad7a-401d5a0441ee")
 		(property "Reference" "J109"
@@ -22408,7 +22496,6 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "f64b0241-e025-4274-ad0e-275fef74a26f")
 		(property "Reference" "Q105"
 			(at 374.65 118.11 90)
@@ -22419,7 +22506,7 @@
 			)
 		)
 		(property "Value" "PDTC114YU,115"
-			(at 374.65 120.65 90)
+			(at 378.46 120.65 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -22640,7 +22727,7 @@
 		(dnp no)
 		(uuid "ff97ab95-bc26-4e09-97b6-0511544e2d4c")
 		(property "Reference" "D109"
-			(at 360.68 117.856 0)
+			(at 362.712 117.602 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -22649,7 +22736,7 @@
 			)
 		)
 		(property "Value" "BZT52Bxx"
-			(at 363.22 117.856 0)
+			(at 365.252 117.602 0)
 			(effects
 				(font
 					(size 1.27 1.27)
