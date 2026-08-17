@@ -9,6 +9,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../ble/ble_constants.dart';
 import '../ble/obd_chunk_assembler.dart';
+import '../build_info.dart';
 import '../models/conn_state.dart';
 import '../models/log_entry.dart';
 import '../models/obd_metric.dart';
@@ -401,6 +402,17 @@ class _BleHomeState extends State<BleHome> {
         title: const Text('BLE ダッシュボード'),
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.primary,
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                kGitHash,
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ),
+          ),
+        ],
       ),
       body: IndexedStack(
         index: _tabIndex,
