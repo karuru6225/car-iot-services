@@ -1192,6 +1192,12 @@
 		(uuid 3f70ab7f-974c-42f5-89d7-42a6bd93ea7e)
 	)
 	(junction
+		(at 121.92 105.41)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "61a20a3c-2a82-4487-9049-389baa534686")
+	)
+	(junction
 		(at 125.73 97.79)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -1204,16 +1210,10 @@
 		(uuid "79ccd29c-3933-4500-b946-95c3ad078dd4")
 	)
 	(junction
-		(at 121.92 105.41)
+		(at 118.11 105.41)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "8862a3f5-f81d-4d8e-bd83-2c0b6962f574")
-	)
-	(junction
-		(at 133.35 105.41)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "c54e77d4-fc63-4f83-b0f8-187aedd3b05b")
+		(uuid "a1ead123-a66d-4cfa-aba4-e100c80caf09")
 	)
 	(junction
 		(at 121.92 118.11)
@@ -1223,13 +1223,23 @@
 	)
 	(wire
 		(pts
-			(xy 128.27 107.95) (xy 128.27 118.11)
+			(xy 118.11 114.3) (xy 118.11 118.11)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "039c984e-52e2-4638-9912-344cf5208202")
+		(uuid "0eb74091-38c2-4d6a-a958-e3ef994dfd48")
+	)
+	(wire
+		(pts
+			(xy 118.11 105.41) (xy 121.92 105.41)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "20f68b95-5c51-4319-a25b-b8020f1208b9")
 	)
 	(wire
 		(pts
@@ -1273,26 +1283,6 @@
 	)
 	(wire
 		(pts
-			(xy 121.92 105.41) (xy 125.73 105.41)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "7a4d3a88-ad0a-4ca1-b2e5-195642dd870d")
-	)
-	(wire
-		(pts
-			(xy 128.27 118.11) (xy 121.92 118.11)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "89760565-c5d5-483a-b87e-f44ae43093d2")
-	)
-	(wire
-		(pts
 			(xy 133.35 92.71) (xy 133.35 97.79)
 		)
 		(stroke
@@ -1300,6 +1290,16 @@
 			(type default)
 		)
 		(uuid "a332115d-90c5-4fb6-842b-222d0905dbb6")
+	)
+	(wire
+		(pts
+			(xy 118.11 118.11) (xy 121.92 118.11)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a40226a0-c2ce-4a25-9cd2-549a5b8a5d75")
 	)
 	(wire
 		(pts
@@ -1313,7 +1313,7 @@
 	)
 	(wire
 		(pts
-			(xy 121.92 100.33) (xy 121.92 105.41)
+			(xy 118.11 100.33) (xy 118.11 105.41)
 		)
 		(stroke
 			(width 0)
@@ -1323,7 +1323,17 @@
 	)
 	(wire
 		(pts
-			(xy 121.92 97.79) (xy 125.73 97.79)
+			(xy 121.92 105.41) (xy 121.92 107.95)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b9654282-b956-4fdc-b03b-f183cef15454")
+	)
+	(wire
+		(pts
+			(xy 118.11 97.79) (xy 125.73 97.79)
 		)
 		(stroke
 			(width 0)
@@ -1333,17 +1343,7 @@
 	)
 	(wire
 		(pts
-			(xy 133.35 105.41) (xy 134.62 105.41)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e2198519-15af-48a0-9e8a-8e2efa4de350")
-	)
-	(wire
-		(pts
-			(xy 121.92 105.41) (xy 121.92 107.95)
+			(xy 118.11 105.41) (xy 118.11 111.76)
 		)
 		(stroke
 			(width 0)
@@ -1353,13 +1353,13 @@
 	)
 	(wire
 		(pts
-			(xy 134.62 107.95) (xy 128.27 107.95)
+			(xy 121.92 105.41) (xy 125.73 105.41)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "ebc3bdbb-48eb-4a38-a49d-214bbcccac44")
+		(uuid "f8c2dd3f-46d8-4aff-a11b-a8cbc1372102")
 	)
 	(hierarchical_label "Relay"
 		(shape input)
@@ -1449,7 +1449,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x02")
-		(at 116.84 100.33 180)
+		(at 113.03 100.33 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1457,7 +1457,7 @@
 		(dnp no)
 		(uuid "1db200a1-e594-4ddd-b7f7-85323dc3d0b2")
 		(property "Reference" "J201"
-			(at 116.84 91.44 0)
+			(at 113.03 91.44 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1465,7 +1465,7 @@
 			)
 		)
 		(property "Value" "Relay${RIndex}"
-			(at 116.84 93.98 0)
+			(at 113.03 93.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1473,7 +1473,7 @@
 			)
 		)
 		(property "Footprint" "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
-			(at 116.84 100.33 0)
+			(at 113.03 100.33 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1482,7 +1482,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 116.84 100.33 0)
+			(at 113.03 100.33 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1491,7 +1491,7 @@
 			)
 		)
 		(property "Description" "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
-			(at 116.84 100.33 0)
+			(at 113.03 100.33 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1500,7 +1500,7 @@
 			)
 		)
 		(property "LCSC" "C158012"
-			(at 116.84 100.33 0)
+			(at 113.03 100.33 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1943,7 +1943,8 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x02")
-		(at 139.7 105.41 0)
+		(at 113.03 111.76 0)
+		(mirror y)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1951,7 +1952,7 @@
 		(dnp no)
 		(uuid "70a13ff1-5116-4a1c-883e-e7c62d9718e4")
 		(property "Reference" "J202"
-			(at 142.24 105.4099 0)
+			(at 110.49 111.7599 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1960,7 +1961,7 @@
 			)
 		)
 		(property "Value" "R${RIndex}SW"
-			(at 142.24 107.9499 0)
+			(at 110.49 114.2999 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1969,7 +1970,7 @@
 			)
 		)
 		(property "Footprint" "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
-			(at 139.7 105.41 0)
+			(at 113.03 111.76 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1978,7 +1979,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 139.7 105.41 0)
+			(at 113.03 111.76 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1987,7 +1988,7 @@
 			)
 		)
 		(property "Description" "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
-			(at 139.7 105.41 0)
+			(at 113.03 111.76 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1996,7 +1997,7 @@
 			)
 		)
 		(property "LCSC" "C158012"
-			(at 139.7 105.41 0)
+			(at 113.03 111.76 0)
 			(effects
 				(font
 					(size 1.27 1.27)
