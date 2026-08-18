@@ -40,6 +40,13 @@
     .trip-table th, .trip-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1e2d4a; }
     .trip-table th { color: #888; font-weight: normal; }
     .empty { color: #888; text-align: center; padding: 20px; }
+    .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 0.85em; }
+    .filter-row label { color: #888; display: flex; align-items: center; gap: 6px; }
+    .filter-row input[type=date] {
+      background: #0f3460; color: #e0e0e0; border: 1px solid #3a5a8a;
+      border-radius: 4px; padding: 4px 8px; font-size: 0.9em;
+    }
+    .trip-summary { font-size: 0.85em; color: #4fc87f; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -172,6 +179,12 @@ function renderTabContent() {
       <button id="start-btn" onclick="startAnalysis('${activeDeviceId}')">分析開始</button>
       <div class="msg" id="job-msg"></div>
     </div>
+    <div class="filter-row">
+      <label>期間: <input type="date" id="filter-from" onchange="applyFilter()"></label>
+      <label>〜 <input type="date" id="filter-to" onchange="applyFilter()"></label>
+      <button class="secondary" onclick="clearFilter()">クリア</button>
+    </div>
+    <div class="trip-summary" id="trip-summary"></div>
     <div id="trips-area"><div class="empty">読み込み中...</div></div>
   `;
 }
@@ -249,16 +262,46 @@ async function pollJob(deviceId, jobId) {
 
 // ─── トリップ一覧 ─────────────────────────────────────────────────────────────
 
+let currentTrips = [];
+
 async function loadTrips(deviceId) {
   try {
     const res  = await apiFetch(`/trip-analysis?device_id=${encodeURIComponent(deviceId)}`);
     const data = await res.json();
-    if (deviceId === activeDeviceId) renderTrips(data.trips || []);
+    if (deviceId === activeDeviceId) {
+      currentTrips = data.trips || [];
+      applyFilter();
+    }
   } catch (e) {
     if (e.message !== 'Unauthorized' && deviceId === activeDeviceId) {
       document.getElementById('trips-area').innerHTML = `<div class="empty">取得エラー: ${e.message}</div>`;
     }
   }
+}
+
+// 期間フィルタはロード済みのトリップ一覧（直近最大200件、_load_tripsのlimit）に対して
+// クライアント側で絞り込む。件数が多いデバイスでは200件より前のトリップは対象外になるが、
+// 現状の用途（直近の走行を振り返る）では十分なため専用APIは設けない
+function applyFilter() {
+  const fromEl = document.getElementById('filter-from');
+  const toEl   = document.getElementById('filter-to');
+  if (!fromEl || !toEl) return;
+
+  const fromTs = fromEl.value ? Math.floor(new Date(`${fromEl.value}T00:00:00`).getTime() / 1000) : null;
+  const toTs   = toEl.value   ? Math.floor(new Date(`${toEl.value}T23:59:59`).getTime() / 1000)   : null;
+
+  const filtered = currentTrips.filter(t => {
+    if (fromTs != null && t.session_start < fromTs) return false;
+    if (toTs != null && t.session_start > toTs) return false;
+    return true;
+  });
+  renderTrips(filtered);
+}
+
+function clearFilter() {
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value = '';
+  applyFilter();
 }
 
 function fmtTime(ts) {
@@ -270,23 +313,33 @@ function fmtNum(v, digits = 1) {
 }
 
 function renderTrips(trips) {
-  const area = document.getElementById('trips-area');
+  const area      = document.getElementById('trips-area');
+  const summaryEl = document.getElementById('trip-summary');
+
   if (trips.length === 0) {
     area.innerHTML = '<div class="empty">トリップなし</div>';
+    summaryEl.textContent = '';
     return;
   }
+
+  const totalDistance = trips.reduce((sum, t) => sum + (t.distance_km || 0), 0);
+  const totalFuel     = trips.reduce((sum, t) => sum + (t.fuel_l || 0), 0);
+  summaryEl.textContent =
+    `表示中 ${trips.length} 件 — 合計走行距離 ${totalDistance.toFixed(1)} km / 合計推定消費燃料 ${totalFuel.toFixed(2)} L`;
+
   const rows = trips.map(t => `
     <tr>
       <td>${fmtTime(t.session_start)}</td>
       <td>${fmtTime(t.session_end)}</td>
       <td>${t.duration_sec != null ? Math.round(t.duration_sec / 60) + '分' : '-'}</td>
       <td>${fmtNum(t.distance_km)} km</td>
+      <td>${fmtNum(t.fuel_l, 2)} L</td>
       <td>${fmtNum(t.fuel_economy_km_l)} km/L</td>
     </tr>
   `).join('');
   area.innerHTML = `
     <table class="trip-table">
-      <thead><tr><th>開始</th><th>終了</th><th>時間</th><th>距離</th><th>燃費</th></tr></thead>
+      <thead><tr><th>開始</th><th>終了</th><th>時間</th><th>距離</th><th>推定消費燃料</th><th>燃費</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
