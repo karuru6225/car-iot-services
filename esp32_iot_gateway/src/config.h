@@ -2,6 +2,11 @@
 #include <stdint.h>
 #include <stddef.h>
 
+// デバッグ用: 有効にするとLTE/MQTT等のネットワーク処理を丸ごとスキップする。
+// main.cpp単体のソース内#defineだと他の翻訳単位（service/mode_*.cpp等）に伝播しないため、
+// 全層から参照可能なここで定義する（コメントアウトがデフォルト）
+// #define DEBUG_SKIP_NETWORK
+
 #ifndef GIT_HASH
 #define GIT_HASH "00000000"
 #endif

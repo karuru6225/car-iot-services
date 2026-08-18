@@ -50,6 +50,7 @@
 #include "service/operation_mode.h"
 #include "service/mode_context.h"
 #include "service/mode_common.h"
+#include "service/mode_deep_sleep.h"
 
 #ifdef USE_MSGPACK
 static MsgPackTelemetryEncoder g_encoder;
@@ -60,12 +61,6 @@ static JsonTelemetryEncoder g_encoder;
 #include <esp_sleep.h>
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
-
-// ESP32-S3モジュール内蔵のBOOTボタン。DeepSleep復帰用のEXT0 wakeupソース。
-// board_pins.hが管理する基板固有ピンとは異なりモジュール側で固定のため、ここで#define する
-#define WAKE_PIN GPIO_NUM_0
-
-// #define DEBUG_SKIP_NETWORK
 
 static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
 
@@ -82,7 +77,6 @@ private:
 };
 
 // モードごとの実行関数（setup() で modeManager に登録するため前方宣言）
-static void enterDeepSleepMode();
 static void runContinuousMode();
 static void runTimedContinuousMode();
 
@@ -190,16 +184,15 @@ void setup()
   digitalWrite(boardPins().relay2Pin, LOW);
   digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
 
-  static LegacyModeHandler deepSleepAdapter(enterDeepSleepMode);
   static LegacyModeHandler continuousAdapter(runContinuousMode);
   static LegacyModeHandler timedContinuousAdapter(runTimedContinuousMode);
-  modeManager.registerMode(OperationMode::DEEP_SLEEP, &deepSleepAdapter);
+  modeManager.registerMode(OperationMode::DEEP_SLEEP, &deepSleepMode);
   modeManager.registerMode(OperationMode::CONTINUOUS, &continuousAdapter);
   modeManager.registerMode(OperationMode::TIMED_CONTINUOUS, &timedContinuousAdapter);
 }
 
 // BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）。
-// 切断をもってuserForcedSleepもリセットし、次回接続時は通常通り自動昇格させる
+// userForcedSleepのリセットはDeepSleepModeHandler::beforeRun()に移動済み
 static void updateBleReconnectState()
 {
   if (modeCtx.bleUpgradedToContinuous() && !blePeripheral.isConnected())
@@ -207,58 +200,6 @@ static void updateBleReconnectState()
     modeCtx.setMode(OperationMode::DEEP_SLEEP);
     modeCtx.setBleUpgradedToContinuous(false);
   }
-  if (!blePeripheral.isConnected())
-    modeCtx.setUserForcedSleep(false);
-}
-
-// shadow 同期 → LTE 切断 → DeepSleep（戻らない）
-static void enterDeepSleepMode()
-{
-  updateChargingState();
-  shadowPublishConfig();
-  shadowPollDelta();
-  delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
-#ifndef DEBUG_SKIP_NETWORK
-  // このサイクルのBLEスキャン結果をqueue.save()に含めるため、非同期スキャンの完了を待って収集する。
-  // NimBLEスタック異常時に無限待機しないようSCAN_TIME+マージンで打ち切り、強制停止する
-  if (modeCtx.blePending())
-  {
-    MeasureResult r = modeCtx.lastResult();
-    unsigned long bleWaitStart = millis();
-    const unsigned long bleWaitTimeoutMs = (SCAN_TIME + 3) * 1000UL;
-    while (!collectBle(r) && millis() - bleWaitStart < bleWaitTimeoutMs)
-      delay(50);
-    if (bleScanner.isScanning())
-    {
-      logger.println("[MAIN] BLEスキャン完了待ちタイムアウト → 強制停止しこの周期はBLEデータなしで続行");
-      bleScanner.stop();
-      collectBle(r);
-    }
-    modeCtx.setLastResult(r);
-    publishBle(r);
-    modeCtx.setBlePending(false);
-  }
-
-  queue.save();
-  lte.disconnect();
-  lte.radioOff();
-#endif
-  canDeinit(); // CANはDeepSleep突入時のみ停止する（それ以外は常時起動しておく）
-  oledClear();
-
-  uint32_t sleepSec = secsToNextBoundary();
-  if (isCharging())
-    gpio_hold_en((gpio_num_t)boardPins().chgOnPin);
-#if BOARD_VERSION == 2
-  gpio_hold_en((gpio_num_t)boardPins().pwrHoldPin);
-#endif
-  rtc_gpio_init(WAKE_PIN);
-  rtc_gpio_set_direction(WAKE_PIN, RTC_GPIO_MODE_INPUT_ONLY);
-  rtc_gpio_pullup_en(WAKE_PIN);
-  rtc_gpio_pulldown_dis(WAKE_PIN);
-  esp_sleep_enable_ext0_wakeup(WAKE_PIN, 0);
-  esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
-  esp_deep_sleep_start();
 }
 
 // メニューへの遷移（BTN0 短押し）。CONTINUOUS 系モード共通の処理
@@ -419,29 +360,6 @@ void loop()
   shadowPollDelta();
   oledShowSensorData(modeCtx.lastResult().reading);
 #endif
-
-  // BLE 接続 → CONTINUOUS 昇格。未接続なら DeepSleep 突入前に BLE_WAKE_WINDOW_SEC 秒だけ
-  // 接続を待つ（起床直後の setup() 中もアドバタイズ済みのため、実際の待受はそれより長い）。
-  // userForcedSleep中はBTN1でのDEEP_SLEEP選択をBLE接続中でも尊重し、自動昇格させない
-  if (blePeripheral.isConnected() && modeCtx.mode() == OperationMode::DEEP_SLEEP && !modeCtx.userForcedSleep())
-  {
-    modeCtx.setMode(OperationMode::CONTINUOUS);
-    modeCtx.setBleUpgradedToContinuous(true);
-  }
-  else if (modeCtx.mode() == OperationMode::DEEP_SLEEP && !modeCtx.userForcedSleep())
-  {
-    unsigned long waitStart = millis();
-    while (millis() - waitStart < BLE_WAKE_WINDOW_SEC * 1000UL)
-    {
-      if (blePeripheral.isConnected())
-      {
-        modeCtx.setMode(OperationMode::CONTINUOUS);
-        modeCtx.setBleUpgradedToContinuous(true);
-        break;
-      }
-      delay(100);
-    }
-  }
 
   modeManager.runCurrent();
 }
