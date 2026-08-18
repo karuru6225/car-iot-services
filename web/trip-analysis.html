@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OBD トリップ分析</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 16px; }
+    h1 { color: #4f8ef7; font-size: 1.3em; }
+    a { color: #4f8ef7; }
+    .card {
+      background: #16213e; border-radius: 8px; padding: 16px; margin-bottom: 16px;
+      border: 1px solid #1e2d4a;
+    }
+    button {
+      background: #4f8ef7; color: white; border: none;
+      border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 0.85em;
+    }
+    button:hover { background: #3a7de4; }
+    button.secondary { background: #2a4a6a; }
+    button.secondary:hover { background: #3a5a7a; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .msg { font-size: 0.8em; color: #888; margin-top: 8px; min-height: 1.2em; }
+    .msg.ok  { color: #27ae60; }
+    .msg.err { color: #c0392b; }
+    .msg.warn { color: #e0a83a; }
+    .header-row {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px;
+    }
+    #loading { text-align: center; color: #888; padding: 40px; }
+    .tab-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .tab-btn {
+      background: #0f3460; color: #aac0e0; border: 1px solid #1e2d4a;
+      border-radius: 4px 4px 0 0; padding: 8px 14px; cursor: pointer; font-size: 0.85em; font-family: monospace;
+    }
+    .tab-btn:hover { background: #16213e; }
+    .tab-btn.active { background: #4f8ef7; color: white; border-color: #4f8ef7; }
+    .trip-table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin-top: 12px; }
+    .trip-table th, .trip-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1e2d4a; }
+    .trip-table th { color: #888; font-weight: normal; }
+    .empty { color: #888; text-align: center; padding: 20px; }
+  </style>
+</head>
+<body>
+
+<div class="header-row">
+  <div>
+    <h1>OBD トリップ分析</h1>
+    <div style="font-size:0.8em; margin-top:4px"><a href="/admin.html">← 管理コンソールへ</a></div>
+  </div>
+  <button class="secondary" onclick="logout()">ログアウト</button>
+</div>
+
+<div id="loading">デバイスを取得中...</div>
+<div id="main" style="display:none">
+  <div class="tab-bar" id="tab-bar"></div>
+  <div class="card" id="tab-content"></div>
+</div>
+
+<script>
+const API_BASE          = '__TMPL_API_ENDPOINT__';
+const COGNITO_DOMAIN    = '__TMPL_COGNITO_DOMAIN__';
+const COGNITO_CLIENT_ID = '__TMPL_COGNITO_CLIENT_ID__';
+// Cognito Hosted UIのコールバックURL登録を増やさないため、ログイン後の戻り先は
+// 常にadmin.html（既存の登録済みURL）にする。同一オリジン内の遷移ではsessionStorage
+// の id_token がそのまま引き継がれるため、admin.htmlからのリンク経由で開いた場合は
+// 再ログインは発生しない。ブックマーク等でこのページへ未ログイン状態で直接来た
+// 場合のみ、ログイン後にadmin.htmlへ着地する（許容する簡略化）
+const WEB_ADMIN_URL     = '__TMPL_WEB_ADMIN_URL__';
+
+let idToken    = sessionStorage.getItem('id_token') || '';
+let userGroups = JSON.parse(sessionStorage.getItem('user_groups') || '[]');
+
+// ─── Cognito 認証（admin.htmlと同一ロジック） ────────────────────────────────
+
+function parseJwtPayload(token) {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(base64));
+  } catch { return {}; }
+}
+
+function redirectToLogin() {
+  const params = new URLSearchParams({
+    client_id:     COGNITO_CLIENT_ID,
+    response_type: 'token',
+    scope:         'openid email profile',
+    redirect_uri:  WEB_ADMIN_URL,
+  });
+  window.location.href = `${COGNITO_DOMAIN}/login?${params}`;
+}
+
+function logout() {
+  sessionStorage.removeItem('id_token');
+  sessionStorage.removeItem('user_groups');
+  const params = new URLSearchParams({ client_id: COGNITO_CLIENT_ID, logout_uri: WEB_ADMIN_URL });
+  window.location.href = `${COGNITO_DOMAIN}/logout?${params}`;
+}
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: { 'Authorization': `Bearer ${idToken}`, ...(options.headers || {}) },
+  });
+  if (res.status === 401) {
+    sessionStorage.removeItem('id_token');
+    redirectToLogin();
+    throw new Error('Unauthorized');
+  }
+  return res;
+}
+
+// ─── device_id 導出 ───────────────────────────────────────────────────────────
+// OBDのdevice_idはモバイル側がBLEアドバタイズ名(car-iot-{MAC上位3バイト6桁})を
+// そのまま使う。ESP32側はIoT Thing ID(esp32-gw-{MACフル12桁})の先頭6桁から
+// このBLE名を生成するため、Thing一覧から機械的に導出できる
+// （esp32_iot_gateway/src/device/ble_scan.cpp参照）
+
+function deriveObdDeviceId(thingId) {
+  const mac6 = thingId.replace(/^esp32-gw-/, '').slice(0, 6);
+  return `car-iot-${mac6}`;
+}
+
+// ─── タブ ─────────────────────────────────────────────────────────────────────
+
+let deviceIds = [];
+let activeDeviceId = null;
+let pollTimer = null;
+
+async function loadDeviceTabs() {
+  try {
+    const res  = await apiFetch('/admin/devices');
+    const data = await res.json();
+    deviceIds = (data.devices || []).map(d => deriveObdDeviceId(d.device_id));
+    renderTabs();
+    if (deviceIds.length > 0) selectTab(deviceIds[0]);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      document.getElementById('loading').textContent = '取得エラー: ' + e.message;
+    }
+    return;
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('main').style.display = '';
+  }
+}
+
+function renderTabs() {
+  const bar = document.getElementById('tab-bar');
+  if (deviceIds.length === 0) {
+    bar.innerHTML = '';
+    document.getElementById('tab-content').innerHTML = '<div class="empty">デバイスなし</div>';
+    return;
+  }
+  bar.innerHTML = deviceIds.map(id =>
+    `<button class="tab-btn${id === activeDeviceId ? ' active' : ''}" onclick="selectTab('${id}')">${id}</button>`
+  ).join('');
+}
+
+function selectTab(deviceId) {
+  activeDeviceId = deviceId;
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  renderTabs();
+  renderTabContent();
+  loadTrips(deviceId);
+}
+
+function renderTabContent() {
+  document.getElementById('tab-content').innerHTML = `
+    <div>
+      <button id="start-btn" onclick="startAnalysis('${activeDeviceId}')">分析開始</button>
+      <div class="msg" id="job-msg"></div>
+    </div>
+    <div id="trips-area"><div class="empty">読み込み中...</div></div>
+  `;
+}
+
+// ─── 分析開始 ─────────────────────────────────────────────────────────────────
+
+async function startAnalysis(deviceId) {
+  const btn    = document.getElementById('start-btn');
+  const msgEl  = document.getElementById('job-msg');
+  btn.disabled = true;
+  msgEl.textContent = '分析を開始しています...';
+  msgEl.className   = 'msg';
+  try {
+    const res    = await apiFetch('/trip-analysis', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ device_id: deviceId }),
+    });
+    const status = await res.json();
+    handleJobStatus(deviceId, status);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      msgEl.textContent = 'エラー: ' + e.message;
+      msgEl.className   = 'msg err';
+      btn.disabled = false;
+    }
+  }
+}
+
+function handleJobStatus(deviceId, status) {
+  if (deviceId !== activeDeviceId) return;
+  const msgEl = document.getElementById('job-msg');
+  const btn   = document.getElementById('start-btn');
+
+  if (status.status === 'RUNNING') {
+    msgEl.textContent = '分析中...';
+    msgEl.className   = 'msg';
+    pollTimer = setTimeout(() => pollJob(deviceId, status.job_id), 2000);
+    return;
+  }
+
+  btn.disabled = false;
+  if (status.status === 'FAILED') {
+    msgEl.textContent = '分析に失敗しました: ' + (status.error || '');
+    msgEl.className   = 'msg err';
+    return;
+  }
+
+  // SUCCEEDED
+  const saved = status.trips_saved || 0;
+  msgEl.textContent = `分析完了（${saved}件のトリップを保存）`;
+  msgEl.className   = 'msg ok';
+  if (status.has_more) {
+    msgEl.textContent += ' — 未分析データが残っています。もう一度「分析開始」を押してください';
+    msgEl.className   = 'msg warn';
+  }
+  loadTrips(deviceId);
+}
+
+async function pollJob(deviceId, jobId) {
+  if (deviceId !== activeDeviceId) return;
+  try {
+    const res    = await apiFetch(`/trip-analysis?device_id=${encodeURIComponent(deviceId)}&job_id=${encodeURIComponent(jobId)}`);
+    const status = await res.json();
+    handleJobStatus(deviceId, status);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      const msgEl = document.getElementById('job-msg');
+      msgEl.textContent = 'エラー: ' + e.message;
+      msgEl.className   = 'msg err';
+      document.getElementById('start-btn').disabled = false;
+    }
+  }
+}
+
+// ─── トリップ一覧 ─────────────────────────────────────────────────────────────
+
+async function loadTrips(deviceId) {
+  try {
+    const res  = await apiFetch(`/trip-analysis?device_id=${encodeURIComponent(deviceId)}`);
+    const data = await res.json();
+    if (deviceId === activeDeviceId) renderTrips(data.trips || []);
+  } catch (e) {
+    if (e.message !== 'Unauthorized' && deviceId === activeDeviceId) {
+      document.getElementById('trips-area').innerHTML = `<div class="empty">取得エラー: ${e.message}</div>`;
+    }
+  }
+}
+
+function fmtTime(ts) {
+  return ts != null ? new Date(ts * 1000).toLocaleString('ja-JP') : '-';
+}
+
+function fmtNum(v, digits = 1) {
+  return v != null ? v.toFixed(digits) : '-';
+}
+
+function renderTrips(trips) {
+  const area = document.getElementById('trips-area');
+  if (trips.length === 0) {
+    area.innerHTML = '<div class="empty">トリップなし</div>';
+    return;
+  }
+  const rows = trips.map(t => `
+    <tr>
+      <td>${fmtTime(t.session_start)}</td>
+      <td>${fmtTime(t.session_end)}</td>
+      <td>${t.duration_sec != null ? Math.round(t.duration_sec / 60) + '分' : '-'}</td>
+      <td>${fmtNum(t.distance_km)} km</td>
+      <td>${fmtNum(t.fuel_economy_km_l)} km/L</td>
+    </tr>
+  `).join('');
+  area.innerHTML = `
+    <table class="trip-table">
+      <thead><tr><th>開始</th><th>終了</th><th>時間</th><th>距離</th><th>燃費</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+// ─── 初期化 ───────────────────────────────────────────────────────────────────
+
+window.onload = () => {
+  const hash         = new URLSearchParams(window.location.hash.slice(1));
+  const tokenFromHash = hash.get('id_token');
+  if (tokenFromHash) {
+    idToken    = tokenFromHash;
+    sessionStorage.setItem('id_token', idToken);
+    const payload = parseJwtPayload(idToken);
+    userGroups = payload['cognito:groups'] || [];
+    sessionStorage.setItem('user_groups', JSON.stringify(userGroups));
+    history.replaceState(null, '', window.location.pathname);
+  }
+
+  if (!idToken) { redirectToLogin(); return; }
+
+  // admin グループ以外は index.html にリダイレクト
+  if (!userGroups.includes('admin')) {
+    window.location.href = '/';
+    return;
+  }
+
+  loadDeviceTabs();
+};
+</script>
+</body>
+</html>
