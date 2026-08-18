@@ -1,18 +1,31 @@
 #include "operation_mode.h"
 #include "../logger.h"
 
-OperationModeManager modeManager;
+OperationModeManager modeManager(modeCtx);
 
-void OperationModeManager::registerMode(OperationMode mode, ModeFunc func)
+void OperationModeManager::registerMode(OperationMode mode, IOperationModeHandler *handler)
 {
-  _handlers[static_cast<int>(mode)] = func;
+  _handlers[static_cast<int>(mode)] = handler;
 }
 
-void OperationModeManager::run(OperationMode mode)
+void OperationModeManager::runCurrent()
 {
-  ModeFunc f = _handlers[static_cast<int>(mode)];
-  if (f)
-    f();
-  else
-    logger.printf("[MODE] 未登録の動作モードです: %d\n", (int)mode);
+  IOperationModeHandler *handler = _handlers[static_cast<int>(_ctx.mode())];
+  if (!handler)
+  {
+    logger.printf("[MODE] 未登録の動作モードです: %d\n", (int)_ctx.mode());
+    return;
+  }
+
+  handler->beforeRun();
+
+  // beforeRun() 内でモードが変わっていたら、新しいモードのハンドラに追従する
+  handler = _handlers[static_cast<int>(_ctx.mode())];
+  if (!handler)
+  {
+    logger.printf("[MODE] 未登録の動作モードです: %d\n", (int)_ctx.mode());
+    return;
+  }
+
+  handler->run();
 }
