@@ -745,4 +745,22 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 
 **影響範囲（重要）**: この問題により`logStorageWrite()`は事実上ずっと機能しておらず、SPIFFS上のデバッグログファイルへの永続化が全て失敗していた可能性がある。シリアルモニタ接続時は`[E]`ログで気づけるが、実運用中（車載・モニタなし）は完全に不可視。**過去にSPIFFS上のログファイルを根拠にした調査結果があれば信頼できない**（他のTODOでは幸い`pio device monitor`でのシリアル直接確認を使っており、この問題の影響は受けていない）。
 
+### TODO: OBDトリップのAIナレーティブ生成（未着手、設計メモのみ）
+
+`infra/lambda_src/trip_analysis/index.py`の`_save_trip()`が書き出すトリップJSONには`narrative`フィールドが将来のBedrock連携用に空文字で予約済み（PR #35）。実装はまだだが、プロンプト設計について検討した内容を残す。
+
+**渡すデータの方針**:
+
+- 既存の集計値（`_compute_summary()`が返す`distance_km`/`duration_sec`/`fuel_l`/`fuel_economy_km_l`/`ltft_avg`/`stft_avg`/`catalyst_temp_max`/`boost_kpa_max`/`coolant_start`/`coolant_end`）に加え、10秒バケットごとのmax/min/meanを一部項目で渡すと精度が上がりそう
+- 全項目に4統計を乗せるとトークン量が膨らむため、**変動が速い項目だけ**バケット統計（max/min/mean。medianは10秒粒度だとmeanとの差が小さそうなので保留）にし、`coolant_c`のようにゆっくり変化する項目は平均のみでよい
+- バケット統計を乗せる対象（変動が速い項目）: `rpm` / `boost_kpa` / `throttle_pct` / `speed_kmh` / `ltft_pct` / `stft_pct` / `timing_deg`（点火時期、急な遅角でノッキング兆候を検知） / `iat_c`（吸気温、`boost_kpa`と組み合わせるとインタークーラーの熱ダレが見える）
+- 単純な平均・スカラー値でよい項目: `coolant_c`、`ecu_voltage`（オルタネータ/バッテリー異常の文脈、この車載システムが元々バッテリー電圧監視用だった経緯があるため）
+- 保留（面白いが実装コストが上がるので後回し）: `o2_s1_ratio`（実測AFR）と`commanded_afr`（指令AFR）の乖離比較、`accel_pedal_d_pct`（生ペダル開度）と`throttle_pct`（実スロットル）の乖離比較
+- 検討したが対象外: `evap_purge_pct`（パージバルブ指令率、通常走行の診断とは関係が薄い）、位置情報`lat`/`lon`（ルート based narrative は複雑さ・プライバシー面で保留）
+- エアコン稼働状況は現状取得不可（`esp32_iot_gateway/OBD.md`参照。Honda N-VAN実車検証でOBD-IIポートからは生F-CANも見えず、Mode 22 UDS探索が必要。DID候補は未確認）
+
+**プロンプト出力の方針（案）**: ①一言サマリー ②しきい値付きの異常値指摘（LTFT/STFT±10%、触媒温度上限、ブースト圧の想定レンジなど車種依存の閾値をプロンプト側に明記） ③非エンジニア向けの平易な説明
+
+**実装方針（未確定）**: `_process_job()`内でトリップのrowsを10秒バケットに分割し、上記項目ごとにmax/min/mean（または平均のみ）を計算してBedrockへ渡す前処理を追加する想定。Bedrockモデル選定・呼び出し方式（同期/非同期）・コストは未検討。
+
 **対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
