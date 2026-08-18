@@ -90,6 +90,15 @@ def test_handler_accepts_allowed_override_mode(shadow_guard, monkeypatch):
     assert calls == []
 
 
+def test_handler_accepts_timed_continuous_override_mode(shadow_guard, monkeypatch):
+    calls = _capture_updates(monkeypatch, shadow_guard)
+    event = {"device_id": "dev1", "reported": {"override_next_mode": "timed_continuous"}}
+
+    shadow_guard.handler(event, None)
+
+    assert calls == []
+
+
 def test_handler_nulls_disallowed_override_mode(shadow_guard, monkeypatch):
     calls = _capture_updates(monkeypatch, shadow_guard)
     event = {"device_id": "dev1", "reported": {"override_next_mode": "not_allowed"}}

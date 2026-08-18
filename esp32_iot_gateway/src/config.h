@@ -24,7 +24,8 @@ enum class OperationMode
 {
   DEEP_SLEEP,
   CONTINUOUS,          // measure/publish + OBD-II(CAN)ポーリングを1秒間隔で実行
-  ONE_SHOT_CONTINUOUS, // Shadow ble_mode から指定。1サイクル CONTINUOUS → 自動で DEEP_SLEEP
+  ONE_SHOT_CONTINUOUS, // Shadow override_next_mode から指定。1サイクル CONTINUOUS → 自動で DEEP_SLEEP
+  TIMED_CONTINUOUS,    // Shadow override_next_mode から指定。指定分数が経過するまで CONTINUOUS を繰り返し、期限到達で自動 DEEP_SLEEP
 };
 
 // DeepSleep

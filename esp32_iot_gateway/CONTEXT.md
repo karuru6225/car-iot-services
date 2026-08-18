@@ -196,9 +196,12 @@ ESP32-S3-MINI-1
 {"state":{"desired":{"chg_min_diff_v":0.5}}}
 {"state":{"desired":{"charging":true}}}
 {"state":{"desired":{"override_next_mode":"one_shot_continuous"}}}
+{"state":{"desired":{"override_next_mode":"timed_continuous","continuous_duration_min":30}}}
 ```
 
 `override_next_mode: "one_shot_continuous"` を設定すると、次回起動時に1サイクルだけ CONTINUOUS モードで動作（BLE アドバタイズ継続）し、自動で DEEP_SLEEP に戻る。デバイスが ACK として reported に `"one_shot_continuous"` を送信したタイミングで desired も自動クリアされる。
+
+`override_next_mode: "timed_continuous"` を `continuous_duration_min`（分）と同時に設定すると、次回起動時から指定分数が経過するまで CONTINUOUS サイクルを繰り返し、期限到達後に自動で DEEP_SLEEP に戻る（BTN1 長押しでも即座に DEEP_SLEEP へ切り替え可能）。`continuous_duration_min` 未指定時はデフォルト30分。上限は1440分（24時間）にクランプされる（[CONTINUOUSモード中はOTAジョブを再チェックしない問題](#todo-continuousモード中はotaジョブを再チェックしない問題未着手)の影響を無期限に広げないため）。`override_next_mode` は `setup()` 時にしか反映されない点は `one_shot_continuous` と同じ（稼働中の即時切り替えは非対応）。
 
 shadow publish はスリープ直前に1回だけ行う（起動時は行わない）。電源断で状態がズレた場合でも次サイクル（最大5分）で補正される。
 
@@ -337,7 +340,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 | --- | --- | --- |
 | `FIRMWARE_VERSION` | `FIRMWARE_VERSION_BASE "+" GIT_HASH` | ファームウェアバージョン。`FIRMWARE_VERSION_BASE`はBOARD_VERSIONで基板シリーズ別に分岐（1=v1基板、2=v2基板）し、ソースが正。gitタグはCI発火・GitHub Release表示用のみ。詳細は`RELEASE.md`参照 |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
-| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS`（動作モード） |
+| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS` / `TIMED_CONTINUOUS`（動作モード） |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔 / CONTINUOUS モード待機間隔（秒） |
 | `CERT_PATH_CA` | `"/certs/ca.crt"` | SPIFFS 上の CA 証明書パス |
 | `CERT_PATH_DEVICE` | `"/certs/device.crt"` | SPIFFS 上のデバイス証明書パス |
@@ -716,6 +719,8 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - `notify-next` トピックを購読し、CONTINUOUSモード中の1秒ティック（`continuousLoopCore()`）でも新規ジョブ通知を検知したら `jobsGetNext()` を呼べるようにする
 - または `continuousLoopCore()` の待機ループ内で定期的（例: 5分ごと）に `jobsGetNext()` をポーリングする
 - OTA適用中はCONTINUOUS動作（測定・publish・OBDポーリング）を止める必要があるため、既存の「OTA中のBLE無効化」TODOと合わせて割り込みタイミングを設計する
+
+**関連（緩和策の一例）**: `TIMED_CONTINUOUS`（Shadow `override_next_mode: "timed_continuous"`、[shadow.cpp](esp32_iot_gateway/src/service/shadow.cpp)参照）は releaseビルドでもリモートから一定時間だけCONTINUOUSを維持できるが、この問題と同じ構造上の制約を持つ（継続中はOTAを検知できない）。上限1440分のクランプで無期限化は防いでいるが、根本解決ではないため、恒久対応時はこのモードの動作も踏まえて設計する。
 
 ### TODO: mobileアプリのrelease署名を専用keystoreに切り替え（未着手）
 
