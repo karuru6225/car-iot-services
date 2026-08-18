@@ -99,6 +99,24 @@ def test_handler_nulls_disallowed_override_mode(shadow_guard, monkeypatch):
     assert calls == [("dev1", {"state": {"reported": {"override_next_mode": None}}})]
 
 
+def test_handler_accepts_continuous_until_time_as_int(shadow_guard, monkeypatch):
+    calls = _capture_updates(monkeypatch, shadow_guard)
+    event = {"device_id": "dev1", "reported": {"continuous_until_time": 1700000000}}
+
+    shadow_guard.handler(event, None)
+
+    assert calls == []
+
+
+def test_handler_nulls_continuous_until_time_type_mismatch(shadow_guard, monkeypatch):
+    calls = _capture_updates(monkeypatch, shadow_guard)
+    event = {"device_id": "dev1", "reported": {"continuous_until_time": "not-a-number"}}
+
+    shadow_guard.handler(event, None)
+
+    assert calls == [("dev1", {"state": {"reported": {"continuous_until_time": None}}})]
+
+
 def test_handler_skips_null_values(shadow_guard, monkeypatch):
     calls = _capture_updates(monkeypatch, shadow_guard)
     event = {"device_id": "dev1", "reported": {"ah_offset": None, "totally_unknown": None}}

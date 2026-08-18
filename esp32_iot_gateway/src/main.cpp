@@ -145,9 +145,17 @@ void setup()
     modeCtx.setMode(*override);
     if (*override == OperationMode::TIMED_CONTINUOUS)
     {
-      uint32_t durationMin = getShadowContinuousDurationMin();
-      modeCtx.setContinuousUntilEpoch(time(nullptr) + (time_t)durationMin * 60);
-      logger.printf("[MAIN] TIMED_CONTINUOUS %u分間 開始\n", durationMin);
+      if (auto untilTime = getShadowContinuousUntilTime())
+      {
+        modeCtx.setContinuousUntilEpoch(*untilTime);
+        logger.printf("[MAIN] TIMED_CONTINUOUS %ld まで開始\n", (long)*untilTime);
+      }
+      else
+      {
+        // continuous_until_time未指定時のフォールバック（30分後）
+        modeCtx.setContinuousUntilEpoch(time(nullptr) + 30 * 60);
+        logger.println("[MAIN] TIMED_CONTINUOUS continuous_until_time未指定 → デフォルト30分間開始");
+      }
     }
   }
 

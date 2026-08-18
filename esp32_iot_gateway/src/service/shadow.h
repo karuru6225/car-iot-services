@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <time.h>
 #include <optional>
 #include "../config.h"
 
@@ -17,6 +18,6 @@ bool shadowPollDelta(uint32_t timeoutMs = 2000);
 // オーバーライドなし: nullopt
 std::optional<OperationMode> getShadowOverrideMode();
 
-// TIMED_CONTINUOUS の継続時間（分）。override_next_mode=timed_continuous と同時に
-// Shadow desired の continuous_duration_min で指定する。未指定時はデフォルト値を返す
-uint32_t getShadowContinuousDurationMin();
+// TIMED_CONTINUOUS の継続期限（絶対UNIX時刻）。override_next_mode=timed_continuous と同時に
+// Shadow desired の continuous_until_time で指定する。未指定時は nullopt
+std::optional<time_t> getShadowContinuousUntilTime();
