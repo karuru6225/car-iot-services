@@ -671,3 +671,57 @@ def test_process_job_handles_no_rows(trip_analysis, monkeypatch):
     status = trip_analysis._read_job_status("dev1", "job-1")
     assert status["status"] == "SUCCEEDED"
     assert status["trips_saved"] == 0
+
+
+# ---- _handle_get ----
+
+
+def test_handle_get_rejects_invalid_device_id(trip_analysis):
+    event = {"queryStringParameters": {"device_id": "invalid id"}}
+    resp = trip_analysis._handle_get(event)
+    assert resp["statusCode"] == 400
+
+
+def test_handle_get_job_returns_404_when_not_found(trip_analysis):
+    event = {"queryStringParameters": {"device_id": "dev1", "job_id": "no-such-job"}}
+    resp = trip_analysis._handle_get(event)
+    assert resp["statusCode"] == 404
+
+
+def test_handle_get_job_returns_running_status(trip_analysis):
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900},
+    )
+    event = {"queryStringParameters": {"device_id": "dev1", "job_id": "job-1"}}
+    resp = trip_analysis._handle_get(event)
+
+    body = json.loads(resp["body"])
+    assert resp["statusCode"] == 200
+    assert body["status"] == "RUNNING"
+
+
+def test_handle_get_job_returns_succeeded_status(trip_analysis):
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "SUCCEEDED", "started_at": 900, "trips_saved": 3},
+    )
+    event = {"queryStringParameters": {"device_id": "dev1", "job_id": "job-1"}}
+    resp = trip_analysis._handle_get(event)
+
+    body = json.loads(resp["body"])
+    assert body["status"] == "SUCCEEDED"
+    assert body["trips_saved"] == 3
+
+
+def test_handle_get_without_job_id_returns_trip_list(trip_analysis):
+    trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    trip_analysis._save_trip("dev1", 1700100000, 1700101800, {}, row_count=1)
+    trip_analysis._save_trip("dev2", 1800000000, 1800001800, {}, row_count=1)
+
+    event = {"queryStringParameters": {"device_id": "dev1"}}
+    resp = trip_analysis._handle_get(event)
+
+    body = json.loads(resp["body"])
+    assert resp["statusCode"] == 200
+    assert len(body["trips"]) == 2

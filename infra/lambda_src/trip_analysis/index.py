@@ -396,6 +396,23 @@ def _process_job(job_id: str, device_id: str, start_ts: int, end_ts: int, starte
     _write_job_status(device_id, job_id, started_at, status)
 
 
+def _handle_get(event: dict) -> dict:
+    """GET /trip-analysis?device_id=&job_id= — job_id指定時はジョブ状態、無指定時はトリップ一覧を返す。"""
+    params = event.get("queryStringParameters") or {}
+    device_id = params.get("device_id", "")
+    if not DEVICE_ID_RE.match(device_id):
+        return _err(400, "invalid device_id")
+
+    job_id = params.get("job_id")
+    if job_id:
+        status = _read_job_status(device_id, job_id)
+        if status is None:
+            return _err(404, "job not found")
+        return _resp(200, status)
+
+    return _resp(200, {"trips": _load_trips(device_id)})
+
+
 def _run_athena_query(query: str) -> list[dict]:
     """クエリを投げてSUCCEEDEDになるまで同一Lambda呼び出し内でポーリングし、結果を返す。
     trip_sweep/index.pyから移植（このリポジトリの他Lambdaはクライアント側ポーリング方式のため
