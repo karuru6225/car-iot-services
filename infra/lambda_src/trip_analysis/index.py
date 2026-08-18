@@ -341,6 +341,61 @@ def _handle_start(event: dict) -> dict:
     return _resp(200, status)
 
 
+_SELECT_COLS = [
+    "obd_ts", "lat", "lon", "fuel_rate_lph",
+    "ltft_pct", "stft_pct", "catalyst_temp_c", "boost_kpa", "coolant_c",
+]
+
+
+def _query_obd_data(device_id: str, start_ts: int, end_ts: int) -> list[dict]:
+    """trip_sweep/index.pyの_query_obd_dataと同種（モジュール冒頭docstring記載の方針により共通化しない）。"""
+    filters = _partition_filters(start_ts, end_ts) + [
+        f"device_id = '{device_id}'",
+        f"obd_ts BETWEEN {start_ts} AND {end_ts}",
+    ]
+    query = f"SELECT {', '.join(_SELECT_COLS)} FROM obd_data WHERE " + " AND ".join(filters) + " ORDER BY obd_ts"
+    return _run_athena_query(query)
+
+
+def _process_job(job_id: str, device_id: str, start_ts: int, end_ts: int, started_at: int) -> None:
+    """self-invokeされた側の重い処理本体。Athenaクエリ〜トリップ分割〜集計〜複数S3書き込みを行い、
+    最後にジョブ状態をSUCCEEDED/FAILEDで更新する（_handle_startが書いたrange/has_more等は保持する）。"""
+    existing = _read_job_status(device_id, job_id) or {}
+    try:
+        rows = _query_obd_data(device_id, start_ts, end_ts)
+        trips = _split_trips(rows, gap_sec=GAP_TIMEOUT_SEC)
+
+        now = int(time.time())
+        trips_saved = 0
+        for i, trip_rows in enumerate(trips):
+            trip_start = trip_rows[0]["obd_ts"]
+            trip_end = trip_rows[-1]["obd_ts"]
+            is_last = i == len(trips) - 1
+            if is_last and now - trip_end < GAP_TIMEOUT_SEC:
+                continue  # 走行中の可能性があるため未確定として次回に持ち越す
+            if trip_end - trip_start < MIN_TRIP_DURATION_SEC:
+                continue  # ノイズとして破棄
+            summary = _compute_summary(trip_rows)
+            _save_trip(device_id, int(trip_start), int(trip_end), summary, row_count=len(trip_rows))
+            trips_saved += 1
+
+        status = {
+            **existing,
+            "status": "SUCCEEDED",
+            "finished_at": int(time.time()),
+            "trips_saved": trips_saved,
+            "error": None,
+        }
+    except Exception as e:
+        status = {
+            **existing,
+            "status": "FAILED",
+            "finished_at": int(time.time()),
+            "error": str(e),
+        }
+    _write_job_status(device_id, job_id, started_at, status)
+
+
 def _run_athena_query(query: str) -> list[dict]:
     """クエリを投げてSUCCEEDEDになるまで同一Lambda呼び出し内でポーリングし、結果を返す。
     trip_sweep/index.pyから移植（このリポジトリの他Lambdaはクライアント側ポーリング方式のため

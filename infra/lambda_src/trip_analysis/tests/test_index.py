@@ -556,3 +556,118 @@ def test_handle_start_no_new_data_returns_succeeded_immediately(trip_analysis, m
     body = json.loads(resp["body"])
     assert body["status"] == "SUCCEEDED"
     assert body["trips_saved"] == 0
+
+
+# ---- _process_job ----
+
+
+def _row(obd_ts, **kw):
+    row = {
+        "obd_ts": obd_ts,
+        "lat": 35.0,
+        "lon": 139.0,
+        "fuel_rate_lph": 1.0,
+        "ltft_pct": 0.0,
+        "stft_pct": 0.0,
+        "catalyst_temp_c": 500.0,
+        "boost_kpa": 100.0,
+        "coolant_c": 80.0,
+    }
+    row.update(kw)
+    return row
+
+
+def test_process_job_saves_settled_trips_and_marks_succeeded(trip_analysis, monkeypatch):
+    # 2トリップ分（gap=600超過で分割）、どちらもnowから見て十分過去（settled）
+    rows = [_row(1000), _row(1060), _row(2000), _row(2060)]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 2060 + trip_analysis.GAP_TIMEOUT_SEC + 1)
+
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
+         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
+    )
+
+    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
+
+    status = trip_analysis._read_job_status("dev1", "job-1")
+    assert status["status"] == "SUCCEEDED"
+    assert status["trips_saved"] == 2
+    assert status["range"] == {"start_ts": 1000, "end_ts": 3000}  # 既存フィールドを保持
+    assert len(_list_trip_keys("dev1")) == 2
+
+
+def test_process_job_holds_back_unsettled_last_trip(trip_analysis, monkeypatch):
+    rows = [_row(1000), _row(1060), _row(2000), _row(2060)]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
+    # 2つ目のトリップはnowから見て直近（gap未経過）→保存されない
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 2060 + 10)
+
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
+         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
+    )
+
+    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
+
+    status = trip_analysis._read_job_status("dev1", "job-1")
+    assert status["status"] == "SUCCEEDED"
+    assert status["trips_saved"] == 1
+    assert len(_list_trip_keys("dev1")) == 1
+
+
+def test_process_job_discards_short_trips_as_noise(trip_analysis, monkeypatch):
+    # 継続時間=5秒（MIN_TRIP_DURATION_SEC=30未満）のトリップのみ
+    rows = [_row(1000), _row(1005)]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1005 + trip_analysis.GAP_TIMEOUT_SEC + 1)
+
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
+         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
+    )
+
+    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
+
+    status = trip_analysis._read_job_status("dev1", "job-1")
+    assert status["status"] == "SUCCEEDED"
+    assert status["trips_saved"] == 0
+    assert _list_trip_keys("dev1") == []
+
+
+def test_process_job_marks_failed_on_athena_error(trip_analysis, monkeypatch):
+    def _raise(device_id, start_ts, end_ts):
+        raise RuntimeError("athena boom")
+
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", _raise)
+
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
+         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
+    )
+
+    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
+
+    status = trip_analysis._read_job_status("dev1", "job-1")
+    assert status["status"] == "FAILED"
+    assert "athena boom" in status["error"]
+
+
+def test_process_job_handles_no_rows(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: [])
+
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
+         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
+    )
+
+    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
+
+    status = trip_analysis._read_job_status("dev1", "job-1")
+    assert status["status"] == "SUCCEEDED"
+    assert status["trips_saved"] == 0
