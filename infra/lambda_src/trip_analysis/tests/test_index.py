@@ -725,3 +725,52 @@ def test_handle_get_without_job_id_returns_trip_list(trip_analysis):
     body = json.loads(resp["body"])
     assert resp["statusCode"] == 200
     assert len(body["trips"]) == 2
+
+
+# ---- handler ----
+
+
+def test_handler_routes_self_invoke_to_process_job(trip_analysis, monkeypatch):
+    called = {}
+
+    def _fake_process_job(job_id, device_id, start_ts, end_ts, started_at):
+        called["job_id"] = job_id
+        called["device_id"] = device_id
+        called["start_ts"] = start_ts
+        called["end_ts"] = end_ts
+        called["started_at"] = started_at
+
+    monkeypatch.setattr(trip_analysis, "_process_job", _fake_process_job)
+
+    event = {
+        "trip_analysis_job": True, "job_id": "job-1", "device_id": "dev1",
+        "start_ts": 1000, "end_ts": 2000, "started_at": 900,
+    }
+    trip_analysis.handler(event, None)
+
+    assert called == {"job_id": "job-1", "device_id": "dev1", "start_ts": 1000, "end_ts": 2000, "started_at": 900}
+
+
+def test_handler_routes_post_to_handle_start(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis, "_handle_start", lambda event: {"statusCode": 200, "body": "start"})
+
+    event = {"requestContext": {"http": {"method": "POST"}}, "body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis.handler(event, None)
+
+    assert resp["body"] == "start"
+
+
+def test_handler_routes_get_to_handle_get(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis, "_handle_get", lambda event: {"statusCode": 200, "body": "get"})
+
+    event = {"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {"device_id": "dev1"}}
+    resp = trip_analysis.handler(event, None)
+
+    assert resp["body"] == "get"
+
+
+def test_handler_rejects_unknown_method(trip_analysis):
+    event = {"requestContext": {"http": {"method": "DELETE"}}}
+    resp = trip_analysis.handler(event, None)
+
+    assert resp["statusCode"] == 405

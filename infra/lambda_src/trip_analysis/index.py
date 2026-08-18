@@ -541,3 +541,17 @@ def _compute_summary(rows: list[dict]) -> dict:
         "coolant_start": coolant[0] if coolant else None,
         "coolant_end": coolant[-1] if coolant else None,
     }
+
+
+def handler(event, context):
+    """自己呼び出しイベント（trip_analysis_job）かAPI Gateway由来かで分岐する薄いルーター。"""
+    if event.get("trip_analysis_job"):
+        _process_job(event["job_id"], event["device_id"], event["start_ts"], event["end_ts"], event["started_at"])
+        return {}
+
+    method = event["requestContext"]["http"]["method"]
+    if method == "POST":
+        return _handle_start(event)
+    if method == "GET":
+        return _handle_get(event)
+    return _err(405, "method not allowed")
