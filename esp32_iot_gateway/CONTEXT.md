@@ -745,6 +745,8 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 
 **影響範囲（重要）**: この問題により`logStorageWrite()`は事実上ずっと機能しておらず、SPIFFS上のデバッグログファイルへの永続化が全て失敗していた可能性がある。シリアルモニタ接続時は`[E]`ログで気づけるが、実運用中（車載・モニタなし）は完全に不可視。**過去にSPIFFS上のログファイルを根拠にした調査結果があれば信頼できない**（他のTODOでは幸い`pio device monitor`でのシリアル直接確認を使っており、この問題の影響は受けていない）。
 
+**対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
+
 ### TODO: OBDトリップのAIナレーティブ生成（未着手、設計メモのみ）
 
 `infra/lambda_src/trip_analysis/index.py`の`_save_trip()`が書き出すトリップJSONには`narrative`フィールドが将来のBedrock連携用に空文字で予約済み（PR #35）。実装はまだだが、プロンプト設計について検討した内容を残す。
@@ -762,5 +764,3 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 **プロンプト出力の方針（案）**: ①一言サマリー ②しきい値付きの異常値指摘（LTFT/STFT±10%、触媒温度上限、ブースト圧の想定レンジなど車種依存の閾値をプロンプト側に明記） ③非エンジニア向けの平易な説明
 
 **実装方針（未確定）**: `_process_job()`内でトリップのrowsを10秒バケットに分割し、上記項目ごとにmax/min/mean（または平均のみ）を計算してBedrockへ渡す前処理を追加する想定。Bedrockモデル選定・呼び出し方式（同期/非同期）・コストは未検討。
-
-**対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
