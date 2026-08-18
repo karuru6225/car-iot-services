@@ -284,6 +284,17 @@ resource "aws_s3_bucket_lifecycle_configuration" "main" {
       days = 1
     }
   }
+
+  rule {
+    id     = "delete-trip-analysis-jobs"
+    status = "Enabled"
+    filter {
+      prefix = "trip-analysis-jobs/"
+    }
+    expiration {
+      days = 7
+    }
+  }
 }
 
 resource "aws_athena_workgroup" "main" {
