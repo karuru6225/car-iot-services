@@ -91,6 +91,21 @@ static void setOperationMode(OperationMode newMode)
   g_mode = newMode;
 }
 
+// Jobsの有無を確認し、あれば実行する。OTA成功時は esp_restart() するため戻らない。
+// setup()（起動直後）と CONTINUOUS/TIMED_CONTINUOUS の5分サイクルごとの両方から呼ぶことで、
+// CONTINUOUS系モードに留まり続けている間もOTAジョブを検知できるようにする
+static void checkAndHandleJob()
+{
+  JobInfo job;
+  if (jobsGetNext(job))
+  {
+    if (strcmp(job.operation, "ota") == 0)
+      ota.handleJob(job); // 成功時は esp_restart() するため戻らない
+    else
+      commandHandleJob(job);
+  }
+}
+
 // モードごとの実行関数（setup() で modeManager に登録するため前方宣言）
 static void enterDeepSleepMode();
 static void runContinuousMode();
@@ -179,14 +194,7 @@ void setup()
 
   oledPrint("Job checking...");
   jobsSetup();
-  JobInfo job;
-  if (jobsGetNext(job))
-  {
-    if (strcmp(job.operation, "ota") == 0)
-      ota.handleJob(job); // 成功時は esp_restart() するため戻らない
-    else
-      commandHandleJob(job);
-  }
+  checkAndHandleJob();
 #endif
 
   logger.printf("[MAIN] 起動完了 mode=%s\n",
@@ -431,13 +439,22 @@ static void obdTick()
   blePeripheral.notifyObd(r);
 }
 
-static void runContinuousMode() { continuousLoopCore({obdTick, true, OperationMode::CONTINUOUS}); }
+static void runContinuousMode()
+{
+  continuousLoopCore({obdTick, true, OperationMode::CONTINUOUS});
+#ifndef DEBUG_SKIP_NETWORK
+  checkAndHandleJob(); // 5分サイクルごとにOTA/コマンドJobsを確認する
+#endif
+}
 
 // setup()で設定したg_continuousUntilEpochまでCONTINUOUSサイクルを繰り返す。
 // continuousLoopCore()はBTN1長押しでも即座にDEEP_SLEEPへ抜けられる
 static void runTimedContinuousMode()
 {
   continuousLoopCore({obdTick, true, OperationMode::TIMED_CONTINUOUS});
+#ifndef DEBUG_SKIP_NETWORK
+  checkAndHandleJob(); // 5分サイクルごとにOTA/コマンドJobsを確認する
+#endif
   if (g_mode == OperationMode::TIMED_CONTINUOUS && time(nullptr) >= g_continuousUntilEpoch)
   {
     logger.println("[MAIN] TIMED_CONTINUOUS 期限到達 → DEEP_SLEEP モードへ切り替え");
