@@ -49,6 +49,7 @@
 #include "service/obdpoll.h"
 #include "service/operation_mode.h"
 #include "service/mode_context.h"
+#include "service/mode_common.h"
 
 #ifdef USE_MSGPACK
 static MsgPackTelemetryEncoder g_encoder;
@@ -79,21 +80,6 @@ public:
 private:
   void (*_runFunc)();
 };
-
-// Jobsの有無を確認し、あれば実行する。OTA成功時は esp_restart() するため戻らない。
-// setup()（起動直後）と CONTINUOUS/TIMED_CONTINUOUS の5分サイクルごとの両方から呼ぶことで、
-// CONTINUOUS系モードに留まり続けている間もOTAジョブを検知できるようにする
-static void checkAndHandleJob()
-{
-  JobInfo job;
-  if (jobsGetNext(job))
-  {
-    if (strcmp(job.operation, "ota") == 0)
-      ota.handleJob(job); // 成功時は esp_restart() するため戻らない
-    else
-      commandHandleJob(job);
-  }
-}
 
 // モードごとの実行関数（setup() で modeManager に登録するため前方宣言）
 static void enterDeepSleepMode();
@@ -223,53 +209,6 @@ static void updateBleReconnectState()
   }
   if (!blePeripheral.isConnected())
     modeCtx.setUserForcedSleep(false);
-}
-
-// 次の5分境界（UTC）までの秒数を返す。時刻未同期なら SLEEP_INTERVAL_SEC を返す
-static uint32_t secsToNextBoundary()
-{
-  time_t now = time(nullptr);
-  if (now <= 1577836800L) // 2020-01-01以前なら時刻未同期
-    return SLEEP_INTERVAL_SEC;
-  time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
-  return (uint32_t)(next - now);
-}
-
-// 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）。判定ロジック自体は
-// domain/charging.h の decideCharging()（ハードウェア非依存の純粋関数）に委譲する
-static void updateChargingState()
-{
-  float vMain = modeCtx.lastResult().reading.main.voltage;
-  float vSub = modeCtx.lastResult().reading.sub.voltage;
-  ChargingThresholds th{getChgStartV(), getChgStopV(), getChgMinDiffV()};
-
-  bool wasCharging = isCharging();
-  bool shouldCharge = decideCharging(vMain, vSub, wasCharging, th);
-  if (shouldCharge == wasCharging)
-    return;
-
-  setCharging(shouldCharge);
-  digitalWrite(boardPins().chgOnPin, shouldCharge ? HIGH : LOW);
-  float diff = vSub - vMain;
-  if (shouldCharge)
-    logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV diff=%.2fV\n", vMain, th.startV, diff);
-  else
-    logger.printf("[MAIN] auto charge OFF vMain=%.2fV stopV=%.2fV diff=%.2fV minDiff=%.2fV\n",
-                  vMain, th.stopV, diff, th.minDiff);
-}
-
-// measure()で開始した非同期BLEスキャンの完了を確認し、完了していれば収集してpublishする。
-// スキャン中または既に収集済み（modeCtx.blePending()=false）なら何もしない
-static void pollBleCollect()
-{
-  if (!modeCtx.blePending())
-    return;
-  MeasureResult r = modeCtx.lastResult();
-  if (!collectBle(r))
-    return;
-  modeCtx.setLastResult(r);
-  publishBle(r);
-  modeCtx.setBlePending(false);
 }
 
 // shadow 同期 → LTE 切断 → DeepSleep（戻らない）
