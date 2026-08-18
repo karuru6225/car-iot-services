@@ -185,7 +185,7 @@ ESP32-S3-MINI-1
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"fw_version":"1.22.0+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"continuous_until_time":null,"fw_version":"1.22.0+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
@@ -195,10 +195,14 @@ ESP32-S3-MINI-1
 {"state":{"desired":{"chg_start_v":11.5,"chg_stop_v":12.8}}}
 {"state":{"desired":{"chg_min_diff_v":0.5}}}
 {"state":{"desired":{"charging":true}}}
-{"state":{"desired":{"override_next_mode":"timed_continuous","continuous_duration_min":30}}}
+{"state":{"desired":{"override_next_mode":"timed_continuous","continuous_until_time":1746143700}}}
 ```
 
-`override_next_mode: "timed_continuous"` を `continuous_duration_min`（分）と同時に設定すると、次回起動時から指定分数が経過するまで CONTINUOUS サイクルを繰り返し、期限到達後に自動で DEEP_SLEEP に戻る（BTN1 長押しでも即座に DEEP_SLEEP へ切り替え可能）。`continuous_duration_min` 未指定時はデフォルト30分。上限は1440分（24時間）にクランプされる（無期限化を防ぐ安全策）。1サイクルだけ動かしたい場合は `continuous_duration_min` に小さい値（例: 1）を指定すればよい。デバイスが ACK として reported に `"timed_continuous"` を送信したタイミングで desired も自動クリアされる。`override_next_mode` は `setup()` 時にしか反映されない（稼働中の即時切り替えは非対応）。CONTINUOUS/TIMED_CONTINUOUS中も5分サイクルごとにOTA/コマンドJobsを確認するため（`checkAndHandleJob()`、[main.cpp](esp32_iot_gateway/src/main.cpp)参照）、長時間の継続中でもOTAは通常通り届く。
+`override_next_mode: "timed_continuous"` を `continuous_until_time`（継続期限、絶対UNIXタイムスタンプ）と同時に設定すると、次回起動時からその時刻に達するまで CONTINUOUS サイクルを繰り返し、期限到達後に自動で DEEP_SLEEP に戻る（BTN1 長押しでも即座に DEEP_SLEEP へ切り替え可能）。`continuous_until_time` 未指定時はデフォルト30分後。上限は現在時刻から1440分（24時間）後にクランプされる（無期限化を防ぐ安全策）。管理画面では「今から何分後」を入力し、送信時にJS側で絶対時刻へ変換してPUTする。
+
+`continuous_until_time` は `ah_offset` 等と同様に**TIMED_CONTINUOUS中は継続してreportedに反映され続ける**（`shadowPublishConfig()`が呼ばれるたびに現在の期限を送る）ため、管理画面を開き直しても「今設定されている期限」を確認できる。DEEP_SLEEP等TIMED_CONTINUOUS以外のモードになった時点で自動的に`null`が送られる（期限到達・BTN1長押し・BLE切断のいずれの経路でDEEP_SLEEPに戻っても、次にshadow publishされたタイミングでnullになる）。
+
+デバイスが ACK として reported に `"timed_continuous"` を送信したタイミングで desired も自動クリアされる。`override_next_mode` は `setup()` 時にしか反映されない（稼働中の即時切り替えは非対応）。CONTINUOUS/TIMED_CONTINUOUS中も5分サイクルごとにOTA/コマンドJobsを確認するため（`checkAndHandleJob()`、[main.cpp](esp32_iot_gateway/src/main.cpp)参照）、長時間の継続中でもOTAは通常通り届く。
 
 shadow publish はスリープ直前に1回だけ行う（起動時は行わない）。電源断で状態がズレた場合でも次サイクル（最大5分）で補正される。
 

@@ -5,7 +5,8 @@
 #include "../config.h"
 
 
-int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *overrideNextMode)
+int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *overrideNextMode,
+                       std::optional<time_t> continuousUntilTime)
 {
   // override_next_mode: "timed_continuous" または null（通常時）
   char overrideStr[32];
@@ -13,6 +14,13 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *ov
     snprintf(overrideStr, sizeof(overrideStr), "\"%s\"", overrideNextMode);
   else
     strcpy(overrideStr, "null");
+
+  // continuous_until_time: TIMED_CONTINUOUS中の継続期限（絶対UNIX時刻）または null
+  char untilStr[24];
+  if (continuousUntilTime)
+    snprintf(untilStr, sizeof(untilStr), "%ld", (long)*continuousUntilTime);
+  else
+    strcpy(untilStr, "null");
 
   if (clearDesired)
     return snprintf(buf, size,
@@ -25,13 +33,14 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *ov
                     "\"debug_log\":%s,"
                     "\"charging\":%s,"
                     "\"override_next_mode\":%s,"
+                    "\"continuous_until_time\":%s,"
                     "\"fw_version\":\"" FIRMWARE_VERSION "\""
                     "},\"desired\":null}}",
                     getAhOffset(),
                     getChgStartV(), getChgStopV(), getChgMinDiffV(),
                     getDebugLogEnabled() ? "true" : "false",
                     isCharging() ? "true" : "false",
-                    overrideStr);
+                    overrideStr, untilStr);
   return snprintf(buf, size,
                   "{\"state\":{\"reported\":{"
                   "\"ah_offset\":%d,"
@@ -41,13 +50,14 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *ov
                   "\"debug_log\":%s,"
                   "\"charging\":%s,"
                   "\"override_next_mode\":%s,"
+                  "\"continuous_until_time\":%s,"
                   "\"fw_version\":\"" FIRMWARE_VERSION "\""
                   "}}}",
                   getAhOffset(),
                   getChgStartV(), getChgStopV(), getChgMinDiffV(),
                   getDebugLogEnabled() ? "true" : "false",
                   isCharging() ? "true" : "false",
-                  overrideStr);
+                  overrideStr, untilStr);
 }
 
 

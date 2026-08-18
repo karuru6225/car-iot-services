@@ -27,7 +27,8 @@ void tearDown(void) {}
 // 「両方に全フィールドが揃っている」ことをテストで縛る。
 static const char *kReportedFields[] = {
     "\"ah_offset\"", "\"chg_start_v\"", "\"chg_stop_v\"", "\"chg_min_diff_v\"",
-    "\"debug_log\"", "\"charging\"", "\"override_next_mode\"", "\"fw_version\"",
+    "\"debug_log\"", "\"charging\"", "\"override_next_mode\"", "\"continuous_until_time\"",
+    "\"fw_version\"",
 };
 
 static void assertHasAllReportedFields(const char *json)
@@ -66,6 +67,20 @@ static void test_build_config_payload_reports_override_next_mode_null_by_default
   char buf[256];
   buildConfigPayload(buf, sizeof(buf), false, nullptr);
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"override_next_mode\":null"));
+}
+
+static void test_build_config_payload_reports_continuous_until_time_as_number(void)
+{
+  char buf[256];
+  buildConfigPayload(buf, sizeof(buf), false, "timed_continuous", (time_t)1700000000);
+  TEST_ASSERT_NOT_NULL(strstr(buf, "\"continuous_until_time\":1700000000"));
+}
+
+static void test_build_config_payload_reports_continuous_until_time_null_by_default(void)
+{
+  char buf[256];
+  buildConfigPayload(buf, sizeof(buf), false, nullptr);
+  TEST_ASSERT_NOT_NULL(strstr(buf, "\"continuous_until_time\":null"));
 }
 
 static void test_build_config_payload_reflects_current_config_values(void)
@@ -131,6 +146,8 @@ int main(int argc, char **argv)
   RUN_TEST(test_build_config_payload_with_clear_desired_adds_desired_null);
   RUN_TEST(test_build_config_payload_reports_override_next_mode_as_quoted_string);
   RUN_TEST(test_build_config_payload_reports_override_next_mode_null_by_default);
+  RUN_TEST(test_build_config_payload_reports_continuous_until_time_as_number);
+  RUN_TEST(test_build_config_payload_reports_continuous_until_time_null_by_default);
   RUN_TEST(test_build_config_payload_reflects_current_config_values);
   RUN_TEST(test_json_encoder_encodes_battery);
   RUN_TEST(test_json_encoder_encodes_thermometer);

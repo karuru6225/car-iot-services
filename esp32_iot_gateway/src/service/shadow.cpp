@@ -1,5 +1,6 @@
 #include "shadow.h"
 #include "mqtt.h"
+#include "mode_context.h"
 #include "../logger.h"
 #include "../config.h"
 #include "../domain/telemetry.h"
@@ -8,7 +9,10 @@
 
 static std::optional<OperationMode> s_overridePending = std::nullopt;
 static const char *s_overrideNextModeReport = nullptr; // nullptr = null（通常時）
-static uint32_t s_continuousDurationMin = 30;           // TIMED_CONTINUOUS のデフォルト継続時間（分）
+// deltaで受信した最新のTIMED_CONTINUOUS継続期限（絶対UNIX時刻）。
+// shadowPublishConfig()はmodeCtx.mode()==TIMED_CONTINUOUSの間だけこれをreportedに含める
+// （TIMED_CONTINUOUSでなくなれば自動的にnullが送られるため、明示的なクリア処理は不要）
+static std::optional<time_t> s_continuousUntilTime = std::nullopt;
 
 namespace
 {
@@ -31,9 +35,9 @@ std::optional<OperationMode> getShadowOverrideMode()
   return m;
 }
 
-uint32_t getShadowContinuousDurationMin()
+std::optional<time_t> getShadowContinuousUntilTime()
 {
-  return s_continuousDurationMin;
+  return s_continuousUntilTime;
 }
 
 static void deltaTopic(char *buf, size_t len)
@@ -46,8 +50,12 @@ void shadowPublishConfig(bool clearDesired)
   char topic[128];
   snprintf(topic, sizeof(topic), "$aws/things/%s/shadow/update", getDeviceId());
 
+  // TIMED_CONTINUOUS中のみ継続期限をreportedに含める。それ以外のモードでは自動的にnullが送られる
+  std::optional<time_t> untilTimeReport =
+      (modeCtx.mode() == OperationMode::TIMED_CONTINUOUS) ? s_continuousUntilTime : std::nullopt;
+
   char payload[256];
-  int len = buildConfigPayload(payload, sizeof(payload), clearDesired, s_overrideNextModeReport);
+  int len = buildConfigPayload(payload, sizeof(payload), clearDesired, s_overrideNextModeReport, untilTimeReport);
   s_overrideNextModeReport = nullptr; // ACK 送信後にリセット（通常時は null）
 
   if (mqtt.publish(topic, (const uint8_t *)payload, (size_t)len))
@@ -133,13 +141,14 @@ bool shadowPollDelta(uint32_t timeoutMs)
     changed = true;
   }
 
-  if (state["continuous_duration_min"].is<uint32_t>())
+  if (state["continuous_until_time"].is<uint32_t>())
   {
     // OTAジョブ再チェックがsetup()時にしか走らないため（CONTEXT.md参照）、
-    // 上限を設けてTIMED_CONTINUOUSが際限なく長引かないようにする
-    uint32_t requested = state["continuous_duration_min"].as<uint32_t>();
-    s_continuousDurationMin = requested > 1440 ? 1440 : requested;
-    logger.printf("[SHADOW] continuous_duration_min → %u\n", s_continuousDurationMin);
+    // 上限（現在時刻から24時間後まで）を設けてTIMED_CONTINUOUSが際限なく長引かないようにする
+    time_t requested = (time_t)state["continuous_until_time"].as<uint32_t>();
+    time_t maxUntil = time(nullptr) + 1440 * 60;
+    s_continuousUntilTime = requested > maxUntil ? maxUntil : requested;
+    logger.printf("[SHADOW] continuous_until_time → %ld\n", (long)*s_continuousUntilTime);
     changed = true;
   }
 

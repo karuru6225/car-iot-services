@@ -39,6 +39,7 @@ SCHEMA = {
     "debug_log": bool,
     "charging": bool,
     "override_next_mode": (str, type(None)),
+    "continuous_until_time": (int, type(None)),
     "fw_version": str,
 }
 

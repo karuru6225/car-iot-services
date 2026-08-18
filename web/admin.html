@@ -217,6 +217,7 @@ function deviceCard(d) {
     <div class="kv"><div class="k">最小電圧差</div><div class="v">${s.chg_min_diff_v != null ? s.chg_min_diff_v.toFixed(2) + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">Ah オフセット</div><div class="v">${s.ah_offset != null ? s.ah_offset : '-'}</div></div>
     <div class="kv"><div class="k">デバッグログ</div><div class="v">${s.debug_log != null ? (s.debug_log ? 'on' : 'off') : '-'}</div></div>
+    <div class="kv"><div class="k">Continuous期限</div><div class="v">${s.continuous_until_time != null ? new Date(s.continuous_until_time * 1000).toLocaleString() : '-'}</div></div>
   </div>
 
   <!-- Shadow 編集 -->
@@ -255,7 +256,7 @@ function deviceCard(d) {
           </select>
         </div>
         <div class="form-group">
-          <label>continuous_duration_min（timed_continuous時のみ有効）</label>
+          <label>継続時間（分、timed_continuous時のみ有効。今から何分後まで継続するか）</label>
           <input type="number" step="1" min="1" max="1440" id="sv-duration-${id}" value="30">
         </div>
         <div class="form-group">
@@ -303,6 +304,7 @@ function toggleSection(id, btn) {
 // ─── Shadow 保存 ──────────────────────────────────────────────────────────────
 
 async function saveShadow(deviceId) {
+  const overrideMode = document.getElementById(`sv-override-${deviceId}`).value || null;
   const body = {
     chg_start_v:      parseFloat(document.getElementById(`sv-start-${deviceId}`).value),
     chg_stop_v:       parseFloat(document.getElementById(`sv-stop-${deviceId}`).value),
@@ -310,9 +312,12 @@ async function saveShadow(deviceId) {
     ah_offset:        parseInt(document.getElementById(`sv-ah-${deviceId}`).value, 10),
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',
     charging:         document.getElementById(`sv-charging-${deviceId}`).value === 'true',
-    override_next_mode: document.getElementById(`sv-override-${deviceId}`).value || null,
-    continuous_duration_min: parseInt(document.getElementById(`sv-duration-${deviceId}`).value, 10),
+    override_next_mode: overrideMode,
   };
+  if (overrideMode === 'timed_continuous') {
+    const minutes = parseInt(document.getElementById(`sv-duration-${deviceId}`).value, 10);
+    body.continuous_until_time = Math.floor(Date.now() / 1000) + minutes * 60;
+  }
   const msgEl = document.getElementById(`shadow-msg-${deviceId}`);
   msgEl.textContent = '保存中...';
   msgEl.className   = 'msg';
