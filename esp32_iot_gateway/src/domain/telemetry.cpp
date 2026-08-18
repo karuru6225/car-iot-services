@@ -7,7 +7,7 @@
 
 int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *overrideNextMode)
 {
-  // override_next_mode: "one_shot_continuous" または null（通常時）
+  // override_next_mode: "timed_continuous" または null（通常時）
   char overrideStr[32];
   if (overrideNextMode)
     snprintf(overrideStr, sizeof(overrideStr), "\"%s\"", overrideNextMode);

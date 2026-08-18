@@ -28,7 +28,7 @@ IOT_ENDPOINT = os.environ["IOT_ENDPOINT"]
 
 iot_data = boto3.client("iot-data", endpoint_url=IOT_ENDPOINT)
 
-ALLOWED_OVERRIDE_MODES = {"one_shot_continuous", "timed_continuous"}
+ALLOWED_OVERRIDE_MODES = {"timed_continuous"}
 
 # キー名 → 期待する型（tuple の場合はいずれかに一致すればよい）
 SCHEMA = {

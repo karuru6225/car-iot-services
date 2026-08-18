@@ -83,15 +83,6 @@ def test_handler_nulls_bool_masquerading_as_int(shadow_guard, monkeypatch):
 
 def test_handler_accepts_allowed_override_mode(shadow_guard, monkeypatch):
     calls = _capture_updates(monkeypatch, shadow_guard)
-    event = {"device_id": "dev1", "reported": {"override_next_mode": "one_shot_continuous"}}
-
-    shadow_guard.handler(event, None)
-
-    assert calls == []
-
-
-def test_handler_accepts_timed_continuous_override_mode(shadow_guard, monkeypatch):
-    calls = _capture_updates(monkeypatch, shadow_guard)
     event = {"device_id": "dev1", "reported": {"override_next_mode": "timed_continuous"}}
 
     shadow_guard.handler(event, None)

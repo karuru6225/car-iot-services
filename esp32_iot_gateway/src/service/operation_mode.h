@@ -15,7 +15,7 @@ public:
   void run(OperationMode mode);
 
 private:
-  static const int kModeCount = 4; // OperationMode の要素数（config.h 参照）
+  static const int kModeCount = 3; // OperationMode の要素数（config.h 参照）
   ModeFunc _handlers[kModeCount] = {};
 };
 

@@ -8,7 +8,6 @@
 //   CONTINUOUS          : measure() + publishBattery() → continuousLoopCore()の1秒ティックで
 //                         pollBleCollect()（BLEスキャン完了を非ブロッキングで収集）+ OBD-II(CAN)ポーリングを実行 → 5分待機 →
 //                         繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
-//   ONE_SHOT_CONTINUOUS : Shadow override_next_mode から指定。1サイクルだけ CONTINUOUS → 自動で DEEP_SLEEP
 //   TIMED_CONTINUOUS    : Shadow override_next_mode="timed_continuous"+continuous_duration_min から指定。
 //                         指定分数が経過するまで CONTINUOUS サイクルを繰り返し、期限到達で自動 DEEP_SLEEP
 //                         （BTN1 長押しでも即座に DEEP_SLEEP に切り替え可能）
@@ -95,7 +94,6 @@ static void setOperationMode(OperationMode newMode)
 // モードごとの実行関数（setup() で modeManager に登録するため前方宣言）
 static void enterDeepSleepMode();
 static void runContinuousMode();
-static void runOneShotContinuousMode();
 static void runTimedContinuousMode();
 
 void setup()
@@ -207,7 +205,6 @@ void setup()
 
   modeManager.registerMode(OperationMode::DEEP_SLEEP, enterDeepSleepMode);
   modeManager.registerMode(OperationMode::CONTINUOUS, runContinuousMode);
-  modeManager.registerMode(OperationMode::ONE_SHOT_CONTINUOUS, runOneShotContinuousMode);
   modeManager.registerMode(OperationMode::TIMED_CONTINUOUS, runTimedContinuousMode);
 }
 
@@ -334,11 +331,9 @@ struct ContinuousLoopHooks
 };
 
 // このサイクル終了後に遷移する動作モードを予測する（OLED表示用）。
-// 実際の遷移判定（updateBleReconnectState/runOneShotContinuousMode）と条件を揃えてある
+// 実際の遷移判定（updateBleReconnectState/runTimedContinuousMode）と条件を揃えてある
 static const char *nextModeLabel(const ContinuousLoopHooks &hooks)
 {
-  if (hooks.selfMode == OperationMode::ONE_SHOT_CONTINUOUS)
-    return "DEEP_SLEEP"; // 1サイクルのみで必ずDEEP_SLEEPへ戻る
   if (hooks.selfMode == OperationMode::TIMED_CONTINUOUS && time(nullptr) >= g_continuousUntilEpoch)
     return "DEEP_SLEEP"; // TIMED_CONTINUOUSの期限到達で次回DEEP_SLEEPへ戻る
   if (g_userForcedSleep)
@@ -437,12 +432,6 @@ static void obdTick()
 }
 
 static void runContinuousMode() { continuousLoopCore({obdTick, true, OperationMode::CONTINUOUS}); }
-
-static void runOneShotContinuousMode()
-{
-  continuousLoopCore({nullptr, true, OperationMode::ONE_SHOT_CONTINUOUS}); // 1サイクルだけ CONTINUOUS と同じ動作（BLE アドバタイズ継続）
-  setOperationMode(OperationMode::DEEP_SLEEP); // 次回 loop() で DEEP_SLEEP が実行される
-}
 
 // setup()で設定したg_continuousUntilEpochまでCONTINUOUSサイクルを繰り返す。
 // continuousLoopCore()はBTN1長押しでも即座にDEEP_SLEEPへ抜けられる

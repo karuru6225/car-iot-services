@@ -19,7 +19,6 @@ struct OverrideModeEntry
 };
 // override_next_mode で受け付ける文字列 → モードの対応表
 const OverrideModeEntry kOverrideModes[] = {
-    {"one_shot_continuous", OperationMode::ONE_SHOT_CONTINUOUS},
     {"timed_continuous", OperationMode::TIMED_CONTINUOUS},
 };
 } // namespace
