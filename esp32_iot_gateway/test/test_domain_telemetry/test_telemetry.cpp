@@ -57,8 +57,8 @@ static void test_build_config_payload_with_clear_desired_adds_desired_null(void)
 static void test_build_config_payload_reports_override_next_mode_as_quoted_string(void)
 {
   char buf[256];
-  buildConfigPayload(buf, sizeof(buf), false, "one_shot_continuous");
-  TEST_ASSERT_NOT_NULL(strstr(buf, "\"override_next_mode\":\"one_shot_continuous\""));
+  buildConfigPayload(buf, sizeof(buf), false, "timed_continuous");
+  TEST_ASSERT_NOT_NULL(strstr(buf, "\"override_next_mode\":\"timed_continuous\""));
 }
 
 static void test_build_config_payload_reports_override_next_mode_null_by_default(void)

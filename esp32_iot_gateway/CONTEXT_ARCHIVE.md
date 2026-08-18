@@ -320,3 +320,11 @@ AWS への publish（`domain/telemetry`統合）は今回のスコープ外で�
 9. **その他**: 死にコード（`can.cpp`外から呼ばれていなかった単発版`canSendObdRequest()`）を削除。`obdParseMultiResponse()`が未知PIDで打ち切る際にログを追加した。
 
 **対象外とした指摘**: フューエルカット判定・`boost_kpa`のint16_t化検討はレビュー内でも「任意」「将来実装するなら検討」とされていた項目で、実車未検証のため今回は見送り。
+
+### ~~TODO: CONTINUOUSモード中はOTAジョブを再チェックしない問題~~ **対応済み**
+
+`CONTINUOUS`/`TIMED_CONTINUOUS`モードは`continuousLoopCore()`のループに留まり続け、`esp_restart()`もDeepSleepもしない限り`setup()`に戻らないため、OTAチェック（`jobsGetNext()` → `ota.handleJob()`）が`setup()`内でしか呼ばれない実装のままだと、実機がCONTINUOUS系モードで動き続けている限りOTAが永久に降ってこない問題があった（2026-08-07、実車develop ビルドで1.21.0のOTAジョブが20分経ってもQUEUEDのままだった事例で発覚）。
+
+**対応**: `main.cpp`にJobs確認処理を`checkAndHandleJob()`として切り出し、`setup()`（起動直後）に加えて`runContinuousMode()`/`runTimedContinuousMode()`が`continuousLoopCore()`から戻るタイミング（次の5分境界ごと）でも呼ぶようにした。`notify-next`トピック購読によるプッシュ型検知も選択肢にあったが、OTAは緊急性の低い定期作業であり5分間隔の遅延は許容範囲と判断し、実装コストの低い定期ポーリング方式を採用した。
+
+**残存課題**: OTA適用中も`blePeripheral`/`bleScanner`が動いたままのため、IPCタスクスタックオーバーフローのリスクは未解消（[OTA中のBLE無効化](CONTEXT.md#todo-ota中のble無効化ipcタスクスタックオーバーフロー対策未着手)）。CONTINUOUS系モード中にOTAを検知できるようになった分、この既知リスクが顕在化する頻度は上がる可能性がある。

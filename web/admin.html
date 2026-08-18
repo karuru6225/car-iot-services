@@ -250,9 +250,13 @@ function deviceCard(d) {
         <div class="form-group">
           <label>override_next_mode</label>
           <select id="sv-override-${id}">
-            <option value=""                  ${!s.override_next_mode                           ? 'selected' : ''}>(通常)</option>
-            <option value="one_shot_continuous" ${s.override_next_mode === 'one_shot_continuous' ? 'selected' : ''}>one_shot_continuous</option>
+            <option value=""                 ${!s.override_next_mode                          ? 'selected' : ''}>(通常)</option>
+            <option value="timed_continuous" ${s.override_next_mode === 'timed_continuous'     ? 'selected' : ''}>timed_continuous</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label>continuous_duration_min（timed_continuous時のみ有効）</label>
+          <input type="number" step="1" min="1" max="1440" id="sv-duration-${id}" value="30">
         </div>
         <div class="form-group">
           <label>charging</label>
@@ -307,6 +311,7 @@ async function saveShadow(deviceId) {
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',
     charging:         document.getElementById(`sv-charging-${deviceId}`).value === 'true',
     override_next_mode: document.getElementById(`sv-override-${deviceId}`).value || null,
+    continuous_duration_min: parseInt(document.getElementById(`sv-duration-${deviceId}`).value, 10),
   };
   const msgEl = document.getElementById(`shadow-msg-${deviceId}`);
   msgEl.textContent = '保存中...';

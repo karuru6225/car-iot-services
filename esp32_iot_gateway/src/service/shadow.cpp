@@ -8,6 +8,7 @@
 
 static std::optional<OperationMode> s_overridePending = std::nullopt;
 static const char *s_overrideNextModeReport = nullptr; // nullptr = null（通常時）
+static uint32_t s_continuousDurationMin = 30;           // TIMED_CONTINUOUS のデフォルト継続時間（分）
 
 namespace
 {
@@ -18,7 +19,7 @@ struct OverrideModeEntry
 };
 // override_next_mode で受け付ける文字列 → モードの対応表
 const OverrideModeEntry kOverrideModes[] = {
-    {"one_shot_continuous", OperationMode::ONE_SHOT_CONTINUOUS},
+    {"timed_continuous", OperationMode::TIMED_CONTINUOUS},
 };
 } // namespace
 
@@ -28,6 +29,11 @@ std::optional<OperationMode> getShadowOverrideMode()
   OperationMode m = *s_overridePending;
   s_overridePending = std::nullopt;
   return m;
+}
+
+uint32_t getShadowContinuousDurationMin()
+{
+  return s_continuousDurationMin;
 }
 
 static void deltaTopic(char *buf, size_t len)
@@ -124,6 +130,16 @@ bool shadowPollDelta(uint32_t timeoutMs)
   {
     setCharging(state["charging"].as<bool>());
     logger.printf("[SHADOW] charging → %s\n", isCharging() ? "on" : "off");
+    changed = true;
+  }
+
+  if (state["continuous_duration_min"].is<uint32_t>())
+  {
+    // OTAジョブ再チェックがsetup()時にしか走らないため（CONTEXT.md参照）、
+    // 上限を設けてTIMED_CONTINUOUSが際限なく長引かないようにする
+    uint32_t requested = state["continuous_duration_min"].as<uint32_t>();
+    s_continuousDurationMin = requested > 1440 ? 1440 : requested;
+    logger.printf("[SHADOW] continuous_duration_min → %u\n", s_continuousDurationMin);
     changed = true;
   }
 

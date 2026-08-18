@@ -195,10 +195,10 @@ ESP32-S3-MINI-1
 {"state":{"desired":{"chg_start_v":11.5,"chg_stop_v":12.8}}}
 {"state":{"desired":{"chg_min_diff_v":0.5}}}
 {"state":{"desired":{"charging":true}}}
-{"state":{"desired":{"override_next_mode":"one_shot_continuous"}}}
+{"state":{"desired":{"override_next_mode":"timed_continuous","continuous_duration_min":30}}}
 ```
 
-`override_next_mode: "one_shot_continuous"` を設定すると、次回起動時に1サイクルだけ CONTINUOUS モードで動作（BLE アドバタイズ継続）し、自動で DEEP_SLEEP に戻る。デバイスが ACK として reported に `"one_shot_continuous"` を送信したタイミングで desired も自動クリアされる。
+`override_next_mode: "timed_continuous"` を `continuous_duration_min`（分）と同時に設定すると、次回起動時から指定分数が経過するまで CONTINUOUS サイクルを繰り返し、期限到達後に自動で DEEP_SLEEP に戻る（BTN1 長押しでも即座に DEEP_SLEEP へ切り替え可能）。`continuous_duration_min` 未指定時はデフォルト30分。上限は1440分（24時間）にクランプされる（無期限化を防ぐ安全策）。1サイクルだけ動かしたい場合は `continuous_duration_min` に小さい値（例: 1）を指定すればよい。デバイスが ACK として reported に `"timed_continuous"` を送信したタイミングで desired も自動クリアされる。`override_next_mode` は `setup()` 時にしか反映されない（稼働中の即時切り替えは非対応）。CONTINUOUS/TIMED_CONTINUOUS中も5分サイクルごとにOTA/コマンドJobsを確認するため（`checkAndHandleJob()`、[main.cpp](esp32_iot_gateway/src/main.cpp)参照）、長時間の継続中でもOTAは通常通り届く。
 
 shadow publish はスリープ直前に1回だけ行う（起動時は行わない）。電源断で状態がズレた場合でも次サイクル（最大5分）で補正される。
 
@@ -337,7 +337,7 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 | --- | --- | --- |
 | `FIRMWARE_VERSION` | `FIRMWARE_VERSION_BASE "+" GIT_HASH` | ファームウェアバージョン。`FIRMWARE_VERSION_BASE`はBOARD_VERSIONで基板シリーズ別に分岐（1=v1基板、2=v2基板）し、ソースが正。gitタグはCI発火・GitHub Release表示用のみ。詳細は`RELEASE.md`参照 |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
-| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS`（動作モード） |
+| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `TIMED_CONTINUOUS`（動作モード） |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔 / CONTINUOUS モード待機間隔（秒） |
 | `CERT_PATH_CA` | `"/certs/ca.crt"` | SPIFFS 上の CA 証明書パス |
 | `CERT_PATH_DEVICE` | `"/certs/device.crt"` | SPIFFS 上のデバイス証明書パス |
@@ -605,6 +605,8 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 
 現状、OTA（`ota.handleJob()` → `apply()`）中も BLE（`blePeripheral` / `bleScanner`）は動いたまま。`esp_ota_write` によるフラッシュ書き込みとBLEスタックが同時に動くと、ESP32/ESP32-S3で知られる "IPC task has overflowed its stack" の要因になり得る。
 
+[CONTINUOUSモード中はOTAジョブを再チェックしない問題](CONTEXT_ARCHIVE.md#todo-continuousモード中はotaジョブを再チェックしない問題-対応済み)が対応済みになり、`CONTINUOUS`/`TIMED_CONTINUOUS`中も5分サイクルごとにOTAを検知するようになったため、このBLE無効化未対応リスクが顕在化する頻度は以前より上がっている。
+
 **実装方針**:
 
 - `blePeripheral.stop()`（`NimBLEDevice::stopAdvertising()` のみ、`device/ble_peripheral.cpp`）と
@@ -704,18 +706,6 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - 一定回数（例: 3回）試行しても検証できなければログに警告を残す（現状ログのみ、リカバリー動作は未検討）
 
 **スコープ**: 他のコマンド（`AT+CGDCONT` 等）への拡張は、CSCLK での効果を見てから検討する。
-
-### TODO: CONTINUOUSモード中はOTAジョブを再チェックしない問題（未着手）
-
-`platformio.ini` の develop env（v1/v2 とも）は常に `-D DEBUG_MODE` が付き、`main.cpp` の `g_mode` 初期値が `CONTINUOUS` になる（[main.cpp:59-63](esp32_iot_gateway/src/main.cpp#L59-L63)）。OTAチェック（`jobsGetNext()` → `ota.handleJob()`）は `setup()` 内でしか呼ばれず（[main.cpp:151-160](esp32_iot_gateway/src/main.cpp#L151-L160)）、`CONTINUOUS` モードは `continuousLoopCore()` のループに留まり続けて `esp_restart()` も DeepSleep もしない限り `setup()` に戻らない（[main.cpp:274-343](esp32_iot_gateway/src/main.cpp#L274-L343)）。Jobs の `notify-next` トピックも購読していない（[jobs.cpp:19-27](esp32_iot_gateway/src/service/jobs.cpp#L19-L27)）ため、AWS側でジョブをキューに積んでもプッシュで気づく仕組みがなく、実機がCONTINUOUSモードで動き続けている限りOTAが永久に降ってこない。
-
-2026-08-07、実車（develop ビルド、fw 1.20.0）に 1.21.0 の OTA ジョブを作成したが20分経ってもQUEUEDのままだった事例で発覚。BTN1長押しでDEEP_SLEEPに切り替える／電源再投入すれば次回起動でOTAが適用されることは確認済み（回避策あり、恒久対応は未着手）。
-
-**実装方針（案）**:
-
-- `notify-next` トピックを購読し、CONTINUOUSモード中の1秒ティック（`continuousLoopCore()`）でも新規ジョブ通知を検知したら `jobsGetNext()` を呼べるようにする
-- または `continuousLoopCore()` の待機ループ内で定期的（例: 5分ごと）に `jobsGetNext()` をポーリングする
-- OTA適用中はCONTINUOUS動作（測定・publish・OBDポーリング）を止める必要があるため、既存の「OTA中のBLE無効化」TODOと合わせて割り込みタイミングを設計する
 
 ### TODO: mobileアプリのrelease署名を専用keystoreに切り替え（未着手）
 

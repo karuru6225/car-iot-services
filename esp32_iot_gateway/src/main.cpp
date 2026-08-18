@@ -8,7 +8,9 @@
 //   CONTINUOUS          : measure() + publishBattery() → continuousLoopCore()の1秒ティックで
 //                         pollBleCollect()（BLEスキャン完了を非ブロッキングで収集）+ OBD-II(CAN)ポーリングを実行 → 5分待機 →
 //                         繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
-//   ONE_SHOT_CONTINUOUS : Shadow ble_mode から指定。1サイクルだけ CONTINUOUS → 自動で DEEP_SLEEP
+//   TIMED_CONTINUOUS    : Shadow override_next_mode="timed_continuous"+continuous_duration_min から指定。
+//                         指定分数が経過するまで CONTINUOUS サイクルを繰り返し、期限到達で自動 DEEP_SLEEP
+//                         （BTN1 長押しでも即座に DEEP_SLEEP に切り替え可能）
 //
 // CAN(GU0)は起動直後に canInit() し、モードに関わらず常時起動しておく。
 // 停止するのは enterDeepSleepMode() での canDeinit() のみ。
@@ -76,6 +78,8 @@ static MeasureResult g_lastResult = {};
 // pollBleCollect()/enterDeepSleepMode()のBLE待機は自然にno-opになる（bleScannerが未初期化のため）
 static bool g_blePending = false;
 static bool g_bleUpgradedToContinuous = false;
+// TIMED_CONTINUOUS がこのUNIX時刻に達したらDEEP_SLEEPへ自動で戻る（time(nullptr)未同期時は0のまま=即時扱い）
+static time_t g_continuousUntilEpoch = 0;
 // BTN1長押しでBLE接続中にDEEP_SLEEPへ強制した場合true。
 // trueの間はloop()側のBLE自動昇格を止め、ユーザーの選択をBLE切断まで尊重する
 static bool g_userForcedSleep = false;
@@ -87,10 +91,25 @@ static void setOperationMode(OperationMode newMode)
   g_mode = newMode;
 }
 
+// Jobsの有無を確認し、あれば実行する。OTA成功時は esp_restart() するため戻らない。
+// setup()（起動直後）と CONTINUOUS/TIMED_CONTINUOUS の5分サイクルごとの両方から呼ぶことで、
+// CONTINUOUS系モードに留まり続けている間もOTAジョブを検知できるようにする
+static void checkAndHandleJob()
+{
+  JobInfo job;
+  if (jobsGetNext(job))
+  {
+    if (strcmp(job.operation, "ota") == 0)
+      ota.handleJob(job); // 成功時は esp_restart() するため戻らない
+    else
+      commandHandleJob(job);
+  }
+}
+
 // モードごとの実行関数（setup() で modeManager に登録するため前方宣言）
 static void enterDeepSleepMode();
 static void runContinuousMode();
-static void runOneShotContinuousMode();
+static void runTimedContinuousMode();
 
 void setup()
 {
@@ -163,18 +182,19 @@ void setup()
 
   // Shadow override_next_mode を確認
   if (auto override = getShadowOverrideMode())
+  {
     setOperationMode(*override);
+    if (*override == OperationMode::TIMED_CONTINUOUS)
+    {
+      uint32_t durationMin = getShadowContinuousDurationMin();
+      g_continuousUntilEpoch = time(nullptr) + (time_t)durationMin * 60;
+      logger.printf("[MAIN] TIMED_CONTINUOUS %u分間 開始\n", durationMin);
+    }
+  }
 
   oledPrint("Job checking...");
   jobsSetup();
-  JobInfo job;
-  if (jobsGetNext(job))
-  {
-    if (strcmp(job.operation, "ota") == 0)
-      ota.handleJob(job); // 成功時は esp_restart() するため戻らない
-    else
-      commandHandleJob(job);
-  }
+  checkAndHandleJob();
 #endif
 
   logger.printf("[MAIN] 起動完了 mode=%s\n",
@@ -193,7 +213,7 @@ void setup()
 
   modeManager.registerMode(OperationMode::DEEP_SLEEP, enterDeepSleepMode);
   modeManager.registerMode(OperationMode::CONTINUOUS, runContinuousMode);
-  modeManager.registerMode(OperationMode::ONE_SHOT_CONTINUOUS, runOneShotContinuousMode);
+  modeManager.registerMode(OperationMode::TIMED_CONTINUOUS, runTimedContinuousMode);
 }
 
 // BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）。
@@ -319,11 +339,11 @@ struct ContinuousLoopHooks
 };
 
 // このサイクル終了後に遷移する動作モードを予測する（OLED表示用）。
-// 実際の遷移判定（updateBleReconnectState/runOneShotContinuousMode）と条件を揃えてある
+// 実際の遷移判定（updateBleReconnectState/runTimedContinuousMode）と条件を揃えてある
 static const char *nextModeLabel(const ContinuousLoopHooks &hooks)
 {
-  if (hooks.selfMode == OperationMode::ONE_SHOT_CONTINUOUS)
-    return "DEEP_SLEEP"; // 1サイクルのみで必ずDEEP_SLEEPへ戻る
+  if (hooks.selfMode == OperationMode::TIMED_CONTINUOUS && time(nullptr) >= g_continuousUntilEpoch)
+    return "DEEP_SLEEP"; // TIMED_CONTINUOUSの期限到達で次回DEEP_SLEEPへ戻る
   if (g_userForcedSleep)
     return "DEEP_SLEEP"; // BTN1長押しでBLE接続中に強制スリープ選択済み
   if (g_bleUpgradedToContinuous && !blePeripheral.isConnected())
@@ -419,12 +439,27 @@ static void obdTick()
   blePeripheral.notifyObd(r);
 }
 
-static void runContinuousMode() { continuousLoopCore({obdTick, true, OperationMode::CONTINUOUS}); }
-
-static void runOneShotContinuousMode()
+static void runContinuousMode()
 {
-  continuousLoopCore({nullptr, true, OperationMode::ONE_SHOT_CONTINUOUS}); // 1サイクルだけ CONTINUOUS と同じ動作（BLE アドバタイズ継続）
-  setOperationMode(OperationMode::DEEP_SLEEP); // 次回 loop() で DEEP_SLEEP が実行される
+  continuousLoopCore({obdTick, true, OperationMode::CONTINUOUS});
+#ifndef DEBUG_SKIP_NETWORK
+  checkAndHandleJob(); // 5分サイクルごとにOTA/コマンドJobsを確認する
+#endif
+}
+
+// setup()で設定したg_continuousUntilEpochまでCONTINUOUSサイクルを繰り返す。
+// continuousLoopCore()はBTN1長押しでも即座にDEEP_SLEEPへ抜けられる
+static void runTimedContinuousMode()
+{
+  continuousLoopCore({obdTick, true, OperationMode::TIMED_CONTINUOUS});
+#ifndef DEBUG_SKIP_NETWORK
+  checkAndHandleJob(); // 5分サイクルごとにOTA/コマンドJobsを確認する
+#endif
+  if (g_mode == OperationMode::TIMED_CONTINUOUS && time(nullptr) >= g_continuousUntilEpoch)
+  {
+    logger.println("[MAIN] TIMED_CONTINUOUS 期限到達 → DEEP_SLEEP モードへ切り替え");
+    setOperationMode(OperationMode::DEEP_SLEEP); // 次回 loop() で DEEP_SLEEP が実行される
+  }
 }
 
 void loop()
