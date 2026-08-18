@@ -543,11 +543,26 @@ def _compute_summary(rows: list[dict]) -> dict:
     }
 
 
+def _is_admin(event: dict) -> bool:
+    """admin/index.pyと同一ロジック。API GatewayのJWT Authorizerはトークンの真正性のみ検証し
+    Cognitoグループ（admin/viewer）までは見ないため、Lambda側でも同じチェックを行う
+    （defense in depth。JWT Authorizerはmobile/webどちらのクライアントも通すため必須）。"""
+    try:
+        groups = event["requestContext"]["authorizer"]["jwt"]["claims"].get("cognito:groups", "")
+        return "admin" in groups
+    except Exception:
+        return False
+
+
 def handler(event, context):
-    """自己呼び出しイベント（trip_analysis_job）かAPI Gateway由来かで分岐する薄いルーター。"""
+    """自己呼び出しイベント（trip_analysis_job）かAPI Gateway由来かで分岐する薄いルーター。
+    自己呼び出しはHTTPコンテキストを持たないためadminチェックを行わない（内部呼び出しのため）。"""
     if event.get("trip_analysis_job"):
         _process_job(event["job_id"], event["device_id"], event["start_ts"], event["end_ts"], event["started_at"])
         return {}
+
+    if not _is_admin(event):
+        return _err(403, "admin only")
 
     method = event["requestContext"]["http"]["method"]
     if method == "POST":

@@ -754,7 +754,13 @@ def test_handler_routes_self_invoke_to_process_job(trip_analysis, monkeypatch):
 def test_handler_routes_post_to_handle_start(trip_analysis, monkeypatch):
     monkeypatch.setattr(trip_analysis, "_handle_start", lambda event: {"statusCode": 200, "body": "start"})
 
-    event = {"requestContext": {"http": {"method": "POST"}}, "body": json.dumps({"device_id": "dev1"})}
+    event = {
+        "requestContext": {
+            "http": {"method": "POST"},
+            "authorizer": {"jwt": {"claims": {"cognito:groups": "[admin]"}}},
+        },
+        "body": json.dumps({"device_id": "dev1"}),
+    }
     resp = trip_analysis.handler(event, None)
 
     assert resp["body"] == "start"
@@ -763,14 +769,63 @@ def test_handler_routes_post_to_handle_start(trip_analysis, monkeypatch):
 def test_handler_routes_get_to_handle_get(trip_analysis, monkeypatch):
     monkeypatch.setattr(trip_analysis, "_handle_get", lambda event: {"statusCode": 200, "body": "get"})
 
-    event = {"requestContext": {"http": {"method": "GET"}}, "queryStringParameters": {"device_id": "dev1"}}
+    event = {
+        "requestContext": {
+            "http": {"method": "GET"},
+            "authorizer": {"jwt": {"claims": {"cognito:groups": "[admin]"}}},
+        },
+        "queryStringParameters": {"device_id": "dev1"},
+    }
     resp = trip_analysis.handler(event, None)
 
     assert resp["body"] == "get"
 
 
 def test_handler_rejects_unknown_method(trip_analysis):
-    event = {"requestContext": {"http": {"method": "DELETE"}}}
+    event = {
+        "requestContext": {
+            "http": {"method": "DELETE"},
+            "authorizer": {"jwt": {"claims": {"cognito:groups": "[admin]"}}},
+        }
+    }
     resp = trip_analysis.handler(event, None)
 
     assert resp["statusCode"] == 405
+
+
+def test_handler_rejects_non_admin(trip_analysis):
+    event = {
+        "requestContext": {
+            "http": {"method": "GET"},
+            "authorizer": {"jwt": {"claims": {"cognito:groups": "[viewer]"}}},
+        },
+        "queryStringParameters": {"device_id": "dev1"},
+    }
+    resp = trip_analysis.handler(event, None)
+
+    assert resp["statusCode"] == 403
+
+
+def test_handler_allows_admin(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis, "_handle_get", lambda event: {"statusCode": 200, "body": "get"})
+    event = {
+        "requestContext": {
+            "http": {"method": "GET"},
+            "authorizer": {"jwt": {"claims": {"cognito:groups": "[admin]"}}},
+        },
+        "queryStringParameters": {"device_id": "dev1"},
+    }
+    resp = trip_analysis.handler(event, None)
+
+    assert resp["statusCode"] == 200
+
+
+def test_handler_self_invoke_skips_admin_check(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis, "_process_job", lambda *a, **kw: None)
+    event = {
+        "trip_analysis_job": True, "job_id": "job-1", "device_id": "dev1",
+        "start_ts": 1000, "end_ts": 2000, "started_at": 900,
+    }
+    resp = trip_analysis.handler(event, None)
+
+    assert resp == {}
