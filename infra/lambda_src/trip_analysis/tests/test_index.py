@@ -426,3 +426,133 @@ def test_find_recent_running_job_returns_none_when_succeeded(trip_analysis, monk
 
 def test_find_recent_running_job_returns_none_when_no_jobs(trip_analysis):
     assert trip_analysis._find_recent_running_job("dev1") is None
+
+
+# ---- _load_trips ----
+
+
+def test_load_trips_returns_empty_list_when_no_trips(trip_analysis):
+    assert trip_analysis._load_trips("dev1") == []
+
+
+def test_load_trips_returns_trip_contents(trip_analysis):
+    trip_analysis._save_trip("dev1", 1700000000, 1700001800, {"distance_km": 1.0}, row_count=10)
+
+    trips = trip_analysis._load_trips("dev1")
+
+    assert len(trips) == 1
+    assert trips[0]["session_start"] == 1700000000
+    assert trips[0]["distance_km"] == 1.0
+
+
+def test_load_trips_returns_newest_first(trip_analysis):
+    jan = datetime(2026, 1, 15, tzinfo=timezone.utc)
+    mar = datetime(2026, 3, 15, tzinfo=timezone.utc)
+    trip_analysis._save_trip("dev1", int(jan.timestamp()) - 100, int(jan.timestamp()), {}, row_count=1)
+    trip_analysis._save_trip("dev1", int(mar.timestamp()) - 100, int(mar.timestamp()), {}, row_count=1)
+
+    trips = trip_analysis._load_trips("dev1")
+
+    assert trips[0]["session_start"] == int(mar.timestamp()) - 100
+    assert trips[1]["session_start"] == int(jan.timestamp()) - 100
+
+
+def test_load_trips_respects_limit(trip_analysis):
+    for i in range(5):
+        base = 1700000000 + i * 10000
+        trip_analysis._save_trip("dev1", base, base + 100, {}, row_count=1)
+
+    trips = trip_analysis._load_trips("dev1", limit=2)
+
+    assert len(trips) == 2
+
+
+def test_load_trips_ignores_other_devices(trip_analysis):
+    trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    trip_analysis._save_trip("dev2", 1800000000, 1800001800, {}, row_count=1)
+
+    trips = trip_analysis._load_trips("dev1")
+
+    assert len(trips) == 1
+
+
+# ---- _handle_start ----
+
+
+def test_handle_start_rejects_invalid_device_id(trip_analysis):
+    event = {"body": json.dumps({"device_id": "invalid id with space"})}
+    resp = trip_analysis._handle_start(event)
+    assert resp["statusCode"] == 400
+
+
+def test_handle_start_returns_running_job_when_duplicate(trip_analysis, monkeypatch):
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 1000, {"job_id": "job-1", "status": "RUNNING", "started_at": 1000}
+    )
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1000 + 100)
+    monkeypatch.setattr(
+        trip_analysis.lambda_client, "invoke", lambda **kw: pytest.fail("should not invoke a new job")
+    )
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["job_id"] == "job-1"
+
+
+def test_handle_start_first_time_uses_earliest_obd_ts(trip_analysis, monkeypatch):
+    _put_obd_object(datetime(2026, 1, 1, 0, tzinfo=timezone.utc))
+    invoked = {}
+    monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: invoked.update(kw))
+    now_ts = int(datetime(2026, 1, 2, 0, tzinfo=timezone.utc).timestamp())
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: now_ts)
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["status"] == "RUNNING"
+    assert body["range"]["start_ts"] == int(datetime(2026, 1, 1, 0, tzinfo=timezone.utc).timestamp())
+    payload = json.loads(invoked["Payload"])
+    assert payload["trip_analysis_job"] is True
+    assert payload["device_id"] == "dev1"
+
+
+def test_handle_start_second_time_uses_latest_session_end(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1700100000)
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["range"]["start_ts"] == 1700001801
+
+
+def test_handle_start_clamps_to_max_window(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
+    far_future = 1700001800 + trip_analysis.MAX_WINDOW_HOURS * 3600 * 10
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: far_future)
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    expected_end = 1700001801 + trip_analysis.MAX_WINDOW_HOURS * 3600
+    assert body["range"]["end_ts"] == expected_end
+    assert body["has_more"] is True
+
+
+def test_handle_start_no_new_data_returns_succeeded_immediately(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1700001800)  # last_end+1 >= now
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["status"] == "SUCCEEDED"
+    assert body["trips_saved"] == 0

@@ -30,6 +30,7 @@ import json
 import os
 import re
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from itertools import pairwise
 
@@ -60,6 +61,24 @@ ANALYSIS_VERSION = 1
 
 GAP_TIMEOUT_SEC = int(os.environ.get("GAP_TIMEOUT_SEC", "600"))
 MIN_TRIP_DURATION_SEC = int(os.environ.get("MIN_TRIP_DURATION_SEC", "30"))
+
+# 1回のジョブで処理する最大時間幅。データが長期間分析されずに溜まっていても
+# Athenaクエリ対象期間・Lambda実行時間を有限に保つため、超過分は次回のジョブに持ち越す
+MAX_WINDOW_HOURS = 24 * 14
+
+DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")  # S3キーインジェクション対策（obd_ingest/index.pyと同一パターン）
+
+
+def _resp(status: int, body: dict) -> dict:
+    return {
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(body, ensure_ascii=False),
+    }
+
+
+def _err(status: int, msg: str) -> dict:
+    return _resp(status, {"error": msg})
 
 
 def _partition_filters(start_ts: int, end_ts: int) -> list[str]:
@@ -137,6 +156,44 @@ def _latest_common_prefix(prefix: str) -> str | None:
             break
         kwargs["ContinuationToken"] = resp["NextContinuationToken"]
     return latest
+
+
+def _list_common_prefixes(prefix: str) -> list[str]:
+    """prefix直下のフォルダ（Delimiter="/"のCommonPrefixes）を全件返す。
+    年月フォルダ数は1デバイスあたり高々数十件程度で全件取得しても問題にならない想定
+    （月内のトリップファイル自体が多い場合は_load_trips側でlimit件到達時点で打ち切る）。"""
+    kwargs = {"Bucket": S3_BUCKET, "Prefix": prefix, "Delimiter": "/"}
+    result = []
+    while True:
+        resp = s3.list_objects_v2(**kwargs)
+        result.extend(cp["Prefix"] for cp in resp.get("CommonPrefixes", []))
+        if not resp.get("IsTruncated"):
+            break
+        kwargs["ContinuationToken"] = resp["NextContinuationToken"]
+    return result
+
+
+def _load_trips(device_id: str, limit: int = 200) -> list[dict]:
+    """trip-analysis/{device_id}/配下のトリップ一覧を新しい順に最大limit件返す。
+    年月フォルダ・ファイルを新しい順に辿りながらlimit件集まった時点で打ち切るため、
+    全トリップ数が多いデバイスでも読み込むオブジェクト数はlimitに収まる。"""
+    device_prefix = f"{TRIP_PREFIX}/{device_id}/"
+    year_prefixes = sorted(_list_common_prefixes(device_prefix), reverse=True)
+
+    trips = []
+    for year_prefix in year_prefixes:
+        month_prefixes = sorted(_list_common_prefixes(year_prefix), reverse=True)
+        for month_prefix in month_prefixes:
+            resp = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=month_prefix)
+            keys = sorted((o["Key"] for o in resp.get("Contents", [])), reverse=True)
+            for key in keys:
+                if not _TRIP_FILENAME_RE.match(key.rsplit("/", 1)[-1]):
+                    continue
+                obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+                trips.append(json.loads(obj["Body"].read()))
+                if len(trips) >= limit:
+                    return trips
+    return trips
 
 
 _TRIP_FILENAME_RE = re.compile(r"^(\d{10})_(\d{10})_v(\d+)_(\d+)\.json$")
@@ -233,6 +290,55 @@ def _find_recent_running_job(device_id: str) -> dict | None:
     if status.get("status") == "RUNNING" and int(time.time()) - status["started_at"] < RECENT_JOB_GUARD_SEC:
         return status
     return None
+
+
+def _handle_start(event: dict) -> dict:
+    """POST /trip-analysis {device_id} — 未分析期間のジョブを作成し、自己非同期呼び出しして即returnする。"""
+    body = json.loads(event.get("body") or "{}")
+    device_id = body.get("device_id", "")
+    if not DEVICE_ID_RE.match(device_id):
+        return _err(400, "invalid device_id")
+
+    running = _find_recent_running_job(device_id)
+    if running is not None:
+        return _resp(200, running)
+
+    last_end = _latest_session_end(device_id)
+    start_ts = (last_end + 1) if last_end is not None else _earliest_obd_ts()
+    now = int(time.time())
+    if start_ts is None or start_ts >= now:
+        return _resp(200, {"status": "SUCCEEDED", "trips_saved": 0, "has_more": False})
+
+    end_ts = min(now, start_ts + MAX_WINDOW_HOURS * 3600)
+    job_id = uuid.uuid4().hex
+    status = {
+        "job_id": job_id,
+        "device_id": device_id,
+        "status": "RUNNING",
+        "started_at": now,
+        "finished_at": None,
+        "range": {"start_ts": start_ts, "end_ts": end_ts},
+        "trips_saved": 0,
+        "has_more": end_ts < now,
+        "error": None,
+    }
+    _write_job_status(device_id, job_id, now, status)
+
+    lambda_client.invoke(
+        FunctionName=SELF_FUNCTION_NAME,
+        InvocationType="Event",
+        Payload=json.dumps(
+            {
+                "trip_analysis_job": True,
+                "job_id": job_id,
+                "device_id": device_id,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+                "started_at": now,
+            }
+        ).encode(),
+    )
+    return _resp(200, status)
 
 
 def _run_athena_query(query: str) -> list[dict]:
