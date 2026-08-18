@@ -76,7 +76,13 @@ device / service を include してはいけない。標準ライブラリのみ
 | `menu.h/.cpp` | OLED + 2ボタン設定メニュー、`enterMenuMode()` → `OperationMode` を返す |
 | `menu_util.h/.cpp` | メニュー用パスユーティリティ（pathPush / pathPop / pathTitle 等） |
 | `obdpoll.h/.cpp` | `obdPoll()`。全29PIDを6PIDずつ計5リクエストにバッチ化して問い合わせ（`canInit()`済み前提）。CONTINUOUSモードの1秒ティックから呼ばれる |
-| `operation_mode.h/.cpp` | `OperationModeManager`。`OperationMode` ごとの実行関数を登録・呼び出すレジストリ（`main.cpp`のloop()分岐を集約） |
+| `operation_mode.h/.cpp` | `IOperationModeHandler`（`beforeRun()`/`run()`を持つ抽象ハンドラ）+ `OperationModeManager`。`OperationMode` ごとにハンドラインスタンスを登録・ディスパッチするレジストリ（`main.cpp`のloop()分岐を集約）。モード状態自体は持たず`OperationModeContext`を参照する |
+| `mode_context.h/.cpp` | `OperationModeContext`。動作モードハンドラ間で共有する実行時状態（現在モード・直近計測値・BLE昇格フラグ等）。状態遷移系プロパティはsetter経由でのみ変更させ、変更時に`[MODE_CTX]`ログを出す |
+| `mode_common.h/.cpp` | 複数モードハンドラから呼ばれる横断ヘルパー（`updateChargingState()`/`secsToNextBoundary()`/`pollBleCollect()`/`checkAndHandleJob()`） |
+| `mode_deep_sleep.h/.cpp` | `DeepSleepModeHandler`。BLE接続によるCONTINUOUSへの自動昇格判定（`beforeRun()`）とDeepSleep突入処理（`run()`） |
+| `mode_continuous_base.h/.cpp` | `ContinuousModeHandlerBase`。CONTINUOUS/TIMED_CONTINUOUS共通の5分待機ループ（`continuousLoopCore()`）とBLE切断による降格判定（`beforeRun()`） |
+| `mode_continuous.h/.cpp` | `ContinuousModeHandler`（`ContinuousModeHandlerBase`派生）。無期限CONTINUOUS |
+| `mode_timed_continuous.h/.cpp` | `TimedContinuousModeHandler`（`ContinuousModeHandlerBase`派生）。`OperationModeContext`の継続期限まで繰り返し、期限到達で自動DEEP_SLEEP |
 | `pubqueue.h/.cpp` | オフラインバッファ（RTC メモリ + SPIFFS）・MQTT publish キュー管理 |
 | `log_storage.h/.cpp` | デバッグログの SPIFFS 保存（起動ごと1ファイル、最大12ファイルのリングバッファ）。`logger.h/.cpp`（src直下、横断的関心事）から呼ばれる |
 
