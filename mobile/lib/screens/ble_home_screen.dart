@@ -317,9 +317,14 @@ class _BleHomeState extends State<BleHome> {
 
   // メーター画面のミニグラフ用に全項目の値を履歴へ積む。
   // 無応答フレーム（reading.valid == false）はグラフがゼロ落ちしないよう積まない。
+  // メタのmin/max範囲外の値（アイドリングストップ切替瞬間にPIDデコードが化けた場合等）も
+  // 個別にスキップする。範囲外の値をそのまま積むと、固定レンジのsparklineグラフが
+  // 画面を貫く縦線のように見えるスパイクになってしまうため。
   void _pushHistory(ObdReading reading) {
     for (final metric in ObdMetric.values) {
-      final value = obdMetricMeta[metric]!.valueOf(reading);
+      final meta = obdMetricMeta[metric]!;
+      final value = meta.valueOf(reading);
+      if (value < meta.min || value > meta.max) continue;
       final list = _obdHistory[metric]!;
       list.add(value);
       if (list.length > _historyCapacity) list.removeAt(0);
