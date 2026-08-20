@@ -538,12 +538,20 @@ TLV拡張領域だけは`bytes[extOffset]`から独立してパースを試み�
 `valid=false`・各フィールドはデフォルト値（境界を超える前に読めた分はその値のまま）で返り、
 拡張フィールド側は正しく取得できる可能性がある。
 
+### CRC-8（伝送破損検出）
+
+コア構造体+TLV拡張フィールド領域の全バイトの末尾に、CRC-8（多項式`0x07`、初期値`0x00`、
+CRC-8/SMBUS準拠）を1バイト付加してから送信する（`obdCrc8()`、`domain/obd.h`）。
+アプリ側（`ObdReading.fromBytes()`）は同一アルゴリズムで再計算し、不一致なら以降の処理を
+一切行わず即座に`null`を返す。`schemaVersion`不一致（ソフトウェア側の定義ズレ）とは性質が
+異なる、BLE伝送中のビット化けという物理的な異常を検出するためのもの。
+
 ### チャンクフォーマット
 
 ```text
 [0]     : seq   (uint8, 0-indexed)
 [1]     : total (uint8, 総チャンク数)
-[2..]   : payload（最大18バイト、コア構造体98バイト+TLV拡張領域を18バイトずつ分割）
+[2..]   : payload（最大18バイト、コア構造体98バイト+TLV拡張領域+CRC-8(1バイト)を18バイトずつ分割）
 ```
 
 `device/ble_peripheral.cpp`の`BlePeripheral::notifyObd()`が`MEAS_OBD_UUID`
