@@ -2,6 +2,7 @@
 #include "../device/can.h"
 #include "../logger.h"
 #include <string.h>
+#include <time.h>
 
 namespace
 {
@@ -9,6 +10,24 @@ const uint8_t NRC_CONDITIONS_NOT_CORRECT = 0x22;
 const uint8_t NRC_SECURITY_ACCESS_DENIED = 0x33;
 // 応答なしDIDでの待ち時間を抑えるため通常ポーリング(50ms)より短めに設定
 const uint32_t DID_SCAN_TIMEOUT_MS = 30;
+
+// AWS側にアップロードされるOBDデータ（mobile側obd_uploader.dartが送るts=time(nullptr)の秒値）と
+// 突き合わせられるよう、読み取り直前の時刻を記録する。未同期（time(nullptr)がNTP/LTE同期前の
+// 1970年付近を指す）の場合はlog_storage.cppと同じ閾値でmillis()基準にフォールバックする。
+void logCurrentTime(const char *tag)
+{
+  time_t now = time(nullptr);
+  if (now > 1577836800L) // 2020-01-01以降なら同期済みとみなす
+  {
+    char timebuf[24];
+    strftime(timebuf, sizeof(timebuf), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
+    logger.printf("%s ts=%ld (%s)\n", tag, (long)now, timebuf);
+  }
+  else
+  {
+    logger.printf("%s ts=未同期 millis=%lu\n", tag, millis());
+  }
+}
 } // namespace
 
 void didScanRun(uint16_t start, uint16_t end, DidScanResult &result, bool (*shouldAbort)())
@@ -77,6 +96,7 @@ static_assert(sizeof(kDidCandidates) / sizeof(kDidCandidates[0]) <= DidValueResu
 void didReadCandidateValues(DidValueResult &result)
 {
   result = {};
+  logCurrentTime("[DIDVal] 開始");
 
   uint8_t data[8];
   uint8_t dlc;
