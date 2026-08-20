@@ -1,7 +1,12 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/meter_slot.dart';
 import '../models/obd_metric.dart';
+import '../services/meter_config_service.dart';
 import '../theme/app_colors.dart';
 import 'card_widgets.dart';
 
@@ -16,6 +21,7 @@ class MeterSettingsSheet extends StatefulWidget {
 }
 
 class _MeterSettingsSheetState extends State<MeterSettingsSheet> {
+  final _configService = MeterConfigService();
   late List<MeterSlot> _slots;
   bool _adding = false;
   ObdMetric _newMetric = ObdMetric.values.first;
@@ -28,6 +34,50 @@ class _MeterSettingsSheetState extends State<MeterSettingsSheet> {
   }
 
   void _removeAt(int index) => setState(() => _slots.removeAt(index));
+
+  Future<void> _exportToFile() async {
+    final json = _configService.exportToJson(_slots);
+    try {
+      await FilePicker.saveFile(
+        dialogTitle: 'メーター設定をエクスポート',
+        fileName: 'meter_config.json',
+        bytes: Uint8List.fromList(utf8.encode(json)),
+        mimeType: 'application/json',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+    } catch (e) {
+      if (mounted) _showMessage('エクスポートに失敗しました: $e');
+    }
+  }
+
+  Future<void> _importFromFile() async {
+    PlatformFile? file;
+    try {
+      file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['json']);
+    } catch (e) {
+      if (mounted) _showMessage('ファイル選択に失敗しました: $e');
+      return;
+    }
+    if (file == null) return; // キャンセル
+
+    try {
+      final bytes = await file.readAsBytes();
+      final imported = _configService.importFromJson(utf8.decode(bytes));
+      if (imported == null) {
+        if (mounted) _showMessage('設定ファイルの読み込みに失敗しました（形式が不正です）');
+        return;
+      }
+      setState(() => _slots = imported);
+      if (mounted) _showMessage('${imported.length}件の項目をインポートしました');
+    } catch (e) {
+      if (mounted) _showMessage('インポートに失敗しました: $e');
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
 
   void _addSlot() {
     setState(() {
@@ -71,6 +121,16 @@ class _MeterSettingsSheetState extends State<MeterSettingsSheet> {
             Row(
               children: [
                 Expanded(child: cardLabel('メーター項目の編集')),
+                IconButton(
+                  icon: const Icon(Icons.file_upload_outlined),
+                  tooltip: 'ファイルからインポート',
+                  onPressed: _importFromFile,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.file_download_outlined),
+                  tooltip: 'ファイルへエクスポート',
+                  onPressed: _exportToFile,
+                ),
                 IconButton(
                   icon: const Icon(Icons.check, color: AppColors.primary),
                   onPressed: () => Navigator.pop(context, _slots),
