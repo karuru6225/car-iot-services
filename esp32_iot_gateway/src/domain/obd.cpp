@@ -1,4 +1,5 @@
 #include "obd.h"
+#include <string.h>
 
 // 応答パケットの共通チェック: [0]=0x41(Mode01応答) [1]=PID [2]=A [3]=B ...（PCIバイトはcan.cpp側で剥離済み）
 // 一致すればペイロード先頭（A）へのポインタを payload に返す
@@ -416,10 +417,43 @@ void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
   out.iatC = r.iatC;
   out.iat2C = r.iat2C;
 
-  out.atfTempC = r.atfTempC;
-  out.atfTempValid = r.atfTempValid ? 1 : 0;
-
   out.validMask = r.validMask;
+}
+
+// [fieldId:1][len:1][data:len]を1件書き込む。バッファ不足時は何もせずfalseを返す
+// （呼び出し側はfalseなら以降のフィールドも試さず打ち切る＝残り容量ではもう入らない前提）。
+namespace
+{
+bool writeExtTlv(uint8_t *buf, size_t bufSize, size_t &pos, ObdExtFieldId id, const void *data, uint8_t len)
+{
+  if (pos + 2 + len > bufSize)
+    return false;
+  buf[pos++] = (uint8_t)id;
+  buf[pos++] = len;
+  memcpy(buf + pos, data, len);
+  pos += len;
+  return true;
+}
+} // namespace
+
+size_t obdEncodeExtFields(const OBDReading &r, uint8_t *buf, size_t bufSize)
+{
+  if (bufSize < 1)
+    return 0;
+
+  size_t pos = 1; // buf[0]はextCount。件数確定後にまとめて書く
+  uint8_t count = 0;
+
+  int16_t atfTempC = r.atfTempC;
+  if (writeExtTlv(buf, bufSize, pos, ObdExtFieldId::AtfTempC, &atfTempC, sizeof(atfTempC)))
+    count++;
+
+  uint8_t atfTempValid = r.atfTempValid ? 1 : 0;
+  if (writeExtTlv(buf, bufSize, pos, ObdExtFieldId::AtfTempValid, &atfTempValid, sizeof(atfTempValid)))
+    count++;
+
+  buf[0] = count;
+  return pos;
 }
 
 void obdComputeDerived(OBDReading &r)

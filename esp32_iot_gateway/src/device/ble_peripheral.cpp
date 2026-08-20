@@ -233,8 +233,18 @@ void BlePeripheral::notifyObd(const OBDReading &r) {
   ObdBlePacket packet;
   obdReadingToBlePacket(r, packet);
 
-  const uint8_t *raw = reinterpret_cast<const uint8_t*>(&packet);
-  const size_t totalLen = sizeof(packet);
+  // コア構造体(ObdBlePacket)の直後にTLV拡張フィールド領域を連結して送る。
+  // フィールド追加のたびにObdBlePacketのレイアウトを変えるとアプリ側の固定オフセット
+  // 読み取りが壊れるため、増減しうる値は拡張領域側に置く（domain/obd.h参照）。
+  uint8_t extBuf[32]; // 現状ATF 2件で7バイト。将来のフィールド追加分の余裕を持たせてある
+  size_t extLen = obdEncodeExtFields(r, extBuf, sizeof(extBuf));
+
+  uint8_t payload[sizeof(packet) + sizeof(extBuf)];
+  memcpy(payload, &packet, sizeof(packet));
+  memcpy(payload + sizeof(packet), extBuf, extLen);
+
+  const uint8_t *raw = payload;
+  const size_t totalLen = sizeof(packet) + extLen;
   const size_t chunkPayload = 18;
   const uint8_t total = (uint8_t)((totalLen + chunkPayload - 1) / chunkPayload);
 

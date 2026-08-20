@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 #include <time.h>
 
@@ -105,15 +106,28 @@ struct ObdBlePacket
   int16_t  iatC;
   int16_t  iat2C;
 
-  int16_t  atfTempC;
-  uint8_t  atfTempValid; // bool を1バイト固定で送る
-
   uint32_t validMask;
 };
 #pragma pack(pop)
 
 // OBDReading → ObdBlePacket 変換
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out);
+
+// ObdBlePacket後方互換のためのTLV拡張フィールド領域（device/ble_peripheral.cpp の notifyObd()が
+// ObdBlePacketの直後に連結して送る）。フィールド追加のたびにObdBlePacketの構造体レイアウトを
+// 変えるとアプリ側(mobile/lib/models/obd_reading.dart)の固定オフセット読み取りが全部ズレて
+// 壊れるため、コア構造体(ObdBlePacket)に入れたくない・今後も増減しうる値はこちらに追加する。
+// フォーマット: [extCount:1] ([fieldId:1][len:1][data:len])×extCount
+// アプリ側は知らないfieldIdをlen分読み飛ばせるため、双方の更新タイミングがズレても壊れない。
+enum class ObdExtFieldId : uint8_t
+{
+  AtfTempC = 1,     // int16_t、DID 0x2201の A-40 [°C]（実車未テスト）
+  AtfTempValid = 2, // uint8_t（0/1）
+};
+
+// 拡張フィールド領域をエンコードする。bufSizeが不足する場合は入りきる分だけで打ち切る
+// （呼び出し側は拡張フィールド追加時にバッファサイズを見直すこと）。戻り値は書き込んだバイト数。
+size_t obdEncodeExtFields(const OBDReading &r, uint8_t *buf, size_t bufSize);
 
 // boostKpa/fuelRateLphの派生値を計算する（valid=falseの場合は何もしない）
 void obdComputeDerived(OBDReading &r);
