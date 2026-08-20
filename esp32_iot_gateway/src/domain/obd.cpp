@@ -377,6 +377,8 @@ bool obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb c
 
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 {
+  out.coreLen = (uint8_t)sizeof(ObdBlePacket);
+
   out.rpm = r.rpm;
   out.speedKmh = r.speedKmh;
   out.loadPct = r.loadPct;

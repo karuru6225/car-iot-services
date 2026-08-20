@@ -66,6 +66,12 @@ struct OBDReading
 #pragma pack(push, 1)
 struct ObdBlePacket
 {
+  // このパケットのコア部分（このヘッダバイト自身を含む）の全長。常に sizeof(ObdBlePacket) 固定
+  // （obdReadingToBlePacket()がセットする）。アプリ側はこの値からTLV拡張領域の開始位置
+  // （bytes[coreLen]）を逆算できるため、コア構造体のサイズが変わってもオフセットの
+  // ハードコード（アプリ側の定数）を直さずに済む。
+  uint8_t  coreLen;
+
   uint16_t rpm;
   uint8_t  speedKmh;
   uint8_t  loadPct;
