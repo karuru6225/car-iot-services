@@ -55,10 +55,10 @@ class _Reader {
 }
 
 // ObdReading（esp32_iot_gateway/src/domain/obd.h の ObdBlePacket）のDart側パース結果。
-// コア構造体（bytes[0]のcoreLenバイト、coreLen自身を含む）のフィールド順・オフセットは
-// ObdBlePacket と完全一致させること。コア構造体の直後にはTLV拡張フィールド領域が続く
-// （ObdExtFieldId参照）。新しいセンサー値はこちら側で追加され、firmware側のフィールド追加では
-// コア構造体側のオフセットは変わらない。
+// コア構造体（bytes[0]のcoreLenバイト、coreLen自身を含む）はヘッダ（coreLen/schemaVersion/
+// valid/validMask）とボディ（実データ）で構成される。フィールド順・オフセットは ObdBlePacket
+// と完全一致させること。コア構造体の直後にはTLV拡張フィールド領域が続く（ObdExtFieldId参照）。
+// 新しいセンサー値はこちら側で追加され、コア構造体側のオフセットは変わらない。
 class ObdReading {
   final int rpm, speedKmh, loadPct, mapKpa, baroKpa, boostKpa, throttlePct;
   final double timingDeg, ecuVoltage, mafGs;
@@ -103,16 +103,41 @@ class ObdReading {
   static const _extFieldAtfTempC = 1;
   static const _extFieldAtfTempValid = 2;
 
-  factory ObdReading.fromBytes(Uint8List bytes) {
-    // bytes[0] = coreLen（ObdBlePacket.coreLen、このバイト自身を含むコア構造体の全長）。
-    // ハードコードせずここから読むことで、コア構造体のサイズが変わってもTLV拡張領域の
-    // 開始位置を正しく特定できる。
-    final coreLen = bytes[0];
+  // ファーム側 domain/obd.h の OBD_BLE_SCHEMA_VERSION と対応させること。ボディのレイアウトを
+  // 変えたらファーム側と一緒にインクリメントする。
+  static const _schemaVersion = 1;
 
-    // コア構造体はObdBlePacketのフィールド宣言順どおりに1つずつ読み進める。
+  // パース失敗時（バイト数不足・schemaVersion不一致）はnullを返す。呼び出し側
+  // （ObdChunkAssembler.add()）は素通しでnullを返せるようすでにnullableで宣言されている。
+  static ObdReading? fromBytes(Uint8List bytes) {
+    // schemaVersion+headerLenの2バイトだけは常に固定位置という前提（ObdBlePacket参照）。
+    if (bytes.length < 2) return null;
+
+    // ヘッダはObdBlePacketの宣言順どおりに読む（_Readerがオフセットを自動計算する）。
+    // schemaVersionを最初に読むのは、バージョンによって以降のヘッダ・ボディの解釈自体が
+    // 変わりうるため（ObdBlePacketのコメント参照）。
+    final r = _Reader(bytes, 0);
+    final schemaVersion = r.u8();
+    // サイズだけ見るcoreLen/headerLenでは検出できない「サイズは同じだが意味が変わった」変更を
+    // 弾くための番人。未対応バージョンのボディをそのまま読むと誤った値を表示しかねないため、
+    // ログ等で警告するのではなく安全側に倒してパース自体を拒否する。
+    if (schemaVersion != _schemaVersion) return null;
+
+    // headerLen自体は使わない（ヘッダ内の各フィールドはschemaVersion固定でこの後読み進める）が、
+    // ボディの開始位置を自己記述するために存在する。将来ヘッダにフィールドを追加した場合、
+    // 今のアプリはそのフィールドを知らなくても構造上はボディの位置を見失わない。
+    final headerLen = r.u8();
+    if (bytes.length < headerLen) return null;
+
+    final coreLen = r.u8();
+    if (bytes.length < coreLen) return null;
+
+    final valid = r.u8() != 0;
+    final validMask = r.u32();
+
+    // 以降はボディをObdBlePacketのフィールド宣言順どおりに1つずつ読み進める。
     // オフセットは_Readerが自動計算するため、フィールドの型・呼び出し順さえ
     // ObdBlePacketと一致させれば足りる（追加・削除時もオフセットの手計算が要らない）。
-    final r = _Reader(bytes, 1); // coreLenバイトの直後から開始
     final rpm = r.u16();
     final speedKmh = r.u8();
     final loadPct = r.u8();
@@ -145,11 +170,9 @@ class ObdReading {
     final fuelType = r.u8();
     final secO2TrimStPct = r.f32();
     final secO2TrimLtPct = r.f32();
-    final valid = r.u8() != 0;
     final ts = r.u32();
     final iatC = r.i16();
     final iat2C = r.i16();
-    final validMask = r.u32();
 
     // TLV拡張フィールド領域: [extCount:1]([fieldId:1][len:1][data:len])×extCount。
     // 知らないfieldIdはlen分読み飛ばす。firmware側で新しいフィールドが追加されても、
