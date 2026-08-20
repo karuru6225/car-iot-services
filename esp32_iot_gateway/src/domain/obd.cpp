@@ -378,6 +378,9 @@ bool obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb c
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 {
   out.coreLen = (uint8_t)sizeof(ObdBlePacket);
+  out.schemaVersion = OBD_BLE_SCHEMA_VERSION;
+  out.valid = r.valid ? 1 : 0;
+  out.validMask = r.validMask;
 
   out.rpm = r.rpm;
   out.speedKmh = r.speedKmh;
@@ -413,13 +416,10 @@ void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
   out.secO2TrimStPct = r.secO2TrimStPct;
   out.secO2TrimLtPct = r.secO2TrimLtPct;
 
-  out.valid = r.valid ? 1 : 0;
   out.ts = (uint32_t)r.ts;
 
   out.iatC = r.iatC;
   out.iat2C = r.iat2C;
-
-  out.validMask = r.validMask;
 }
 
 // [fieldId:1][len:1][data:len]を1件書き込む。バッファ不足時は何もせずfalseを返す

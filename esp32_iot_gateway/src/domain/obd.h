@@ -60,17 +60,39 @@ struct OBDReading
   uint32_t validMask;
 };
 
+// ObdBlePacketのボディレイアウトのバージョン。ボディのフィールド構成（順序・型・増減）を
+// 変えたら必ずインクリメントすること。アプリ側は自分が対応しているバージョンと一致しない
+// パケットのパースを拒否する（安全側に倒す。ObdReading.fromBytes()がnullを返す）ため、
+// 単純に上げ忘れると新しいファームのデータがアプリ側で一切表示されなくなる点に注意。
+static const uint8_t OBD_BLE_SCHEMA_VERSION = 1;
+
 // BLE Notify 送信用（パディングなしで詰めた固定レイアウト）。
 // OBDReading をそのまま memcpy するとコンパイラのパディング/アライメントに依存してしまうため、
 // BLE経由で送る際はこの構造体に変換してから使う（device/ble_peripheral.cpp 参照）。
+//
+// ヘッダ（メタ情報）とボディ（実データ）を分離している。validMask/validは「後続のボディを
+// どう解釈すべきか」を示すメタ情報であり、実データより先に読める位置にある方が自然なため
+// ヘッダ側に置いた。
 #pragma pack(push, 1)
 struct ObdBlePacket
 {
-  // このパケットのコア部分（このヘッダバイト自身を含む）の全長。常に sizeof(ObdBlePacket) 固定
-  // （obdReadingToBlePacket()がセットする）。アプリ側はこの値からTLV拡張領域の開始位置
-  // （bytes[coreLen]）を逆算できるため、コア構造体のサイズが変わってもオフセットの
-  // ハードコード（アプリ側の定数）を直さずに済む。
+  // ---- ヘッダ ----
+
+  // このパケットのコア部分（このヘッダバイト自身を含む、ヘッダ+ボディ）の全長。
+  // 常に sizeof(ObdBlePacket) 固定（obdReadingToBlePacket()がセットする）。アプリ側はこの値から
+  // TLV拡張領域の開始位置（bytes[coreLen]）を逆算できるため、コア構造体のサイズが変わっても
+  // オフセットのハードコード（アプリ側の定数）を直さずに済む。
   uint8_t  coreLen;
+
+  // ボディのレイアウトバージョン（OBD_BLE_SCHEMA_VERSION固定）。coreLenは「サイズが同じか」
+  // しか保証しないため、サイズは同じだが意味が変わった変更（フィールドの入れ替え等）を
+  // アプリ側が検出できるようにするための値。
+  uint8_t  schemaVersion;
+
+  uint8_t  valid;     // 全体の有効性フラグ（bool を1バイト固定で送る）
+  uint32_t validMask; // kPids[]（service/obdpoll.cpp）の配列順に対応するPIDごとのデコード成否
+
+  // ---- ボディ ----
 
   uint16_t rpm;
   uint8_t  speedKmh;
@@ -106,13 +128,10 @@ struct ObdBlePacket
   float    secO2TrimStPct;
   float    secO2TrimLtPct;
 
-  uint8_t  valid; // bool を1バイト固定で送る
-  uint32_t ts;    // time_t は環境依存サイズのため uint32_t に固定
+  uint32_t ts; // time_t は環境依存サイズのため uint32_t に固定
 
   int16_t  iatC;
   int16_t  iat2C;
-
-  uint32_t validMask;
 };
 #pragma pack(pop)
 
