@@ -58,9 +58,9 @@ class _Reader {
 }
 
 // ObdReading（esp32_iot_gateway/src/domain/obd.h の ObdBlePacket）のDart側パース結果。
-// コア構造体（bytes[0]のcoreLenバイト、coreLen自身を含む）はヘッダ（coreLen/schemaVersion/
-// valid/validMask）とボディ（実データ）で構成される。フィールド順・オフセットは ObdBlePacket
-// と完全一致させること。コア構造体の直後にはTLV拡張フィールド領域が続く（ObdExtFieldId参照）。
+// コア構造体（bytes[0..extOffset)）はヘッダ（schemaVersion/headerLen/extOffset/valid/
+// validMask）とボディ（実データ）で構成される。フィールド順・オフセットは ObdBlePacket
+// と完全一致させること。extOffset以降にはTLV拡張フィールド領域が続く（ObdExtFieldId参照）。
 // 新しいセンサー値はこちら側で追加され、コア構造体側のオフセットは変わらない。
 class ObdReading {
   final int rpm, speedKmh, loadPct, mapKpa, baroKpa, boostKpa, throttlePct;
@@ -121,7 +121,7 @@ class ObdReading {
     // 変わりうるため（ObdBlePacketのコメント参照）。
     final r = _Reader(bytes, 0);
     final schemaVersion = r.u8();
-    // headerLen/coreLenによってヘッダの拡張・TLV拡張領域の位置は自己記述化されているため、
+    // headerLen/extOffsetによってヘッダの拡張・TLV拡張領域の位置は自己記述化されているため、
     // schemaVersion不一致が実際に問題になるのは「ボディのレイアウトを直接変えた」場合のみ
     // （運用ルールとしてボディは増減させない前提のためレアケース）。パース自体を拒否すると
     // ファーム/アプリの更新タイミングがズレただけで何も表示されなくなるため、ここでは
@@ -134,8 +134,8 @@ class ObdReading {
     final headerLen = r.u8();
     if (bytes.length < headerLen) return null;
 
-    final coreLen = r.u8();
-    if (bytes.length < coreLen) return null;
+    final extOffset = r.u8();
+    if (bytes.length < extOffset) return null;
 
     final valid = r.u8() != 0;
     final validMask = r.u32();
@@ -190,8 +190,8 @@ class ObdReading {
     // 対応するcaseを足すだけで済み、他フィールドのオフセット計算には影響しない。
     var atfTempC = 0;
     var atfTempValid = false;
-    if (bytes.length > coreLen) {
-      final ext = _Reader(bytes, coreLen);
+    if (bytes.length > extOffset) {
+      final ext = _Reader(bytes, extOffset);
       final extCount = ext.u8();
       for (var i = 0; i < extCount && ext.pos + 2 <= bytes.length; i++) {
         final fieldId = ext.u8();
