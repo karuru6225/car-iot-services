@@ -63,6 +63,8 @@ setup():
   │   ├── Device QR   → [デバイス ID の QR コード表示]
   │   ├── Relay Mode  → [リレー動作モード切替]
   │   └── NVS Clear   → [確認] → nvs_flash_erase() + esp_restart()
+  ├── OBD             → ["/OBD"]
+  │   └── DID Scan    → [範囲プリセット選択] → [スキャン実行] → [ヒット一覧]
   ├── Continuous      → 継続計測モードに移行
   └── Restart         → esp_restart()
 ```
@@ -185,6 +187,13 @@ MENU_NAV (汎用ナビ)
  │   ├─(Relay Mode)───→ RELAY_MODE ──(BTN1 短押し/長押し)──→ MENU_NAV
  │   └─(NVS Clear)────→ CONFIRM ──(Yes)──→ esp_restart()
  │                                 ──(No/長押し)──→ MENU_NAV
+ ├─(OBD)───────────────→ MENU_NAV("/OBD")
+ │   └─(DID Scan)──────→ DID_SCAN_SELECT ──(BTN1 短押し・canInit())──→ DID_SCAN_RUNNING
+ │                            ↑                                            │
+ │                            │                          (完了・DidScanResult確定)
+ │                            │                                            ↓
+ │                        DID_SCAN_RESULT ←──────────────────────────────┘
+ │                       （BTN1 長押しでDID_SCAN_SELECTへ、選択画面のBTN1長押しでcanDeinit()→MENU_NAV）
  ├─(Continuous)───────→ DONE_CONTINUOUS（継続モード移行）
  └─(Restart)──────────→ esp_restart()
 ```

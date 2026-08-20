@@ -17,6 +17,11 @@ void canDeinit();
 // 「ISO-TPマルチフレーム対応・多PID要求」参照。物理アドレッシングは未対応）。
 bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count);
 
+// Mode 22 (UDS ReadDataByIdentifier) でDIDを1件要求する。物理アドレッシング固定
+// （0x18DA0EF1、対象ECU=0x0E=エンジンECU）。Mode01の機能アドレッシングとは異なる
+// （経緯はOBD.md「Mode 22 実機テスト候補」参照）。
+bool canSendObdRequestUds(uint16_t did);
+
 enum class ObdRecvResult : uint8_t
 {
   Ok,              // 正常応答（data/dlcに`41 PID data...`等が入っている）

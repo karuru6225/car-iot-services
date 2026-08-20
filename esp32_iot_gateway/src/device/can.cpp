@@ -10,6 +10,7 @@ static const uint8_t CAN_TX_PIN = boardPins().gu00Pin;  // GPIO4: MCP2562FD TXD 
 static const uint8_t CAN_EN_PIN = boardPins().gu0EnPin; // GPIO6: AO3401A ゲート（HIGH=電源ON）
 
 static const uint32_t CAN_REQ_ID = 0x18DB33F1;    // 29-bit functional addressing
+static const uint32_t CAN_UDS_REQ_ID = 0x18DA0EF1; // 29-bit physical addressing（対象ECU=0x0E固定、Mode22用）
 static const uint32_t CAN_RESP_MASK = 0x18DAF100; // 応答IDの上位24bit（下位8bit=ECUアドレス）
 static const uint32_t CAN_TESTER_ADDR = 0xF1;      // 自分（テスター）のアドレス
 static const uint32_t CAN_FC_ID_BASE = 0x18DA0000; // FC宛先 = BASE | (ECUアドレス<<8) | CAN_TESTER_ADDR
@@ -128,6 +129,29 @@ static void recoverIfBusOff()
   }
 }
 
+// SFフレーム送信の共通処理（送信失敗時のログ・連続失敗エスカレーションを共有）
+static bool transmitObdRequest(const twai_message_t &tx, const char *logTag)
+{
+  esp_err_t txErr = twai_transmit(&tx, pdMS_TO_TICKS(10));
+  bool ok = txErr == ESP_OK;
+  if (!ok)
+  {
+    logger.printf("[CAN] %s: 送信失敗 err=%s (連続%u回)\n", logTag, esp_err_to_name(txErr), s_failCount + 1);
+    if (++s_failCount >= CAN_FAIL_ESCALATE_THRESHOLD)
+    {
+      logger.printf("[CAN] 連続送信失敗%u回 → フル再初期化\n", s_failCount);
+      canLogStatus("再初期化前");
+      canDeinit();
+      canInit();
+    }
+  }
+  else
+  {
+    s_failCount = 0;
+  }
+  return ok;
+}
+
 bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count)
 {
   if (!s_ready || count == 0 || count > 6)
@@ -145,25 +169,27 @@ bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count)
     tx.data[2 + i] = pids[i];
   // 残り（data[2+count..7]）は0x00（ISO 15765-4 パディング、txはゼロ初期化済み）
 
-  esp_err_t txErr = twai_transmit(&tx, pdMS_TO_TICKS(10));
-  bool ok = txErr == ESP_OK;
-  if (!ok)
-  {
-    logger.printf("[CAN] canSendObdRequestMulti: 送信失敗 count=%u err=%s (連続%u回)\n",
-                  count, esp_err_to_name(txErr), s_failCount + 1);
-    if (++s_failCount >= CAN_FAIL_ESCALATE_THRESHOLD)
-    {
-      logger.printf("[CAN] 連続送信失敗%u回 → フル再初期化\n", s_failCount);
-      canLogStatus("再初期化前");
-      canDeinit();
-      canInit();
-    }
-  }
-  else
-  {
-    s_failCount = 0;
-  }
-  return ok;
+  return transmitObdRequest(tx, "canSendObdRequestMulti");
+}
+
+bool canSendObdRequestUds(uint16_t did)
+{
+  if (!s_ready)
+    return false;
+
+  recoverIfBusOff();
+
+  twai_message_t tx = {};
+  tx.identifier = CAN_UDS_REQ_ID; // 物理アドレッシング（Mode01の機能アドレッシングとは異なる）
+  tx.extd = 1;
+  tx.data_length_code = 8;
+  tx.data[0] = 0x03; // PCI: Single Frame, length = SID(1) + DID(2)
+  tx.data[1] = 0x22; // Mode 22 (UDS ReadDataByIdentifier)
+  tx.data[2] = (uint8_t)(did >> 8);
+  tx.data[3] = (uint8_t)(did & 0xFF);
+  // 残り（data[4..7]）は0x00パディング
+
+  return transmitObdRequest(tx, "canSendObdRequestUds");
 }
 
 // ECUからのOBD応答フレームか判定する（29bit: 0x18DAF1xx、11bit フォールバック: 0x7E8）

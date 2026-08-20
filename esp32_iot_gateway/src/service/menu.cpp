@@ -7,10 +7,12 @@
 #include "../device/ble_peripheral.h"
 #include "../device/ads.h"
 #include "../device/ina228.h"
+#include "../device/can.h"
 #include "../domain/ble_targets.h"
 #include "../domain/sensor_factory.h"
 #include "../config.h"
 #include "../board_pins.h"
+#include "diddscan.h"
 #include <Arduino.h>
 
 // ---- 状態定義 ----
@@ -33,6 +35,9 @@ enum class MenuState
   RESTART,
   BLE_PHONE,
   DONE_CONTINUOUS,
+  DID_SCAN_SELECT,  // Mode22 DIDスキャン: 範囲プリセット選択
+  DID_SCAN_RUNNING, // スキャン実行中（ブロッキング、BTN1長押しで中断）
+  DID_SCAN_RESULT,  // ヒットしたDID一覧
 };
 
 // ---- 一時メッセージ表示 ----
@@ -100,6 +105,7 @@ static const MenuItem ITEMS[] = {
     {"Battery",      "/",             MenuState::MENU_NAV,        {}},
     {"Sensor View",  "/",             MenuState::SENSOR,          {}},
     {"System",       "/",             MenuState::MENU_NAV,        {}},
+    {"OBD",          "/",             MenuState::MENU_NAV,        {}},
     {"Continuous",   "/",             MenuState::DONE_CONTINUOUS, {}},
     {"Restart",      "/",             MenuState::RESTART,         {}},
     // path="/BLE Settings"
@@ -114,6 +120,8 @@ static const MenuItem ITEMS[] = {
     {"Info",         "/System",       MenuState::SYS_INFO,        {}},
     {"Device QR",    "/System",       MenuState::DEVICE_QR,       {}},
     {"NVS Clear",    "/System",       MenuState::CONFIRM,         {"NVS Clear?", "Keep MQTT host", doNvsClear}},
+    // path="/OBD"
+    {"DID Scan",     "/OBD",          MenuState::DID_SCAN_SELECT, {}},
 
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
@@ -136,6 +144,12 @@ static int s_bleRemoveTarget = 0;
 // ---- 汎用確認ダイアログの現在の定義 ----
 
 static ConfirmDef s_confirm;
+
+// ---- DIDスキャン（Mode22 UDS）状態 ----
+
+static int s_didScanPresetCursor = 0;
+static DidScanResult s_didScanResult;
+static int s_didScanResultCursor = 0;
 
 // ---- tick 関数 ----
 
@@ -553,6 +567,101 @@ static MenuState tickBlePhone(ButtonEvent ev)
   return MenuState::BLE_PHONE;
 }
 
+// ---- DIDスキャン（Mode22 UDS、OBD.md「Mode 22 PID 探索方法論」参照） ----
+
+static MenuState tickDidScanSelect(ButtonEvent ev)
+{
+  const int MAX_PRESETS = 32; // kDidScanPresetCountはリンク時定数のためVLA回避に固定サイズを使う
+  const char *ptrs[MAX_PRESETS];
+  int count = kDidScanPresetCount < MAX_PRESETS ? kDidScanPresetCount : MAX_PRESETS;
+  for (int i = 0; i < count; i++)
+    ptrs[i] = kDidScanPresets[i].label;
+  oledShowMenu("DID Scan", ptrs, count, s_didScanPresetCursor);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_didScanPresetCursor = (s_didScanPresetCursor + 1) % count;
+  }
+  else if (ev == ButtonEvent::BTN1_SHORT)
+  {
+    canInit();
+    return MenuState::DID_SCAN_RUNNING;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    canDeinit();
+    s_didScanPresetCursor = 0;
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::DID_SCAN_SELECT;
+}
+
+// didScanRun()から1件処理するごとに呼ばれるコールバック。ボタン監視（BTN1長押しで中断）と
+// OLED進捗表示を兼ねる（スキャンは最大4096件かかりうるためブロッキングのままだと操作不能になる）。
+static bool didScanShouldAbort()
+{
+  static unsigned long lastOledUpdate = 0;
+
+  if (button.read() == ButtonEvent::BTN1_LONG)
+    return true;
+
+  if (millis() - lastOledUpdate >= 200)
+  {
+    lastOledUpdate = millis();
+    char line1[20], line2[20];
+    snprintf(line1, sizeof(line1), "Scan %d/%d",
+             s_didScanResult.scannedCount, s_didScanResult.totalCount);
+    snprintf(line2, sizeof(line2), "Hit:%d BTN1long:stop", s_didScanResult.findingCount);
+    oledShowMessage(line1, line2);
+  }
+  return false;
+}
+
+static MenuState tickDidScanRunning(ButtonEvent)
+{
+  const DidScanPreset &preset = kDidScanPresets[s_didScanPresetCursor];
+  oledShowMessage("DID Scan", "starting...");
+  didScanRun(preset.start, preset.end, s_didScanResult, didScanShouldAbort);
+  s_didScanResultCursor = 0;
+  return MenuState::DID_SCAN_RESULT;
+}
+
+static MenuState tickDidScanResult(ButtonEvent ev)
+{
+  if (s_didScanResult.findingCount == 0)
+  {
+    oledShowMessage("No hits", "BTN1 long: back");
+    if (ev == ButtonEvent::BTN1_LONG) return MenuState::DID_SCAN_SELECT;
+    return MenuState::DID_SCAN_RESULT;
+  }
+
+  char items[DidScanResult::MAX_FINDINGS][20];
+  const char *ptrs[DidScanResult::MAX_FINDINGS];
+  for (int i = 0; i < s_didScanResult.findingCount; i++)
+  {
+    const DidScanFinding &f = s_didScanResult.findings[i];
+    if (f.ok)
+      snprintf(items[i], sizeof(items[i]), "0x%04X OK", f.did);
+    else
+      snprintf(items[i], sizeof(items[i]), "0x%04X NRC%02X", f.did, f.nrc);
+    ptrs[i] = items[i];
+  }
+  char title[20];
+  snprintf(title, sizeof(title), "Hits (%d)", s_didScanResult.findingCount);
+  oledShowMenu(title, ptrs, s_didScanResult.findingCount, s_didScanResultCursor);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_didScanResultCursor = (s_didScanResultCursor + 1) % s_didScanResult.findingCount;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    s_didScanResultCursor = 0;
+    return MenuState::DID_SCAN_SELECT;
+  }
+  return MenuState::DID_SCAN_RESULT;
+}
+
 // ---- エントリポイント ----
 
 OperationMode enterMenuMode()
@@ -584,6 +693,9 @@ OperationMode enterMenuMode()
     case MenuState::CHARGING:           next = tickCharging(ev);         break;
     case MenuState::MESSAGE:            next = tickMessage(ev);          break;
     case MenuState::BLE_PHONE:          next = tickBlePhone(ev);         break;
+    case MenuState::DID_SCAN_SELECT:    next = tickDidScanSelect(ev);    break;
+    case MenuState::DID_SCAN_RUNNING:   next = tickDidScanRunning(ev);   break;
+    case MenuState::DID_SCAN_RESULT:    next = tickDidScanResult(ev);    break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;

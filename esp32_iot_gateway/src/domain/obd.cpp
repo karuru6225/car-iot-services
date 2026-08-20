@@ -1,4 +1,5 @@
 #include "obd.h"
+#include <string.h>
 
 // 応答パケットの共通チェック: [0]=0x41(Mode01応答) [1]=PID [2]=A [3]=B ...（PCIバイトはcan.cpp側で剥離済み）
 // 一致すればペイロード先頭（A）へのポインタを payload に返す
@@ -289,6 +290,27 @@ bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
   return any;
 }
 
+// UDS(Mode22)応答の共通チェック: [0]=0x62(ReadDataByIdentifier応答) [1]=DID上位 [2]=DID下位 [3]=A ...
+// Mode01のcheckHeader()とはヘッダ形式・PID幅（1バイト→2バイト）が異なるため別関数にする。
+static bool checkUdsHeader(const uint8_t *data, uint8_t dlc, uint16_t did, uint8_t minDlc, const uint8_t *&payload)
+{
+  if (dlc < minDlc)
+    return false;
+  if (data[0] != 0x62 || data[1] != (uint8_t)(did >> 8) || data[2] != (uint8_t)(did & 0xFF))
+    return false;
+  payload = data + 3;
+  return true;
+}
+
+bool obdDecodeAtfTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkUdsHeader(data, dlc, 0x2201, 4, p))
+    return false;
+  out.atfTempC = (int16_t)p[0] - 40;
+  return true;
+}
+
 // PID→データ長（PIDバイト自身を除く、A/B/C...の合計バイト数）。多くは上の
 // obdDecode*() の checkHeader() minDlc から算出（minDlc - 2）で正しいが、
 // 0x66/0x67/0x68（マスクバイト+複数センサー枠を持つ拡張PID群）は
@@ -355,6 +377,12 @@ bool obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb c
 
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 {
+  out.schemaVersion = OBD_BLE_SCHEMA_VERSION;
+  out.headerLen = (uint8_t)offsetof(ObdBlePacket, rpm);
+  out.extOffset = (uint8_t)sizeof(ObdBlePacket);
+  out.valid = r.valid ? 1 : 0;
+  out.validMask = r.validMask;
+
   out.rpm = r.rpm;
   out.speedKmh = r.speedKmh;
   out.loadPct = r.loadPct;
@@ -389,13 +417,58 @@ void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
   out.secO2TrimStPct = r.secO2TrimStPct;
   out.secO2TrimLtPct = r.secO2TrimLtPct;
 
-  out.valid = r.valid ? 1 : 0;
   out.ts = (uint32_t)r.ts;
 
   out.iatC = r.iatC;
   out.iat2C = r.iat2C;
+}
 
-  out.validMask = r.validMask;
+// [fieldId:1][len:1][data:len]を1件書き込む。バッファ不足時は何もせずfalseを返す
+// （呼び出し側はfalseなら以降のフィールドも試さず打ち切る＝残り容量ではもう入らない前提）。
+namespace
+{
+bool writeExtTlv(uint8_t *buf, size_t bufSize, size_t &pos, ObdExtFieldId id, const void *data, uint8_t len)
+{
+  if (pos + 2 + len > bufSize)
+    return false;
+  buf[pos++] = (uint8_t)id;
+  buf[pos++] = len;
+  memcpy(buf + pos, data, len);
+  pos += len;
+  return true;
+}
+} // namespace
+
+size_t obdEncodeExtFields(const OBDReading &r, uint8_t *buf, size_t bufSize)
+{
+  if (bufSize < 1)
+    return 0;
+
+  size_t pos = 1; // buf[0]はextCount。件数確定後にまとめて書く
+  uint8_t count = 0;
+
+  int16_t atfTempC = r.atfTempC;
+  if (writeExtTlv(buf, bufSize, pos, ObdExtFieldId::AtfTempC, &atfTempC, sizeof(atfTempC)))
+    count++;
+
+  uint8_t atfTempValid = r.atfTempValid ? 1 : 0;
+  if (writeExtTlv(buf, bufSize, pos, ObdExtFieldId::AtfTempValid, &atfTempValid, sizeof(atfTempValid)))
+    count++;
+
+  buf[0] = count;
+  return pos;
+}
+
+uint8_t obdCrc8(const uint8_t *data, size_t len)
+{
+  uint8_t crc = 0x00;
+  for (size_t i = 0; i < len; i++)
+  {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; bit++)
+      crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
+  }
+  return crc;
 }
 
 void obdComputeDerived(OBDReading &r)

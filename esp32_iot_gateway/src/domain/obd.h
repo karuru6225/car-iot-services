@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 #include <time.h>
 
@@ -47,18 +48,59 @@ struct OBDReading
   int16_t  iatC;  // 0x68 Sensor1: B-40 [°C]（インタークーラー前後どちらか未確定）
   int16_t  iat2C; // 0x68 Sensor2: C-40 [°C]（同上）
 
+  // Mode22 (UDS ReadDataByIdentifier) 追加分。Mode01のkPids[]多PIDバッチ機構
+  // （obdParseMultiResponse前提）とは別経路で単発問い合わせする（service/obdpoll.cpp参照）。
+  // validMaskはkPids[]専用のためATFの成否はこのフラグ単独で管理する。
+  int16_t  atfTempC;      // DID 0x2201: A-40 [°C]（OBD.md「Mode 22 実機テスト候補」参照、実車未テスト）
+  bool     atfTempValid;
+
   // kPids[]（service/obdpoll.cpp）の配列順に対応するビットマスク。ビットiが立っていれば
   // kPids[i]のPIDはデコード成功。valid=trueでも一部グループがタイムアウトした場合は
   // 該当PID分のフィールドが0初期値のまま残るため、本物の0とタイムアウトを区別するのに使う。
   uint32_t validMask;
 };
 
+// ObdBlePacketのボディレイアウトのバージョン。ボディのフィールド構成（順序・型・増減）を
+// 変えたら必ずインクリメントすること。アプリ側は自分が対応しているバージョンと一致しない
+// パケットのパースを拒否する（安全側に倒す。ObdReading.fromBytes()がnullを返す）ため、
+// 単純に上げ忘れると新しいファームのデータがアプリ側で一切表示されなくなる点に注意。
+static const uint8_t OBD_BLE_SCHEMA_VERSION = 1;
+
 // BLE Notify 送信用（パディングなしで詰めた固定レイアウト）。
 // OBDReading をそのまま memcpy するとコンパイラのパディング/アライメントに依存してしまうため、
 // BLE経由で送る際はこの構造体に変換してから使う（device/ble_peripheral.cpp 参照）。
+//
+// ヘッダ（メタ情報）とボディ（実データ）を分離している。validMask/validは「後続のボディを
+// どう解釈すべきか」を示すメタ情報であり、実データより先に読める位置にある方が自然なため
+// ヘッダ側に置いた。
 #pragma pack(push, 1)
 struct ObdBlePacket
 {
+  // ---- ヘッダ ----
+
+  // ボディのレイアウトバージョン（OBD_BLE_SCHEMA_VERSION固定）。バージョンによって以降の
+  // ヘッダ・ボディの解釈自体が変わりうるため、パケットの一番先頭に置く（extOffsetより前）。
+  // extOffsetは「サイズが同じか」しか保証しないため、サイズは同じだが意味が変わった変更
+  // （フィールドの入れ替え等）をアプリ側が検出できるようにするための値。
+  uint8_t  schemaVersion;
+
+  // ヘッダ部分（このバイト自身を含む、schemaVersion〜validMaskまで）の全長。常に
+  // offsetof(ObdBlePacket, rpm) 固定。アプリ側はこの値からボディの開始位置（bytes[headerLen]）
+  // を逆算できるため、将来ヘッダにフィールドを追加してもボディ側オフセットの
+  // ハードコード（アプリ側の定数）を直さずに済む。
+  uint8_t  headerLen;
+
+  // TLV拡張フィールド領域の開始位置（bytes[extOffset]）。常に sizeof(ObdBlePacket) 固定
+  // （obdReadingToBlePacket()がセットする、コア部分＝ヘッダ+ボディの全長でもある）。
+  // アプリ側はこの値を直接使えるため、コア構造体のサイズが変わってもオフセットの
+  // ハードコード（アプリ側の定数）を直さずに済む。
+  uint8_t  extOffset;
+
+  uint8_t  valid;     // 全体の有効性フラグ（bool を1バイト固定で送る）
+  uint32_t validMask; // kPids[]（service/obdpoll.cpp）の配列順に対応するPIDごとのデコード成否
+
+  // ---- ボディ ----
+
   uint16_t rpm;
   uint8_t  speedKmh;
   uint8_t  loadPct;
@@ -93,18 +135,38 @@ struct ObdBlePacket
   float    secO2TrimStPct;
   float    secO2TrimLtPct;
 
-  uint8_t  valid; // bool を1バイト固定で送る
-  uint32_t ts;    // time_t は環境依存サイズのため uint32_t に固定
+  uint32_t ts; // time_t は環境依存サイズのため uint32_t に固定
 
   int16_t  iatC;
   int16_t  iat2C;
-
-  uint32_t validMask;
 };
 #pragma pack(pop)
 
 // OBDReading → ObdBlePacket 変換
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out);
+
+// ObdBlePacket後方互換のためのTLV拡張フィールド領域（device/ble_peripheral.cpp の notifyObd()が
+// ObdBlePacketの直後に連結して送る）。フィールド追加のたびにObdBlePacketの構造体レイアウトを
+// 変えるとアプリ側(mobile/lib/models/obd_reading.dart)の固定オフセット読み取りが全部ズレて
+// 壊れるため、コア構造体(ObdBlePacket)に入れたくない・今後も増減しうる値はこちらに追加する。
+// フォーマット: [extCount:1] ([fieldId:1][len:1][data:len])×extCount
+// アプリ側は知らないfieldIdをlen分読み飛ばせるため、双方の更新タイミングがズレても壊れない。
+enum class ObdExtFieldId : uint8_t
+{
+  AtfTempC = 1,     // int16_t、DID 0x2201の A-40 [°C]（実車未テスト）
+  AtfTempValid = 2, // uint8_t（0/1）
+};
+
+// 拡張フィールド領域をエンコードする。bufSizeが不足する場合は入りきる分だけで打ち切る
+// （呼び出し側は拡張フィールド追加時にバッファサイズを見直すこと）。戻り値は書き込んだバイト数。
+size_t obdEncodeExtFields(const OBDReading &r, uint8_t *buf, size_t bufSize);
+
+// CRC-8（多項式0x07、初期値0x00）。BLE送信ペイロード（コア構造体+TLV拡張フィールド領域）の
+// 末尾に1バイト付加し、伝送中のビット化けを検出するために使う（device/ble_peripheral.cpp の
+// notifyObd()、mobile/lib/models/obd_reading.dart の ObdReading.fromBytes() で同一アルゴリズムを
+// 使うこと）。schemaVersion等の「定義のズレ」検出とは異なり、CRC不一致は通信レベルの物理的な
+// 異常のためパースそのものを拒否する。
+uint8_t obdCrc8(const uint8_t *data, size_t len);
 
 // boostKpa/fuelRateLphの派生値を計算する（valid=falseの場合は何もしない）
 void obdComputeDerived(OBDReading &r);
@@ -150,6 +212,11 @@ bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &ou
 // PID 0x68: bitmap=data[2]（0x03=S1+S2）, Sensor1温度=data[3]-40 [°C], Sensor2温度=data[4]-40 [°C]
 // （インタークーラー前後どちらがSensor1/2に対応するかは未確定）
 bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);       // 0x68
+
+// DID 0x2201 (Mode22/UDS ReadDataByIdentifier): ATF/CVT油温。A-40 [°C]
+// data は can.cpp が返す `62 [DID_HI] [DID_LO] data...` ペイロード（Mode01応答とはヘッダ形式が異なる）。
+// 実車未テスト（OBD.md「Mode 22 実機テスト候補」参照）。
+bool obdDecodeAtfTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
 // 多PID応答（`41 [PID_a][data_a...] [PID_b][data_b...] ...`）をPIDごとのセグメントに
 // 分解する（経緯はCONTEXT_ARCHIVE.mdの「ISO-TPマルチフレーム対応・多PID要求」参照）。PIDの並び順・省略はECU任せなので

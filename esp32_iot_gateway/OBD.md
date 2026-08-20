@@ -203,12 +203,17 @@ Mode 22 は UDS（ISO 14229）サービス 0x22（ReadDataByIdentifier）。
 
 | DID | データ | デコード式（暫定） | 優先度 | 状態 |
 | --- | ------ | ---------------- | ------ | ---- |
-| `0x2201` | ATF 温度 | byte27(AA) - 40 [°C] | 高 | **未テスト**（Honda 製 CVT 複数車種で確認済み・N-VAN も同系統の可能性大） |
+| `0x2201` | ATF 温度 | byte27(AA) - 40 [°C] | 高 | **実装済み・実車未テスト**（`domain/obd.cpp` の `obdDecodeAtfTemp()`、`obdPoll()` から常時問い合わせ） |
 | 未確定 | 燃料残量 | 不明 | 高 | DID スキャン要 |
 | 未確定 | 油温 | 不明 | 中 | DID スキャン要 |
 
-**DID スキャン方針**: `0x0000`〜`0xFFFF` に `22XXYY` を送り、`62` 応答（正常）が返る DID を列挙する。  
-燃料補給前後・冷間/暖機後でデータが変化する DID を絞り込む。
+**DID スキャン機能（実装済み）**: `service/diddscan.h/.cpp` に `didScanRun()` を実装。指定範囲を `22XXYY` で
+総当たりし、正常応答（`62`）と NRC `0x22`/`0x33`（存在するが今は読めない／認証必要）のみを記録する
+（`0x31` 非対応・タイムアウトは件数カウントのみ）。OLED メニュー「OBD > DID Scan」からプリセット範囲
+（`0x1000` 刻み 16 分割＋候補領域 3 件、`kDidScanPresets[]`）を選んで実行する。全域を一度に総当たりすると
+数十分〜1時間規模になるため範囲を区切っている。スキャン中は BTN1 長押しで中断可能。  
+燃料補給前後・冷間/暖機後でデータが変化する DID を絞り込む運用は今後の課題（結果はログ出力のみ、
+差分比較の自動化は未実装）。
 
 ---
 
@@ -480,33 +485,86 @@ Peripheral（`device/ble_peripheral.h/.cpp`）経由でスマホアプリ（`mob
 表示する。デフォルトBLE ATT MTU（23バイト、ペイロード20バイト）ではデータが収まらないため、
 MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分けて送る」発想でチャンク分割する。
 
-### 送信データレイアウト（`domain/obd.h`の`ObdBlePacket`、`#pragma pack(push,1)`）
+### 送信データレイアウト（`domain/obd.h`の`ObdBlePacket` + TLV拡張フィールド領域）
 
 `OBDReading`をそのまま`memcpy`するとコンパイラのパディングに依存してしまうため、送信専用の
-パディングなし構造体に変換してから送る（`obdReadingToBlePacket()`、`domain/obd.cpp`）。
-フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`に固定。
-末尾に`validMask`（uint32_t、`kPids[]`配列順のPIDごとのデコード成否ビットマスク）を持つ。
-合計95バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/models/obd_reading.dart`の
-`ObdReading.fromBytes()`のオフセットと完全一致させること）。
+パディングなし構造体（`#pragma pack(push,1)`）に変換してから送る（`obdReadingToBlePacket()`、
+`domain/obd.cpp`）。**ヘッダ（メタ情報）とボディ（実データ）に分離**している:
+
+```text
+ヘッダ: schemaVersion(1) headerLen(1) extOffset(1) valid(1) validMask(4)   … 合計8バイト
+ボディ: rpm … iat2C（OBDReadingと同一フィールド順、bool は uint8_t、time_t は uint32_t）
+```
+
+- `schemaVersion`（`OBD_BLE_SCHEMA_VERSION`固定値）: ボディのレイアウトバージョン。
+  バージョンによって以降の解釈自体が変わりうるため一番先頭に置く。「サイズは同じだが意味が
+  変わった」変更は`headerLen`/`extOffset`だけでは検出できないため、アプリ側は自分が対応している
+  バージョンと不一致なら`debugPrint()`で警告を出す。ただし`headerLen`/`extOffset`によって
+  ヘッダの拡張・TLV拡張領域の位置は自己記述化済みで、`schemaVersion`不一致が実際に問題になる
+  のは「ボディのレイアウトを直接変えた」場合のみ（運用ルールとしてボディは増減させない前提の
+  ためレアケース）なので、パース自体は拒否せず継続する（`mobile/lib/models/obd_reading.dart`
+  の`ObdReading.fromBytes()`参照）。
+- `headerLen`（`offsetof(ObdBlePacket, rpm)`固定値）: ヘッダ部分の全長。アプリ側はここから
+  ボディの開始位置（`bytes[headerLen]`）を逆算できるため、将来ヘッダにフィールドを追加しても
+  ボディ側オフセットの定数を直さずに済む。
+- `extOffset`（`sizeof(ObdBlePacket)`固定値）: TLV拡張フィールド領域の開始位置。値そのものが
+  `bytes[extOffset]`という形でそのままインデックスとして使える（「サイズ」ではなく「位置」を
+  表す名前にしている）。
+- `valid`/`validMask`: 「後続のボディをどう解釈すべきか」を示すメタ情報のため、実データより
+  先に読める位置（ヘッダ側）に置いている。`validMask`は`kPids[]`配列順のPIDごとのデコード成否。
+
+合計98バイト固定（ヘッダ8+ボディ90。オフセットは`domain/obd.h`のコメント・
+`mobile/lib/models/obd_reading.dart`の`ObdReading.fromBytes()`と完全一致させること）。
+
+**ボディは増減させない**（フィールドを足すたびにアプリ側の固定オフセット読み取りが
+全部ズレて壊れるため）。ATF温度（Mode22 DID 0x2201）等、今後も増減しうる値はコア構造体の
+直後に連結するTLV拡張フィールド領域に置く（`obdEncodeExtFields()`、`domain/obd.h`の
+`ObdExtFieldId`）:
+
+```text
+[extCount:1] ([fieldId:1][len:1][data:len]) × extCount
+```
+
+アプリ側（`ObdReading.fromBytes()`）は知らない`fieldId`を`len`分読み飛ばすため、ファーム・
+アプリいずれかだけを更新しても壊れない（新フィールド追加時、ファーム側は`obdEncodeExtFields()`
+に1行足すだけ、アプリ側は`fromBytes()`のswitchに1caseとフィールド追加だけで済む）。
+
+**ボディのパース失敗とTLV拡張領域は独立**: `ObdReading.fromBytes()`はボディを`_Reader`で
+順に読み進める際、読み取り位置が`extOffset`を超えたら例外（`_ReaderOverrunException`）を投げて
+即座に打ち切る（境界がズレた以上、それ以降のフィールドを読み進めても無意味な値にしかならない
+ため）。ただし`extOffset`自体はヘッダの一部として別に読み取り済みで、ボディの内部構造とは
+無関係に信頼できる値のため、ボディのパースが失敗（境界超過・読み足りない）した場合でも、
+TLV拡張領域だけは`bytes[extOffset]`から独立してパースを試みる。ボディが壊れた場合は
+`valid=false`・各フィールドはデフォルト値（境界を超える前に読めた分はその値のまま）で返り、
+拡張フィールド側は正しく取得できる可能性がある。
+
+### CRC-8（伝送破損検出）
+
+コア構造体+TLV拡張フィールド領域の全バイトの末尾に、CRC-8（多項式`0x07`、初期値`0x00`、
+CRC-8/SMBUS準拠）を1バイト付加してから送信する（`obdCrc8()`、`domain/obd.h`）。
+アプリ側（`ObdReading.fromBytes()`）は同一アルゴリズムで再計算し、不一致なら以降の処理を
+一切行わず即座に`null`を返す。`schemaVersion`不一致（ソフトウェア側の定義ズレ）とは性質が
+異なる、BLE伝送中のビット化けという物理的な異常を検出するためのもの。
 
 ### チャンクフォーマット
 
 ```text
 [0]     : seq   (uint8, 0-indexed)
 [1]     : total (uint8, 総チャンク数)
-[2..]   : payload（最大18バイト、87バイトを18バイトずつ5チャンクに分割）
+[2..]   : payload（最大18バイト、コア構造体98バイト+TLV拡張領域+CRC-8(1バイト)を18バイトずつ分割）
 ```
 
 `device/ble_peripheral.cpp`の`BlePeripheral::notifyObd()`が`MEAS_OBD_UUID`
 （Notify、認証不要、既存の計測サービスに相乗り）へ`total`回連続で`notify()`する。
 
-### アプリ側の再構成（`mobile/lib/main.dart`）
+### アプリ側の再構成（`mobile/lib/ble/obd_chunk_assembler.dart`）
 
-- `_onObdChunk()`が`seq`ごとに`Map<int, Uint8List>`へ格納。`seq==0`または`total`が前回と
-  食い違ったら前回分を破棄して集め直す（パケット取りこぼし時は次サイクルで自然に復帰する想定、
-  タイムアウト等の複雑なリトライ処理はあえて入れていない）
-- `total`個揃ったら結合して`_ObdReading.fromBytes()`でパースし、`_ObdCard`（既存の
-  `_MeasCard`と同じ`GridView.count`パターン）で28項目を表示
+- `ObdChunkAssembler.add()`が`seq`ごとに`Map<int, Uint8List>`へ格納。`seq==0`または`total`が
+  前回と食い違ったら前回分を破棄して集め直す（パケット取りこぼし時は次サイクルで自然に復帰する
+  想定、タイムアウト等の複雑なリトライ処理はあえて入れていない）
+- `total`個揃ったら結合して`ObdReading.fromBytes()`（`mobile/lib/models/obd_reading.dart`）で
+  パースし、`ObdCard`（`mobile/lib/widgets/obd_card.dart`）が`ObdMetric.values`を
+  `GridView.count`で表示
 
 ### 注意点
 
@@ -541,6 +599,43 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 
 **未実装（今回のスコープ外）**: AWS への publish（`domain/telemetry`・`service/pubqueue`
 統合）。送信方法は別途検討する。
+
+---
+
+## Mode 22 (UDS) 実装（完了）
+
+「Mode 22 実機テスト候補」節の方針に基づき、DID `0x2201`（ATF油温）の常時取得と、
+未確定DID（燃料残量・油温）を探すための総当たりスキャン機能を実装した。
+
+| # | 対象ファイル | 変更内容 | 状態 |
+|---|------------|---------|------|
+| 1 | `device/can.h/.cpp` | `canSendObdRequestUds()` 追加（物理アドレッシング`0x18DA0EF1`固定）。受信は既存`canReceiveObdResponse()`を流用 | 完了 |
+| 2 | `domain/obd.h/.cpp` | DID `0x2201`用ヘッダチェック（`checkUdsHeader()`）・`obdDecodeAtfTemp()`・`OBDReading`への`atfTempC`/`atfTempValid`追加、`ObdExtFieldId`・`obdEncodeExtFields()`（TLV拡張フィールド、下記参照） | 完了 |
+| 3 | `service/obdpoll.cpp` | `obdPoll()`末尾でMode01の29PIDバッチとは別経路の単発UDSリクエストを実行 | 完了 |
+| 4 | `service/diddscan.h/.cpp` 新規 | `didScanRun()`（範囲総当たり、NRC 0x22/0x33ヒットのみ記録）・`kDidScanPresets[]`（範囲プリセット） | 完了 |
+| 5 | `service/menu.cpp` | ルートに `"OBD"` サブメニュー追加、`"DID Scan"` からプリセット選択→実行→結果一覧 | 完了 |
+| 6 | `device/ble_peripheral.cpp` | `notifyObd()`をコア構造体+TLV拡張領域の連結送信に変更 | 完了 |
+| 7 | `mobile/lib/models/obd_reading.dart`/`obd_metric.dart` | TLV拡張領域パース対応、`ObdMetric.atfTempC`追加 | 完了 |
+
+**設計判断:**
+
+- `atfTempC`/`atfTempValid`は当初`ObdBlePacket`（コア構造体）の末尾に追加していたが、それだと
+  今後PID/DIDを1つ足すたびにアプリ側`ObdReading.fromBytes()`の固定オフセットが全部ズレて壊れる
+  （実際に発生した）。そのため`ObdBlePacket`からは外し、コア構造体の直後に連結する
+  TLV拡張フィールド領域（`obdEncodeExtFields()`）に移した。「BLE Notify送信」節参照。
+- Mode22はMode01の`kPids[]`多PIDバッチ機構（`obdParseMultiResponse()`前提）と応答ヘッダ形式・
+  アドレッシング方式が異なるため、送受信・デコードとも意図的に別経路にした（Mode01側は無変更）。
+- DIDスキャンは全域`0x0000`〜`0xFFFF`だと応答なしDIDのタイムアウト待ちが支配的で数十分〜1時間規模に
+  なるため、通常のCONTINUOUSポーリングには組み込まず、OLEDメニューから範囲を区切って手動実行する
+  一時的な調査機能として独立させた（`didScanRun()`はcanInit()済み前提、呼び出し元がcanInit/canDeinit
+  のライフサイクルを管理する）。
+- スキャン中の中断可否: `didScanRun()`は1件ごとに`shouldAbort()`コールバックを呼ぶ設計にし、
+  `menu.cpp`側でボタン監視とOLED進捗表示を兼ねさせた（BTN1長押しで中断可能）。
+
+**未実施（実車確認が必要）:**
+
+- DID `0x2201`（ATF油温）の実車応答確認（コード上は実装済みだが実測値との突き合わせ未実施）
+- 燃料残量・油温DIDの探索そのもの（プリセット範囲を実車で順に試す運用は未着手）
 
 ---
 
