@@ -2,6 +2,19 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 
+// ファーム側 domain/obd.cpp の obdCrc8() と同一アルゴリズム（多項式0x07、初期値0x00）。
+// bytesの先頭len バイトに対するCRC-8を計算する。
+int _crc8(Uint8List bytes, int len) {
+  var crc = 0x00;
+  for (var i = 0; i < len; i++) {
+    crc ^= bytes[i];
+    for (var bit = 0; bit < 8; bit++) {
+      crc = (crc & 0x80) != 0 ? ((crc << 1) ^ 0x07) & 0xFF : (crc << 1) & 0xFF;
+    }
+  }
+  return crc;
+}
+
 // _Readerの読み取りがlimitを超えた際にthrowされる。境界がズレている以上、それ以前に読んだ
 // ボディの値も正しいオフセットで読めている保証がないため、以降の読み取りを続ける意味がない
 // （throttleBPctで境界を超えたのにaccelPedalDPctを読み進めても無意味な値にしかならない）。
@@ -143,7 +156,21 @@ class ObdReading {
 
   // パース失敗時（バイト数不足）はnullを返す。呼び出し側（ObdChunkAssembler.add()）は
   // 素通しでnullを返せるようすでにnullableで宣言されている。
-  static ObdReading? fromBytes(Uint8List bytes) {
+  static ObdReading? fromBytes(Uint8List rawBytes) {
+    // 末尾1バイトはCRC-8（伝送中のビット化け検出用、ファーム側 domain/obd.cpp の obdCrc8() と
+    // 対になる）。CRC不一致はschemaVersion不一致（ソフトウェア側の定義ズレ）とは性質が異なる
+    // 物理的な通信異常のため、以降の処理は一切行わず即座にパースを拒否する。
+    if (rawBytes.isEmpty) return null;
+    final dataLen = rawBytes.length - 1;
+    final receivedCrc = rawBytes[dataLen];
+    final computedCrc = _crc8(rawBytes, dataLen);
+    if (receivedCrc != computedCrc) {
+      debugPrint('[ObdReading] CRC不一致: 受信=0x${receivedCrc.toRadixString(16).padLeft(2, '0')} '
+          '計算=0x${computedCrc.toRadixString(16).padLeft(2, '0')}（伝送中の破損の可能性）');
+      return null;
+    }
+    final bytes = Uint8List.sublistView(rawBytes, 0, dataLen);
+
     // schemaVersion+headerLenの2バイトだけは常に固定位置という前提（ObdBlePacket参照）。
     if (bytes.length < 2) return null;
 
