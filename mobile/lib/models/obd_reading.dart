@@ -34,9 +34,8 @@ class _Reader {
   // 読み込んでしまうバグを実行時に検出するためのもの（ヘッダのextOffsetを渡す想定）。
   void setLimit(int limit) => _limit = limit;
 
-  // 読み取り後のposがlimitを超えていたら例外を投げ、そうでなければvをそのまま返す。
-  // 各読み取りメソッドは `return _checkLimit(v);` の1行で呼べる。
-  T _checkLimit<T>(T v) {
+  // 読み取り後のposがlimitを超えていたら例外を投げる（超えていなければ何もしない）。
+  void _checkLimit() {
     final limit = _limit;
     if (limit != null && _pos > limit) {
       debugPrint('[ObdReading] _Reader: 読み取り位置(pos=$_pos)がlimit($limit)を超えました。'
@@ -44,43 +43,48 @@ class _Reader {
           'extOffset計算がズレている可能性があります。以降の読み取りを中断します。');
       throw _ReaderOverrunException();
     }
-    return v;
   }
 
   int u8() {
     final v = _d.getUint8(_pos);
     _pos += 1;
-    return _checkLimit(v);
+    _checkLimit();
+    return v;
   }
 
   int i8() {
     final v = _d.getInt8(_pos);
     _pos += 1;
-    return _checkLimit(v);
+    _checkLimit();
+    return v;
   }
 
   int u16() {
     final v = _d.getUint16(_pos, _e);
     _pos += 2;
-    return _checkLimit(v);
+    _checkLimit();
+    return v;
   }
 
   int i16() {
     final v = _d.getInt16(_pos, _e);
     _pos += 2;
-    return _checkLimit(v);
+    _checkLimit();
+    return v;
   }
 
   int u32() {
     final v = _d.getUint32(_pos, _e);
     _pos += 4;
-    return _checkLimit(v);
+    _checkLimit();
+    return v;
   }
 
   double f32() {
     final v = _d.getFloat32(_pos, _e);
     _pos += 4;
-    return _checkLimit(v);
+    _checkLimit();
+    return v;
   }
 }
 
@@ -164,7 +168,7 @@ class ObdReading {
     final extOffset = r.u8();
     if (bytes.length < extOffset) return null;
 
-    final valid = r.u8() != 0;
+    var valid = r.u8() != 0;
     final validMask = r.u32();
 
     // ここまでで今のアプリが知っているヘッダフィールドは読み終えたが、実際の位置が
@@ -178,45 +182,61 @@ class ObdReading {
     // （throttleBPctで境界を超えたのにaccelPedalDPct以降を読み進めても無意味なため）。
     r.setLimit(extOffset);
 
+    // ボディのデフォルト値。パースに失敗した場合はこれらのまま・valid=falseで返す。
+    // extOffset自体はヘッダの一部として独立に読み取り済みで信頼できるため、ボディが
+    // 壊れていてもTLV拡張領域だけは切り離してパースを試みる（下記参照）。
+    var rpm = 0, speedKmh = 0, loadPct = 0, mapKpa = 0, baroKpa = 0, boostKpa = 0, throttlePct = 0;
+    var timingDeg = 0.0, ecuVoltage = 0.0, mafGs = 0.0;
+    var coolantC = 0;
+    var fuelRateLph = 0.0;
+    var stftPct = 0.0, ltftPct = 0.0, o2B1s2V = 0.0, o2B1s2TrimPct = 0.0;
+    var engineRunTimeSec = 0, milDistanceKm = 0;
+    var o2S1Ratio = 0.0, o2S1Voltage = 0.0;
+    var evapPurgePct = 0, warmupsSinceCleared = 0, distanceSinceClearedKm = 0;
+    var catalystTempC = 0.0, absoluteLoadPct = 0.0, commandedAfr = 0.0;
+    var throttleBPct = 0, accelPedalDPct = 0, accelPedalEPct = 0, fuelType = 0;
+    var secO2TrimStPct = 0.0, secO2TrimLtPct = 0.0;
+    var ts = 0, iatC = 0, iat2C = 0;
+
     try {
       // 以降はボディをObdBlePacketのフィールド宣言順どおりに1つずつ読み進める。
       // オフセットは_Readerが自動計算するため、フィールドの型・呼び出し順さえ
       // ObdBlePacketと一致させれば足りる（追加・削除時もオフセットの手計算が要らない）。
-      final rpm = r.u16();
-      final speedKmh = r.u8();
-      final loadPct = r.u8();
-      final mapKpa = r.u8();
-      final baroKpa = r.u8();
-      final boostKpa = r.i8();
-      final throttlePct = r.u8();
-      final timingDeg = r.f32();
-      final ecuVoltage = r.f32();
-      final mafGs = r.f32();
-      final coolantC = r.i16();
-      final fuelRateLph = r.f32();
-      final stftPct = r.f32();
-      final ltftPct = r.f32();
-      final o2B1s2V = r.f32();
-      final o2B1s2TrimPct = r.f32();
-      final engineRunTimeSec = r.u16();
-      final milDistanceKm = r.u16();
-      final o2S1Ratio = r.f32();
-      final o2S1Voltage = r.f32();
-      final evapPurgePct = r.u8();
-      final warmupsSinceCleared = r.u8();
-      final distanceSinceClearedKm = r.u16();
-      final catalystTempC = r.f32();
-      final absoluteLoadPct = r.f32();
-      final commandedAfr = r.f32();
-      final throttleBPct = r.u8();
-      final accelPedalDPct = r.u8();
-      final accelPedalEPct = r.u8();
-      final fuelType = r.u8();
-      final secO2TrimStPct = r.f32();
-      final secO2TrimLtPct = r.f32();
-      final ts = r.u32();
-      final iatC = r.i16();
-      final iat2C = r.i16();
+      rpm = r.u16();
+      speedKmh = r.u8();
+      loadPct = r.u8();
+      mapKpa = r.u8();
+      baroKpa = r.u8();
+      boostKpa = r.i8();
+      throttlePct = r.u8();
+      timingDeg = r.f32();
+      ecuVoltage = r.f32();
+      mafGs = r.f32();
+      coolantC = r.i16();
+      fuelRateLph = r.f32();
+      stftPct = r.f32();
+      ltftPct = r.f32();
+      o2B1s2V = r.f32();
+      o2B1s2TrimPct = r.f32();
+      engineRunTimeSec = r.u16();
+      milDistanceKm = r.u16();
+      o2S1Ratio = r.f32();
+      o2S1Voltage = r.f32();
+      evapPurgePct = r.u8();
+      warmupsSinceCleared = r.u8();
+      distanceSinceClearedKm = r.u16();
+      catalystTempC = r.f32();
+      absoluteLoadPct = r.f32();
+      commandedAfr = r.f32();
+      throttleBPct = r.u8();
+      accelPedalDPct = r.u8();
+      accelPedalEPct = r.u8();
+      fuelType = r.u8();
+      secO2TrimStPct = r.f32();
+      secO2TrimLtPct = r.f32();
+      ts = r.u32();
+      iatC = r.i16();
+      iat2C = r.i16();
 
       // ボディを読み終えた時点でちょうどextOffsetに到達しているはず。setLimit()は「超えたら」
       // しか検知しないため、逆に「読み足りない」（ObdBlePacketに存在するのに読み忘れている
@@ -224,79 +244,82 @@ class ObdReading {
       if (r.pos != extOffset) {
         debugPrint('[ObdReading] ボディ読み取り完了後の位置(${r.pos})がextOffset($extOffset)と'
             '一致しません。ObdBlePacketとの定義ズレの可能性があります。');
-        return null;
+        valid = false;
       }
-
-      // TLV拡張フィールド領域: [extCount:1]([fieldId:1][len:1][data:len])×extCount。
-      // 知らないfieldIdはlen分読み飛ばす。firmware側で新しいフィールドが追加されても、
-      // 対応するcaseを足すだけで済み、他フィールドのオフセット計算には影響しない。
-      var atfTempC = 0;
-      var atfTempValid = false;
-      if (bytes.length > extOffset) {
-        final ext = _Reader(bytes, extOffset);
-        final extCount = ext.u8();
-        for (var i = 0; i < extCount && ext.pos + 2 <= bytes.length; i++) {
-          final fieldId = ext.u8();
-          final len = ext.u8();
-          if (ext.pos + len > bytes.length) break; // データ不足（壊れたパケット）、安全に打ち切り
-          switch (fieldId) {
-            case _extFieldAtfTempC:
-              atfTempC = ext.i16();
-              break;
-            case _extFieldAtfTempValid:
-              atfTempValid = ext.u8() != 0;
-              break;
-            default:
-              ext.skip(len); // 未知のfieldIdはlen分読み飛ばす
-          }
-        }
-      }
-
-      return ObdReading._(
-        rpm: rpm,
-        speedKmh: speedKmh,
-        loadPct: loadPct,
-        mapKpa: mapKpa,
-        baroKpa: baroKpa,
-        boostKpa: boostKpa,
-        throttlePct: throttlePct,
-        timingDeg: timingDeg,
-        ecuVoltage: ecuVoltage,
-        mafGs: mafGs,
-        coolantC: coolantC,
-        fuelRateLph: fuelRateLph,
-        stftPct: stftPct,
-        ltftPct: ltftPct,
-        o2B1s2V: o2B1s2V,
-        o2B1s2TrimPct: o2B1s2TrimPct,
-        engineRunTimeSec: engineRunTimeSec,
-        milDistanceKm: milDistanceKm,
-        o2S1Ratio: o2S1Ratio,
-        o2S1Voltage: o2S1Voltage,
-        evapPurgePct: evapPurgePct,
-        warmupsSinceCleared: warmupsSinceCleared,
-        distanceSinceClearedKm: distanceSinceClearedKm,
-        catalystTempC: catalystTempC,
-        absoluteLoadPct: absoluteLoadPct,
-        commandedAfr: commandedAfr,
-        throttleBPct: throttleBPct,
-        accelPedalDPct: accelPedalDPct,
-        accelPedalEPct: accelPedalEPct,
-        fuelType: fuelType,
-        secO2TrimStPct: secO2TrimStPct,
-        secO2TrimLtPct: secO2TrimLtPct,
-        valid: valid,
-        ts: ts,
-        iatC: iatC,
-        iat2C: iat2C,
-        validMask: validMask,
-        atfTempC: atfTempC,
-        atfTempValid: atfTempValid,
-      );
     } on _ReaderOverrunException {
       // 境界がズレている場合、それ以前に読んだボディの値も正しいオフセットで読めている保証が
-      // ない。壊れた値のObdReadingを組み立てて表示してしまわないよう、ここで打ち切る。
-      return null;
+      // ない。壊れた値をvalid=trueのまま表示してしまわないよう、ボディ全体を無効扱いにする
+      // （個々のフィールドは上のデフォルト値のまま）。TLV拡張領域は下で独立してパースを試みる。
+      valid = false;
     }
+
+    // TLV拡張フィールド領域: [extCount:1]([fieldId:1][len:1][data:len])×extCount。
+    // ボディのパース成否に関わらず独立してパースを試みる（extOffsetはヘッダの一部として
+    // 別に読み取り済みで、ボディの内部構造とは無関係に信頼できるため）。
+    // 知らないfieldIdはlen分読み飛ばす。firmware側で新しいフィールドが追加されても、
+    // 対応するcaseを足すだけで済み、他フィールドのオフセット計算には影響しない。
+    var atfTempC = 0;
+    var atfTempValid = false;
+    if (bytes.length > extOffset) {
+      final ext = _Reader(bytes, extOffset);
+      final extCount = ext.u8();
+      for (var i = 0; i < extCount && ext.pos + 2 <= bytes.length; i++) {
+        final fieldId = ext.u8();
+        final len = ext.u8();
+        if (ext.pos + len > bytes.length) break; // データ不足（壊れたパケット）、安全に打ち切り
+        switch (fieldId) {
+          case _extFieldAtfTempC:
+            atfTempC = ext.i16();
+            break;
+          case _extFieldAtfTempValid:
+            atfTempValid = ext.u8() != 0;
+            break;
+          default:
+            ext.skip(len); // 未知のfieldIdはlen分読み飛ばす
+        }
+      }
+    }
+
+    return ObdReading._(
+      rpm: rpm,
+      speedKmh: speedKmh,
+      loadPct: loadPct,
+      mapKpa: mapKpa,
+      baroKpa: baroKpa,
+      boostKpa: boostKpa,
+      throttlePct: throttlePct,
+      timingDeg: timingDeg,
+      ecuVoltage: ecuVoltage,
+      mafGs: mafGs,
+      coolantC: coolantC,
+      fuelRateLph: fuelRateLph,
+      stftPct: stftPct,
+      ltftPct: ltftPct,
+      o2B1s2V: o2B1s2V,
+      o2B1s2TrimPct: o2B1s2TrimPct,
+      engineRunTimeSec: engineRunTimeSec,
+      milDistanceKm: milDistanceKm,
+      o2S1Ratio: o2S1Ratio,
+      o2S1Voltage: o2S1Voltage,
+      evapPurgePct: evapPurgePct,
+      warmupsSinceCleared: warmupsSinceCleared,
+      distanceSinceClearedKm: distanceSinceClearedKm,
+      catalystTempC: catalystTempC,
+      absoluteLoadPct: absoluteLoadPct,
+      commandedAfr: commandedAfr,
+      throttleBPct: throttleBPct,
+      accelPedalDPct: accelPedalDPct,
+      accelPedalEPct: accelPedalEPct,
+      fuelType: fuelType,
+      secO2TrimStPct: secO2TrimStPct,
+      secO2TrimLtPct: secO2TrimLtPct,
+      valid: valid,
+      ts: ts,
+      iatC: iatC,
+      iat2C: iat2C,
+      validMask: validMask,
+      atfTempC: atfTempC,
+      atfTempValid: atfTempValid,
+    );
   }
 }
