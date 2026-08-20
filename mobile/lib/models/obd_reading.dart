@@ -1,9 +1,10 @@
 import 'dart:typed_data';
 
 // ObdReading（esp32_iot_gateway/src/domain/obd.h の ObdBlePacket）のDart側パース結果。
-// コア構造体（下記CORE_LENバイト）のフィールド順・オフセットは ObdBlePacket と完全一致させること。
-// コア構造体の直後にはTLV拡張フィールド領域が続く（ObdExtFieldId参照）。新しいセンサー値は
-// こちら側で追加され、firmware側のフィールド追加ではコア構造体側のオフセットは変わらない。
+// コア構造体（bytes[0]のcoreLenバイト、coreLen自身を含む）のフィールド順・オフセットは
+// ObdBlePacket と完全一致させること。コア構造体の直後にはTLV拡張フィールド領域が続く
+// （ObdExtFieldId参照）。新しいセンサー値はこちら側で追加され、firmware側のフィールド追加では
+// コア構造体側のオフセットは変わらない。
 class ObdReading {
   final int rpm, speedKmh, loadPct, mapKpa, baroKpa, boostKpa, throttlePct;
   final double timingDeg, ecuVoltage, mafGs;
@@ -44,9 +45,6 @@ class ObdReading {
     required this.atfTempC, required this.atfTempValid,
   });
 
-  // コア構造体（ObdBlePacketのTLV拡張フィールドより前の部分）のバイト数。
-  static const _coreLen = 95;
-
   // ファーム側 domain/obd.h の ObdExtFieldId と対応させること。
   static const _extFieldAtfTempC = 1;
   static const _extFieldAtfTempValid = 2;
@@ -55,13 +53,18 @@ class ObdReading {
     final d = ByteData.sublistView(bytes);
     const e = Endian.little;
 
+    // bytes[0] = coreLen（ObdBlePacket.coreLen、このバイト自身を含むコア構造体の全長）。
+    // ハードコードせずここから読むことで、コア構造体のサイズが変わってもTLV拡張領域の
+    // 開始位置を正しく特定できる（コア構造体内の各フィールドオフセットは別途固定値のまま）。
+    final coreLen = bytes[0];
+
     // TLV拡張フィールド領域: [extCount:1]([fieldId:1][len:1][data:len])×extCount。
     // 知らないfieldIdはlen分読み飛ばす。firmware側で新しいフィールドが追加されても、
     // 対応するcaseを足すだけで済み、他フィールドのオフセット計算には影響しない。
     var atfTempC = 0;
     var atfTempValid = false;
-    if (bytes.length > _coreLen) {
-      var pos = _coreLen;
+    if (bytes.length > coreLen) {
+      var pos = coreLen;
       final extCount = bytes[pos];
       pos++;
       for (var i = 0; i < extCount && pos + 2 <= bytes.length; i++) {
@@ -83,43 +86,43 @@ class ObdReading {
     }
 
     return ObdReading._(
-      rpm: d.getUint16(0, e),
-      speedKmh: d.getUint8(2),
-      loadPct: d.getUint8(3),
-      mapKpa: d.getUint8(4),
-      baroKpa: d.getUint8(5),
-      boostKpa: d.getInt8(6),
-      throttlePct: d.getUint8(7),
-      timingDeg: d.getFloat32(8, e),
-      ecuVoltage: d.getFloat32(12, e),
-      mafGs: d.getFloat32(16, e),
-      coolantC: d.getInt16(20, e),
-      fuelRateLph: d.getFloat32(22, e),
-      stftPct: d.getFloat32(26, e),
-      ltftPct: d.getFloat32(30, e),
-      o2B1s2V: d.getFloat32(34, e),
-      o2B1s2TrimPct: d.getFloat32(38, e),
-      engineRunTimeSec: d.getUint16(42, e),
-      milDistanceKm: d.getUint16(44, e),
-      o2S1Ratio: d.getFloat32(46, e),
-      o2S1Voltage: d.getFloat32(50, e),
-      evapPurgePct: d.getUint8(54),
-      warmupsSinceCleared: d.getUint8(55),
-      distanceSinceClearedKm: d.getUint16(56, e),
-      catalystTempC: d.getFloat32(58, e),
-      absoluteLoadPct: d.getFloat32(62, e),
-      commandedAfr: d.getFloat32(66, e),
-      throttleBPct: d.getUint8(70),
-      accelPedalDPct: d.getUint8(71),
-      accelPedalEPct: d.getUint8(72),
-      fuelType: d.getUint8(73),
-      secO2TrimStPct: d.getFloat32(74, e),
-      secO2TrimLtPct: d.getFloat32(78, e),
-      valid: d.getUint8(82) != 0,
-      ts: d.getUint32(83, e),
-      iatC: d.getInt16(87, e),
-      iat2C: d.getInt16(89, e),
-      validMask: d.getUint32(91, e),
+      rpm: d.getUint16(1, e),
+      speedKmh: d.getUint8(3),
+      loadPct: d.getUint8(4),
+      mapKpa: d.getUint8(5),
+      baroKpa: d.getUint8(6),
+      boostKpa: d.getInt8(7),
+      throttlePct: d.getUint8(8),
+      timingDeg: d.getFloat32(9, e),
+      ecuVoltage: d.getFloat32(13, e),
+      mafGs: d.getFloat32(17, e),
+      coolantC: d.getInt16(21, e),
+      fuelRateLph: d.getFloat32(23, e),
+      stftPct: d.getFloat32(27, e),
+      ltftPct: d.getFloat32(31, e),
+      o2B1s2V: d.getFloat32(35, e),
+      o2B1s2TrimPct: d.getFloat32(39, e),
+      engineRunTimeSec: d.getUint16(43, e),
+      milDistanceKm: d.getUint16(45, e),
+      o2S1Ratio: d.getFloat32(47, e),
+      o2S1Voltage: d.getFloat32(51, e),
+      evapPurgePct: d.getUint8(55),
+      warmupsSinceCleared: d.getUint8(56),
+      distanceSinceClearedKm: d.getUint16(57, e),
+      catalystTempC: d.getFloat32(59, e),
+      absoluteLoadPct: d.getFloat32(63, e),
+      commandedAfr: d.getFloat32(67, e),
+      throttleBPct: d.getUint8(71),
+      accelPedalDPct: d.getUint8(72),
+      accelPedalEPct: d.getUint8(73),
+      fuelType: d.getUint8(74),
+      secO2TrimStPct: d.getFloat32(75, e),
+      secO2TrimLtPct: d.getFloat32(79, e),
+      valid: d.getUint8(83) != 0,
+      ts: d.getUint32(84, e),
+      iatC: d.getInt16(88, e),
+      iat2C: d.getInt16(90, e),
+      validMask: d.getUint32(92, e),
       atfTempC: atfTempC,
       atfTempValid: atfTempValid,
     );
