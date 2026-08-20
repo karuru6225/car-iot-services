@@ -193,9 +193,21 @@ Shadow（JSON テキスト）側は同種の対策は未実装だったが、下
 
 ### ~~TODO: OBD-II（CAN）実車データ取得~~ **実装済み**
 
-新規動作モード `OperationMode::CONTINUOUS_OBD` を追加。`device/can.h/.cpp`（TWAI・29bit拡張アドレッシング・N-VAN対応）、`domain/obd.h/.cpp`（全28PIDデコード）、`service/obdpoll.h/.cpp`（1秒間隔逐次ポーリング）を新規実装。取得値はOLED表示（`oledShowObdData()`）とBLE Notify（`MEAS_OBD_UUID`、87バイトを18バイトずつ5チャンクに分割）でスマホアプリ（`mobile/lib/main.dart`）へ送信する。Shadowの`override_next_mode="continuous_obd"`とメニューの`"Continuous OBD"`の両方から起動できる。
+`device/can.h/.cpp`（TWAI・29bit拡張アドレッシング・N-VAN対応）、`domain/obd.h/.cpp`（全28PIDデコード）、`service/obdpoll.h/.cpp`（1秒間隔逐次ポーリング）を新規実装。取得値はOLED表示（`oledShowObdData()`）とBLE Notify（`MEAS_OBD_UUID`、87バイトを18バイトずつ5チャンクに分割）でスマホアプリ（`mobile/lib/main.dart`）へ送信する。導入当初は専用モード`OperationMode::CONTINUOUS_OBD`として実装したが、後日の整理で通常の`CONTINUOUS`モードにOBDポーリングが統合され、専用モード・専用メニュー項目・専用Shadow override値は廃止された（現在は`CONTINUOUS`に入れば自動でOBDポーリングも動く）。
 
 AWS への publish（`domain/telemetry`統合）は今回のスコープ外で未実装。詳細（実車スキャン結果・CANプロトコル詳細・ビットマスク等）は `OBD.md` 参照。
+
+### ~~TODO: ISO-TPマルチフレーム対応・多PID要求~~ **実装済み（PR #6、v1.21.0）**
+
+高レート(10Hz級)OBDポーリング「ダイノモード」構想の前段として、CAN層の制約（マルチフレーム受信未実装・多PID要求未対応）を解消した。`isotp-multipid`ブランチをPR #6として`main`へマージ、`v1.21.0`としてOTAリリース済み（v1本番車両、2026-08-07）。実車確認まで完了。
+
+- `can.cpp`にISO-TP（ISO 15765-2）受信の最小実装を追加: SF/FF/CFをPCIバイトで分岐、FF受信時にFlow Controlを自動送信、Consecutive Frameを組み立てる（`canReceiveObdResponse()`に`maxLen`引数追加）
+- `can.cpp`に多PID要求送信（`canSendObdRequestMulti()`）、`obd.cpp`に多PID応答パーサ（`obdParseMultiResponse()`、PID→データ長テーブル`kPidLengths[]`でTLV的に分解）を追加
+- `obdpoll.cpp`の29PIDポーリングを`kMaxPidsPerRequest`=6ずつ・5リクエストにバッチ化（異常時最悪サイクル時間 29×50ms=1.45秒→5×50ms=250ms程度に短縮）
+- PID 0x68（Charge Air Cooler Temp、マルチフレーム必須）の正式デコーダを実装し`iat_c`/`iat2_c`として`OBDReading`/`ObdBlePacket`/mobile側/Lambda ingest/Athenaスキーマへ反映
+- 過去の「多PID要求で1個だけ返る」不具合の原因が受信側の実装不備（ECU側は多PID対応）と実車確認で確定。物理アドレッシングは不要と判断し見送り
+
+**残課題**: センサー1/2とインタークーラー前後の物理対応は未確定（保留）。実走行（速度・RPM・負荷変動）およびIGN OFF/CAN未接続時の異常系パスは未検証のままリリース済み（アイドル・停車・IGN ONの範囲のみ確認）。単発PID版`canSendObdRequest(uint8_t pid)`は現在どこからも呼ばれず未使用のまま残存。
 
 ### ~~TODO: OTA失敗時にAWS IoT Jobsへ FAILED を報告しない~~ **実装済み**
 

@@ -152,7 +152,7 @@ bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &ou
 bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);       // 0x68
 
 // 多PID応答（`41 [PID_a][data_a...] [PID_b][data_b...] ...`）をPIDごとのセグメントに
-// 分解する（タスク3、HANDOFF_isotp_multipid.md §3参照）。PIDの並び順・省略はECU任せなので
+// 分解する（経緯はCONTEXT_ARCHIVE.mdの「ISO-TPマルチフレーム対応・多PID要求」参照）。PIDの並び順・省略はECU任せなので
 // 位置固定では解釈できず、内蔵のPID→データ長テーブルを頼りにTLV的に歩く。
 // テーブルに無いPIDに遭遇した場合はそこで安全に打ち切る（以降のセグメント境界が不明なため）。
 // data は canReceiveObdResponse() が返す `41 ...` から始まるペイロード。

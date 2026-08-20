@@ -100,7 +100,7 @@ Mask[0x80]=0x00000002 → 0x9F のみマスク対応
 **「!! マスク対応だが応答なし」について:**  
 Honda ECU が variant 共通のビットマスクを返しているが、この個体（JJ1/JJ2）では実際のデータを持たない PID が含まれている可能性が高い。timeout を延ばしても変わらない可能性がある。
 
-**※0x68について（`HANDOFF_isotp_multipid.md`参照）:** 上記「応答なし」はISO-TP（ISO 15765-2）
+**※0x68について（`CONTEXT_ARCHIVE.md`の「ISO-TPマルチフレーム対応・多PID要求」参照）:** 上記「応答なし」はISO-TP（ISO 15765-2）
 マルチフレーム受信未実装が原因と判明。0x68の応答ペイロードは9バイトでSF上限（7バイト）を
 超えるため、Flow Control未送信でECUが送信を打ち切っていた。マルチフレーム受信実装後は
 `41 68 03 4A 49 00 00 00 00`（Sensor1=34°C, Sensor2=33°C）が取得できることを実車で確認済み。
@@ -289,17 +289,17 @@ OBD-II ポートは CAN ゲートウェイ経由で診断専用に隔離され�
 （GPIO4/5/6）に接続した MCP2562FD 経由で通信する。GU1（GPIO7/8/9）は LTE（SIM7080G）が
 使用中のため触らない（当初ドラフトは GU1 想定だったが、実配線確認の結果 GU0 に変更）。
 
-新しい動作モード `OperationMode::CONTINUOUS_OBD`（メニュー "Continuous OBD" または Shadow
-`override_next_mode: "continuous_obd"` から入る）が、既存 CONTINUOUS の仕組み（5分境界
-待機ループ・BLE notify）を維持したまま OBD ポーリングを追加する。
+導入当初は専用モード `OperationMode::CONTINUOUS_OBD`（メニュー "Continuous OBD" または Shadow
+`override_next_mode: "continuous_obd"` から入る）として実装したが、後日の整理で既存 CONTINUOUS
+モードにOBDポーリングが統合された。専用モード・専用メニュー項目・専用Shadow override値は廃止
+されており、現在は `CONTINUOUS`（5分境界待機ループ・BLE notify）に入れば自動でOBDポーリングも
+1秒間隔で動作する。
 
 ```
-config.h               変更  OperationMode に CONTINUOUS_OBD を追加
+config.h               変更  （導入時のみ）OperationMode に CONTINUOUS_OBD を追加、後日 CONTINUOUS に統合され廃止
 device/can.h/.cpp      新規  TWAI ラッパー（GPIO4=RX, GPIO5=TX, GPIO6=EN, 500kbps）
 domain/obd.h/.cpp      新規  OBDReading 構造体・PID デコード関数
 service/obdpoll.h/.cpp 新規  全PID逐次ポーリング（canInit()済み前提）
-service/shadow.h/.cpp  変更  override_next_mode="continuous_obd" 対応
-service/menu.h/.cpp    変更  "Continuous OBD" メニュー項目
 device/oled.h/.cpp     変更  oledShowObdData() を追加（1画面）
 main.cpp               変更  setOperationMode() でモード遷移集約・CAN init/deinit・1秒間隔ポーリング
 ```
@@ -437,27 +437,18 @@ ECUへの負荷は読み取り専用のMode01のみで、市販スキャンツ�
 
 ## main.cpp 統合（実装済み）
 
-`OperationMode::CONTINUOUS_OBD`（`config.h`）は既存の `DEEP_SLEEP`/`CONTINUOUS`/
-`ONE_SHOT_CONTINUOUS` と異なり、`ONE_SHOT_CONTINUOUS` のように自動で `DEEP_SLEEP` には
-戻らない持続モード。
-
-- `setOperationMode(OperationMode newMode)`（`main.cpp` 内 static 関数）にモード遷移を
-  集約し、`CONTINUOUS_OBD` への出入りで `canInit()`/`canDeinit()` を呼ぶ。既存の全ての
-  `g_mode = ...` 代入箇所をこの関数呼び出しに置換済み。
-- `setup()` 冒頭で行っていた `gu0EnPin` の常時 HIGH 初期化は削除し、`canDeinit()` 呼び出し
-  （未 init でも GPIO6 を LOW に確定する）に統合した。
-- `runContinuousLoop()` の既存 1秒間隔ブロック（`lastNotify`）に相乗りさせ、
-  `CONTINUOUS_OBD` 中は `obdPoll()` → `oledShowObdData()` を呼ぶ。
-- 同ループの `oledUpdateCountdown()` は `CONTINUOUS_OBD` 中はスキップ（OBD 画面が
-  画面全体を占有するため）。
-- BTN1 長押しは `CONTINUOUS_OBD` → `DEEP_SLEEP` のみ（3状態トグルにはしない。
-  `CONTINUOUS_OBD` への入口はメニュー/Shadow のみ）。
+OBDポーリングは導入時に専用モード `OperationMode::CONTINUOUS_OBD` として実装したが、
+後日の整理で既存の `CONTINUOUS` モードに統合された。現在は `CONTINUOUS` に入っている間、
+`runContinuousLoop()` の既存 1秒間隔ブロック（`lastNotify`）に相乗りする形で
+`obdPoll()` → `oledShowObdData()` が毎ティック呼ばれる（CAN の init/deinit は
+`setOperationMode()` が `CONTINUOUS` への出入りで行う）。専用メニュー項目・専用Shadow
+override値・`CONTINUOUS_OBD` 専用の画面占有ロジックは廃止済み。
 
 ### モードへの入り方
 
-- OLED メニュー: `"Continuous OBD"` 項目（`service/menu.cpp`、`"Continuous"` の直後）
-- AWS Shadow: `override_next_mode: "continuous_obd"`（`service/shadow.cpp`、
-  `one_shot_continuous` と同じ delta 経路をテーブル駆動化して対応）
+`CONTINUOUS` モードへの入り方（OLED メニュー "Continuous" 項目。AWS Shadow の
+`override_next_mode` は `"timed_continuous"` のみ対応で、素の `CONTINUOUS` への
+override値は存在しない）に従う。OBD専用の入口は存在しない。
 
 ---
 

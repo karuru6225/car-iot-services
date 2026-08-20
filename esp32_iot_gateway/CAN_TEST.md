@@ -308,38 +308,6 @@ for (uint8_t pid : p1) {
 
 ## フェーズ1 実施結果（2026-05-23 完了）
 
-### 判明した重要事項
-
-**1. 29ビット拡張アドレッシングが必須**
-
-Honda N-VAN は 11ビット 0x7DF に応答しない。29ビット SAE J1939 形式が必要。
-
-```
-リクエスト: CAN ID = 0x18DB33F1 (extd=1)
-応答:       CAN ID = 0x18DAF10E (extd=1)  ← ECU アドレス = 0x0E
-```
-
-**2. IGN ON が必須**
-
-電源 OFF / ロック状態では CAN ゲートウェイが起きない。  
-`TX OK` が返っても応答なし、bus_err が数秒で数万件に達する。  
-IGN ON（エンジン未始動）で安定通信可能。
-
-**3. blank.cpp の現状設定**
-
-```cpp
-#define CAN_MODE TWAI_MODE_NORMAL
-#define RUN_PID_SCAN
-
-// TX: tx.identifier = 0x18DB33F1; tx.extd = 1;
-// RX: 0x18DAF1xx (29-bit) および 0x7E8 (11-bit) の両方を受け入れ
-```
-
-**4. スキャン結果サマリ**
-
-| 結果 | PID 一覧 |
-|------|---------|
-| ✓ 対応 | 0x04 Engine Load, 0x0B MAP, 0x0C RPM, 0x0D Speed, 0x0E Ignition Timing, 0x11 Throttle, 0x33 Baro, 0x42 ECU Voltage |
-| ✗ 非対応 | 0x05 Coolant, 0x0A Fuel Pressure, 0x0F Intake Temp, 0x10 MAF, 0x2F Fuel Level, 0x5C Oil Temp, 0x5E Fuel Rate |
-
-詳細は `OBD.md` 参照。
+29ビット拡張アドレッシング必須（Honda N-VAN は 11ビット 0x7DF に無応答）・IGN ON 必須である
+ことを含む詳細な判明事項とスキャン結果一覧は `OBD.md` の「実車スキャン結果」「プロトコル確認
+事項」セクションに一本化した。本書はブレッドボード配線・ビルド環境のメモに留める。

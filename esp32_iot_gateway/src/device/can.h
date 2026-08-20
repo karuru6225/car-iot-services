@@ -13,8 +13,8 @@ void canDeinit();
 
 // Mode 01 で複数PIDをまとめて1フレーム(Single Frame)で要求する。count は1〜6
 // （PCIバイトの長さ制約: Mode1バイト+PID数がSF7バイト以内に収まる上限）。
-// functional addressing固定（実車で2PID要求時の動作を確認済み。HANDOFF_isotp_multipid.md
-// §4テスト1参照。物理アドレッシングは未対応）。
+// functional addressing固定（実車で2PID要求時の動作を確認済み。経緯はCONTEXT_ARCHIVE.mdの
+// 「ISO-TPマルチフレーム対応・多PID要求」参照。物理アドレッシングは未対応）。
 bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count);
 
 enum class ObdRecvResult : uint8_t

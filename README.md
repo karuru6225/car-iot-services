@@ -48,6 +48,7 @@ car-iot-services/
 │   └── MENU.md            OLED メニュー仕様
 ├── m5atom_iot_gateway/    M5Atom S3 ゲートウェイ（段階的廃止予定）
 ├── m5atom_power_adc/      新 PCB KiCad プロジェクト（電源・ADC・リレー・ESP32-S3 直付け）
+│   ├── HARDWARE.md        ハードウェア設計仕様（BOM・回路・PCB レイアウト）
 │   ├── CIRCUIT.md         回路設計仕様書
 │   └── *.kicad_sch        階層シート構成（メイン + GroveUnit / RelayControl / VoltageSense）
 ├── infra/                 クラウドインフラ（Terraform）
@@ -66,7 +67,6 @@ car-iot-services/
 ├── rtx830_filter_updater/ RTX830 フィルタ更新スクリプト
 ├── ARCHITECTURE.md
 ├── CONTEXT.md             開発引き継ぎ資料
-├── HARDWARE.md            新 PCB ハードウェア設計仕様
 └── SIM7080G.md            SIM7080G AT コマンドリファレンス
 ```
 

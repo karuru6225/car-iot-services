@@ -89,5 +89,12 @@ AWS CLI の `--` オプションのパースエラーや presigned URL の生成
 - `esp32_iot_gateway/FLEET_PROVISIONING.md` — キッティング省略のための Fleet Provisioning 移行検討（未実装）
 - `esp32_iot_gateway/RELEASE.md` — リリース手順・GitHub Actions・バージョン命名規則
 - `esp32_iot_gateway/MENU.md` — OLED＋2ボタン設定メニュー仕様
+- `esp32_iot_gateway/CAN_REFERENCE.md` — OBD-II/ISO 15765-4プロトコル基礎・PID一覧・配線表
+- `esp32_iot_gateway/OBD.md` — OBD-II統合設計・実車スキャン結果
+- `esp32_iot_gateway/OBD_PID_WIKIPEDIA.md` — OBD-II PID対訳表（辞書的参照資料）
+- `esp32_iot_gateway/BLE_CERTIFICATION.md` — BLE技適・Bluetooth SIG QDID認証の調査ログ（個人利用のため現状維持と結論済み）
+- `esp32_iot_gateway/DUAL_CORE.md` — デュアルコア活用の実装計画（未実装・設計検討のみ）
 - `m5atom_power_adc/HARDWARE.md` — PCB 基板設計メモ（BOM・回路・PCB レイアウト）
 - `m5atom_power_adc/CIRCUIT.md` — 回路仕様（ブロック図・接続図）
+- `test_board/HARDWARE.md` — 電源保持回路・理想ダイオード検証用テストボードの設計メモ
+- `test_board/CIRCUIT.md` — テストボードの回路仕様
