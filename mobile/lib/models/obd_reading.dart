@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 // バイト列を先頭から順に読み進めるカーソル。読み取りメソッドを呼ぶたびに内部位置を
 // 自動で進めるため、呼び出し側（ObdReading.fromBytes()）はオフセットを一切書かずに済む。
 // ObdBlePacket（esp32_iot_gateway/src/domain/obd.h）のフィールド宣言順と呼び出し順を
@@ -108,8 +110,8 @@ class ObdReading {
   // 変えたらファーム側と一緒にインクリメントする。
   static const _schemaVersion = 1;
 
-  // パース失敗時（バイト数不足・schemaVersion不一致）はnullを返す。呼び出し側
-  // （ObdChunkAssembler.add()）は素通しでnullを返せるようすでにnullableで宣言されている。
+  // パース失敗時（バイト数不足）はnullを返す。呼び出し側（ObdChunkAssembler.add()）は
+  // 素通しでnullを返せるようすでにnullableで宣言されている。
   static ObdReading? fromBytes(Uint8List bytes) {
     // schemaVersion+headerLenの2バイトだけは常に固定位置という前提（ObdBlePacket参照）。
     if (bytes.length < 2) return null;
@@ -119,10 +121,15 @@ class ObdReading {
     // 変わりうるため（ObdBlePacketのコメント参照）。
     final r = _Reader(bytes, 0);
     final schemaVersion = r.u8();
-    // サイズだけ見るcoreLen/headerLenでは検出できない「サイズは同じだが意味が変わった」変更を
-    // 弾くための番人。未対応バージョンのボディをそのまま読むと誤った値を表示しかねないため、
-    // ログ等で警告するのではなく安全側に倒してパース自体を拒否する。
-    if (schemaVersion != _schemaVersion) return null;
+    // headerLen/coreLenによってヘッダの拡張・TLV拡張領域の位置は自己記述化されているため、
+    // schemaVersion不一致が実際に問題になるのは「ボディのレイアウトを直接変えた」場合のみ
+    // （運用ルールとしてボディは増減させない前提のためレアケース）。パース自体を拒否すると
+    // ファーム/アプリの更新タイミングがズレただけで何も表示されなくなるため、ここでは
+    // 警告ログのみ出して読み取りは続行する（値がおかしければログで気づける）。
+    if (schemaVersion != _schemaVersion) {
+      debugPrint(
+          '[ObdReading] schemaVersion不一致: 期待=$_schemaVersion 実際=$schemaVersion（読み取りは続行）');
+    }
 
     final headerLen = r.u8();
     if (bytes.length < headerLen) return null;
