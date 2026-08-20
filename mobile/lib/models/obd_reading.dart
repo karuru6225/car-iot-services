@@ -10,6 +10,9 @@ class _Reader {
   final ByteData _d;
   final Endian _e;
   int _pos;
+  // 設定されていれば、読み取り後にこの位置を超えた時点で警告する（setLimit()参照）。
+  int? _limit;
+
   _Reader(Uint8List bytes, int start)
       : _d = ByteData.sublistView(bytes),
         _e = Endian.little,
@@ -20,39 +23,59 @@ class _Reader {
   void skip(int n) => _pos += n;
   void seekTo(int pos) => _pos = pos;
 
+  // 以降の読み取りがlimitを超えたらdebugPrintで警告する。ボディの型・順序が
+  // ObdBlePacketの実際のレイアウトとズレて、意図せずTLV拡張フィールド領域まで
+  // 読み込んでしまうバグを実行時に検出するためのもの（ヘッダのextOffsetを渡す想定）。
+  void setLimit(int limit) => _limit = limit;
+
+  void _warnIfOverLimit() {
+    final limit = _limit;
+    if (limit != null && _pos > limit) {
+      debugPrint('[ObdReading] _Reader: 読み取り位置(pos=$_pos)がlimit($limit)を超えました。'
+          'TLV拡張フィールド領域に突入しています。ObdBlePacketのボディ定義とヘッダの'
+          'extOffset計算がズレている可能性があります。');
+    }
+  }
+
   int u8() {
     final v = _d.getUint8(_pos);
     _pos += 1;
+    _warnIfOverLimit();
     return v;
   }
 
   int i8() {
     final v = _d.getInt8(_pos);
     _pos += 1;
+    _warnIfOverLimit();
     return v;
   }
 
   int u16() {
     final v = _d.getUint16(_pos, _e);
     _pos += 2;
+    _warnIfOverLimit();
     return v;
   }
 
   int i16() {
     final v = _d.getInt16(_pos, _e);
     _pos += 2;
+    _warnIfOverLimit();
     return v;
   }
 
   int u32() {
     final v = _d.getUint32(_pos, _e);
     _pos += 4;
+    _warnIfOverLimit();
     return v;
   }
 
   double f32() {
     final v = _d.getFloat32(_pos, _e);
     _pos += 4;
+    _warnIfOverLimit();
     return v;
   }
 }
@@ -145,6 +168,9 @@ class ObdReading {
     // それを知らないまま読み進めるとボディの開始位置を見失う）。headerLenへ明示的にシークして
     // からボディを読むことで、未知のヘッダフィールドが挟まっていても安全にたどり着ける。
     r.seekTo(headerLen);
+    // ボディの型・順序がObdBlePacketの実際のレイアウトとズレていた場合、cursorがextOffsetを
+    // 超えて拡張フィールド領域に食い込んでしまう。setLimit()で読み取りのたびに検知できるようにする。
+    r.setLimit(extOffset);
 
     // 以降はボディをObdBlePacketのフィールド宣言順どおりに1つずつ読み進める。
     // オフセットは_Readerが自動計算するため、フィールドの型・呼び出し順さえ
@@ -184,6 +210,14 @@ class ObdReading {
     final ts = r.u32();
     final iatC = r.i16();
     final iat2C = r.i16();
+
+    // ボディを読み終えた時点でちょうどextOffsetに到達しているはず。setLimit()は「超えたら」
+    // しか検知しないため、逆に「読み足りない」（ObdBlePacketに存在するのに読み忘れている
+    // フィールドがある）ケースはここで別途拾う。
+    if (r.pos != extOffset) {
+      debugPrint('[ObdReading] ボディ読み取り完了後の位置(${r.pos})がextOffset($extOffset)と'
+          '一致しません。ObdBlePacketとの定義ズレの可能性があります。');
+    }
 
     // TLV拡張フィールド領域: [extCount:1]([fieldId:1][len:1][data:len])×extCount。
     // 知らないfieldIdはlen分読み飛ばす。firmware側で新しいフィールドが追加されても、
