@@ -47,6 +47,12 @@ struct OBDReading
   int16_t  iatC;  // 0x68 Sensor1: B-40 [°C]（インタークーラー前後どちらか未確定）
   int16_t  iat2C; // 0x68 Sensor2: C-40 [°C]（同上）
 
+  // Mode22 (UDS ReadDataByIdentifier) 追加分。Mode01のkPids[]多PIDバッチ機構
+  // （obdParseMultiResponse前提）とは別経路で単発問い合わせする（service/obdpoll.cpp参照）。
+  // validMaskはkPids[]専用のためATFの成否はこのフラグ単独で管理する。
+  int16_t  atfTempC;      // DID 0x2201: A-40 [°C]（OBD.md「Mode 22 実機テスト候補」参照、実車未テスト）
+  bool     atfTempValid;
+
   // kPids[]（service/obdpoll.cpp）の配列順に対応するビットマスク。ビットiが立っていれば
   // kPids[i]のPIDはデコード成功。valid=trueでも一部グループがタイムアウトした場合は
   // 該当PID分のフィールドが0初期値のまま残るため、本物の0とタイムアウトを区別するのに使う。
@@ -99,6 +105,9 @@ struct ObdBlePacket
   int16_t  iatC;
   int16_t  iat2C;
 
+  int16_t  atfTempC;
+  uint8_t  atfTempValid; // bool を1バイト固定で送る
+
   uint32_t validMask;
 };
 #pragma pack(pop)
@@ -150,6 +159,11 @@ bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &ou
 // PID 0x68: bitmap=data[2]（0x03=S1+S2）, Sensor1温度=data[3]-40 [°C], Sensor2温度=data[4]-40 [°C]
 // （インタークーラー前後どちらがSensor1/2に対応するかは未確定）
 bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);       // 0x68
+
+// DID 0x2201 (Mode22/UDS ReadDataByIdentifier): ATF/CVT油温。A-40 [°C]
+// data は can.cpp が返す `62 [DID_HI] [DID_LO] data...` ペイロード（Mode01応答とはヘッダ形式が異なる）。
+// 実車未テスト（OBD.md「Mode 22 実機テスト候補」参照）。
+bool obdDecodeAtfTemp(const uint8_t *data, uint8_t dlc, OBDReading &out);
 
 // 多PID応答（`41 [PID_a][data_a...] [PID_b][data_b...] ...`）をPIDごとのセグメントに
 // 分解する（経緯はCONTEXT_ARCHIVE.mdの「ISO-TPマルチフレーム対応・多PID要求」参照）。PIDの並び順・省略はECU任せなので

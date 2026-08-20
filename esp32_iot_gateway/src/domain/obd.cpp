@@ -289,6 +289,27 @@ bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
   return any;
 }
 
+// UDS(Mode22)応答の共通チェック: [0]=0x62(ReadDataByIdentifier応答) [1]=DID上位 [2]=DID下位 [3]=A ...
+// Mode01のcheckHeader()とはヘッダ形式・PID幅（1バイト→2バイト）が異なるため別関数にする。
+static bool checkUdsHeader(const uint8_t *data, uint8_t dlc, uint16_t did, uint8_t minDlc, const uint8_t *&payload)
+{
+  if (dlc < minDlc)
+    return false;
+  if (data[0] != 0x62 || data[1] != (uint8_t)(did >> 8) || data[2] != (uint8_t)(did & 0xFF))
+    return false;
+  payload = data + 3;
+  return true;
+}
+
+bool obdDecodeAtfTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkUdsHeader(data, dlc, 0x2201, 4, p))
+    return false;
+  out.atfTempC = (int16_t)p[0] - 40;
+  return true;
+}
+
 // PID→データ長（PIDバイト自身を除く、A/B/C...の合計バイト数）。多くは上の
 // obdDecode*() の checkHeader() minDlc から算出（minDlc - 2）で正しいが、
 // 0x66/0x67/0x68（マスクバイト+複数センサー枠を持つ拡張PID群）は
@@ -394,6 +415,9 @@ void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 
   out.iatC = r.iatC;
   out.iat2C = r.iat2C;
+
+  out.atfTempC = r.atfTempC;
+  out.atfTempValid = r.atfTempValid ? 1 : 0;
 
   out.validMask = r.validMask;
 }
