@@ -485,34 +485,47 @@ Peripheral（`device/ble_peripheral.h/.cpp`）経由でスマホアプリ（`mob
 表示する。デフォルトBLE ATT MTU（23バイト、ペイロード20バイト）ではデータが収まらないため、
 MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分けて送る」発想でチャンク分割する。
 
-### 送信データレイアウト（`domain/obd.h`の`ObdBlePacket`、`#pragma pack(push,1)`）
+### 送信データレイアウト（`domain/obd.h`の`ObdBlePacket` + TLV拡張フィールド領域）
 
 `OBDReading`をそのまま`memcpy`するとコンパイラのパディングに依存してしまうため、送信専用の
-パディングなし構造体に変換してから送る（`obdReadingToBlePacket()`、`domain/obd.cpp`）。
-フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`に固定。
-末尾に`atfTempC`/`atfTempValid`（Mode22 DID 0x2201、`kPids[]`のvalidMaskとは別管理）・
-`validMask`（uint32_t、`kPids[]`配列順のPIDごとのデコード成否ビットマスク）を持つ。
-合計98バイト（オフセットは`domain/obd.h`のコメント・`mobile/lib/models/obd_reading.dart`の
-`ObdReading.fromBytes()`のオフセットと完全一致させること）。
+パディングなし構造体（`#pragma pack(push,1)`）に変換してから送る（`obdReadingToBlePacket()`、
+`domain/obd.cpp`）。フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`
+に固定。末尾は`validMask`（uint32_t、`kPids[]`配列順のPIDごとのデコード成否ビットマスク）。
+合計95バイト固定（コア構造体。オフセットは`domain/obd.h`のコメント・
+`mobile/lib/models/obd_reading.dart`の`ObdReading.fromBytes()`のオフセットと完全一致させること）。
+
+**コア構造体は増減させない**（フィールドを足すたびにアプリ側の固定オフセット読み取りが
+全部ズレて壊れるため）。ATF温度（Mode22 DID 0x2201）等、今後も増減しうる値はコア構造体の
+直後に連結するTLV拡張フィールド領域に置く（`obdEncodeExtFields()`、`domain/obd.h`の
+`ObdExtFieldId`）:
+
+```text
+[extCount:1] ([fieldId:1][len:1][data:len]) × extCount
+```
+
+アプリ側（`ObdReading.fromBytes()`）は知らない`fieldId`を`len`分読み飛ばすため、ファーム・
+アプリいずれかだけを更新しても壊れない（新フィールド追加時、ファーム側は`obdEncodeExtFields()`
+に1行足すだけ、アプリ側は`fromBytes()`のswitchに1caseとフィールド追加だけで済む）。
 
 ### チャンクフォーマット
 
 ```text
 [0]     : seq   (uint8, 0-indexed)
 [1]     : total (uint8, 総チャンク数)
-[2..]   : payload（最大18バイト、87バイトを18バイトずつ5チャンクに分割）
+[2..]   : payload（最大18バイト、コア構造体95バイト+TLV拡張領域を18バイトずつ分割）
 ```
 
 `device/ble_peripheral.cpp`の`BlePeripheral::notifyObd()`が`MEAS_OBD_UUID`
 （Notify、認証不要、既存の計測サービスに相乗り）へ`total`回連続で`notify()`する。
 
-### アプリ側の再構成（`mobile/lib/main.dart`）
+### アプリ側の再構成（`mobile/lib/ble/obd_chunk_assembler.dart`）
 
-- `_onObdChunk()`が`seq`ごとに`Map<int, Uint8List>`へ格納。`seq==0`または`total`が前回と
-  食い違ったら前回分を破棄して集め直す（パケット取りこぼし時は次サイクルで自然に復帰する想定、
-  タイムアウト等の複雑なリトライ処理はあえて入れていない）
-- `total`個揃ったら結合して`_ObdReading.fromBytes()`でパースし、`_ObdCard`（既存の
-  `_MeasCard`と同じ`GridView.count`パターン）で28項目を表示
+- `ObdChunkAssembler.add()`が`seq`ごとに`Map<int, Uint8List>`へ格納。`seq==0`または`total`が
+  前回と食い違ったら前回分を破棄して集め直す（パケット取りこぼし時は次サイクルで自然に復帰する
+  想定、タイムアウト等の複雑なリトライ処理はあえて入れていない）
+- `total`個揃ったら結合して`ObdReading.fromBytes()`（`mobile/lib/models/obd_reading.dart`）で
+  パースし、`ObdCard`（`mobile/lib/widgets/obd_card.dart`）が`ObdMetric.values`を
+  `GridView.count`で表示
 
 ### 注意点
 
@@ -558,13 +571,19 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 | # | 対象ファイル | 変更内容 | 状態 |
 |---|------------|---------|------|
 | 1 | `device/can.h/.cpp` | `canSendObdRequestUds()` 追加（物理アドレッシング`0x18DA0EF1`固定）。受信は既存`canReceiveObdResponse()`を流用 | 完了 |
-| 2 | `domain/obd.h/.cpp` | DID `0x2201`用ヘッダチェック（`checkUdsHeader()`）・`obdDecodeAtfTemp()`・`OBDReading`/`ObdBlePacket`への`atfTempC`/`atfTempValid`追加 | 完了 |
+| 2 | `domain/obd.h/.cpp` | DID `0x2201`用ヘッダチェック（`checkUdsHeader()`）・`obdDecodeAtfTemp()`・`OBDReading`への`atfTempC`/`atfTempValid`追加、`ObdExtFieldId`・`obdEncodeExtFields()`（TLV拡張フィールド、下記参照） | 完了 |
 | 3 | `service/obdpoll.cpp` | `obdPoll()`末尾でMode01の29PIDバッチとは別経路の単発UDSリクエストを実行 | 完了 |
 | 4 | `service/diddscan.h/.cpp` 新規 | `didScanRun()`（範囲総当たり、NRC 0x22/0x33ヒットのみ記録）・`kDidScanPresets[]`（範囲プリセット） | 完了 |
 | 5 | `service/menu.cpp` | ルートに `"OBD"` サブメニュー追加、`"DID Scan"` からプリセット選択→実行→結果一覧 | 完了 |
+| 6 | `device/ble_peripheral.cpp` | `notifyObd()`をコア構造体+TLV拡張領域の連結送信に変更 | 完了 |
+| 7 | `mobile/lib/models/obd_reading.dart`/`obd_metric.dart` | TLV拡張領域パース対応、`ObdMetric.atfTempC`追加 | 完了 |
 
 **設計判断:**
 
+- `atfTempC`/`atfTempValid`は当初`ObdBlePacket`（コア構造体）の末尾に追加していたが、それだと
+  今後PID/DIDを1つ足すたびにアプリ側`ObdReading.fromBytes()`の固定オフセットが全部ズレて壊れる
+  （実際に発生した）。そのため`ObdBlePacket`からは外し、コア構造体の直後に連結する
+  TLV拡張フィールド領域（`obdEncodeExtFields()`）に移した。「BLE Notify送信」節参照。
 - Mode22はMode01の`kPids[]`多PIDバッチ機構（`obdParseMultiResponse()`前提）と応答ヘッダ形式・
   アドレッシング方式が異なるため、送受信・デコードとも意図的に別経路にした（Mode01側は無変更）。
 - DIDスキャンは全域`0x0000`〜`0xFFFF`だと応答なしDIDのタイムアウト待ちが支配的で数十分〜1時間規模に
