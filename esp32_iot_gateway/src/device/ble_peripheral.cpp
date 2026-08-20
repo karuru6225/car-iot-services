@@ -239,12 +239,16 @@ void BlePeripheral::notifyObd(const OBDReading &r) {
   uint8_t extBuf[32]; // 現状ATF 2件で7バイト。将来のフィールド追加分の余裕を持たせてある
   size_t extLen = obdEncodeExtFields(r, extBuf, sizeof(extBuf));
 
-  uint8_t payload[sizeof(packet) + sizeof(extBuf)];
+  // +1: 末尾のCRC-8バイト（伝送中のビット化け検出用、domain/obd.h の obdCrc8() 参照）
+  uint8_t payload[sizeof(packet) + sizeof(extBuf) + 1];
   memcpy(payload, &packet, sizeof(packet));
   memcpy(payload + sizeof(packet), extBuf, extLen);
 
+  size_t totalLen = sizeof(packet) + extLen;
+  payload[totalLen] = obdCrc8(payload, totalLen);
+  totalLen += 1;
+
   const uint8_t *raw = payload;
-  const size_t totalLen = sizeof(packet) + extLen;
   const size_t chunkPayload = 18;
   const uint8_t total = (uint8_t)((totalLen + chunkPayload - 1) / chunkPayload);
 

@@ -161,6 +161,13 @@ enum class ObdExtFieldId : uint8_t
 // （呼び出し側は拡張フィールド追加時にバッファサイズを見直すこと）。戻り値は書き込んだバイト数。
 size_t obdEncodeExtFields(const OBDReading &r, uint8_t *buf, size_t bufSize);
 
+// CRC-8（多項式0x07、初期値0x00）。BLE送信ペイロード（コア構造体+TLV拡張フィールド領域）の
+// 末尾に1バイト付加し、伝送中のビット化けを検出するために使う（device/ble_peripheral.cpp の
+// notifyObd()、mobile/lib/models/obd_reading.dart の ObdReading.fromBytes() で同一アルゴリズムを
+// 使うこと）。schemaVersion等の「定義のズレ」検出とは異なり、CRC不一致は通信レベルの物理的な
+// 異常のためパースそのものを拒否する。
+uint8_t obdCrc8(const uint8_t *data, size_t len);
+
 // boostKpa/fuelRateLphの派生値を計算する（valid=falseの場合は何もしない）
 void obdComputeDerived(OBDReading &r);
 
