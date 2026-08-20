@@ -16,6 +16,7 @@ class _Reader {
   int get pos => _pos;
 
   void skip(int n) => _pos += n;
+  void seekTo(int pos) => _pos = pos;
 
   int u8() {
     final v = _d.getUint8(_pos);
@@ -123,9 +124,6 @@ class ObdReading {
     // ログ等で警告するのではなく安全側に倒してパース自体を拒否する。
     if (schemaVersion != _schemaVersion) return null;
 
-    // headerLen自体は使わない（ヘッダ内の各フィールドはschemaVersion固定でこの後読み進める）が、
-    // ボディの開始位置を自己記述するために存在する。将来ヘッダにフィールドを追加した場合、
-    // 今のアプリはそのフィールドを知らなくても構造上はボディの位置を見失わない。
     final headerLen = r.u8();
     if (bytes.length < headerLen) return null;
 
@@ -134,6 +132,12 @@ class ObdReading {
 
     final valid = r.u8() != 0;
     final validMask = r.u32();
+
+    // ここまでで今のアプリが知っているヘッダフィールドは読み終えたが、実際の位置が
+    // headerLenと一致するとは限らない（将来ヘッダにフィールドが追加された場合、今のアプリは
+    // それを知らないまま読み進めるとボディの開始位置を見失う）。headerLenへ明示的にシークして
+    // からボディを読むことで、未知のヘッダフィールドが挟まっていても安全にたどり着ける。
+    r.seekTo(headerLen);
 
     // 以降はボディをObdBlePacketのフィールド宣言順どおりに1つずつ読み進める。
     // オフセットは_Readerが自動計算するため、フィールドの型・呼び出し順さえ
