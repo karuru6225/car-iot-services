@@ -489,15 +489,17 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 
 `OBDReading`をそのまま`memcpy`するとコンパイラのパディングに依存してしまうため、送信専用の
 パディングなし構造体（`#pragma pack(push,1)`）に変換してから送る（`obdReadingToBlePacket()`、
-`domain/obd.cpp`）。フィールド順は`OBDReading`と同一、`bool`は`uint8_t`、`time_t`は`uint32_t`
-に固定。末尾は`validMask`（uint32_t、`kPids[]`配列順のPIDごとのデコード成否ビットマスク）。
-合計95バイト固定（コア構造体。オフセットは`domain/obd.h`のコメント・
+`domain/obd.cpp`）。先頭は`coreLen`（uint8_t、このバイト自身を含むコア構造体の全長、常に
+`sizeof(ObdBlePacket)`固定値）、以降は`OBDReading`と同一のフィールド順、`bool`は`uint8_t`、
+`time_t`は`uint32_t`に固定。末尾は`validMask`（uint32_t、`kPids[]`配列順のPIDごとのデコード
+成否ビットマスク）。合計96バイト固定（コア構造体。オフセットは`domain/obd.h`のコメント・
 `mobile/lib/models/obd_reading.dart`の`ObdReading.fromBytes()`のオフセットと完全一致させること）。
 
 **コア構造体は増減させない**（フィールドを足すたびにアプリ側の固定オフセット読み取りが
 全部ズレて壊れるため）。ATF温度（Mode22 DID 0x2201）等、今後も増減しうる値はコア構造体の
 直後に連結するTLV拡張フィールド領域に置く（`obdEncodeExtFields()`、`domain/obd.h`の
-`ObdExtFieldId`）:
+`ObdExtFieldId`）。アプリ側は先頭の`coreLen`から拡張領域の開始位置（`bytes[coreLen]`）を
+逆算するため、コア構造体のサイズ自体が変わってもアプリ側の定数を直す必要がない:
 
 ```text
 [extCount:1] ([fieldId:1][len:1][data:len]) × extCount
@@ -512,7 +514,7 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 ```text
 [0]     : seq   (uint8, 0-indexed)
 [1]     : total (uint8, 総チャンク数)
-[2..]   : payload（最大18バイト、コア構造体95バイト+TLV拡張領域を18バイトずつ分割）
+[2..]   : payload（最大18バイト、コア構造体96バイト+TLV拡張領域を18バイトずつ分割）
 ```
 
 `device/ble_peripheral.cpp`の`BlePeripheral::notifyObd()`が`MEAS_OBD_UUID`
