@@ -492,14 +492,14 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 `domain/obd.cpp`）。**ヘッダ（メタ情報）とボディ（実データ）に分離**している:
 
 ```text
-ヘッダ: schemaVersion(1) headerLen(1) coreLen(1) valid(1) validMask(4)   … 合計8バイト
+ヘッダ: schemaVersion(1) headerLen(1) extOffset(1) valid(1) validMask(4)   … 合計8バイト
 ボディ: rpm … iat2C（OBDReadingと同一フィールド順、bool は uint8_t、time_t は uint32_t）
 ```
 
 - `schemaVersion`（`OBD_BLE_SCHEMA_VERSION`固定値）: ボディのレイアウトバージョン。
   バージョンによって以降の解釈自体が変わりうるため一番先頭に置く。「サイズは同じだが意味が
-  変わった」変更は`headerLen`/`coreLen`だけでは検出できないため、アプリ側は自分が対応している
-  バージョンと不一致なら`debugPrint()`で警告を出す。ただし`headerLen`/`coreLen`によって
+  変わった」変更は`headerLen`/`extOffset`だけでは検出できないため、アプリ側は自分が対応している
+  バージョンと不一致なら`debugPrint()`で警告を出す。ただし`headerLen`/`extOffset`によって
   ヘッダの拡張・TLV拡張領域の位置は自己記述化済みで、`schemaVersion`不一致が実際に問題になる
   のは「ボディのレイアウトを直接変えた」場合のみ（運用ルールとしてボディは増減させない前提の
   ためレアケース）なので、パース自体は拒否せず継続する（`mobile/lib/models/obd_reading.dart`
@@ -507,8 +507,9 @@ MTU拡張には頼らず「制約に収まる分だけ詰めて複数回に分�
 - `headerLen`（`offsetof(ObdBlePacket, rpm)`固定値）: ヘッダ部分の全長。アプリ側はここから
   ボディの開始位置（`bytes[headerLen]`）を逆算できるため、将来ヘッダにフィールドを追加しても
   ボディ側オフセットの定数を直さずに済む。
-- `coreLen`（`sizeof(ObdBlePacket)`固定値）: ヘッダ+ボディ全体の全長。TLV拡張領域の開始位置
-  （`bytes[coreLen]`）を逆算するために使う。
+- `extOffset`（`sizeof(ObdBlePacket)`固定値）: TLV拡張フィールド領域の開始位置。値そのものが
+  `bytes[extOffset]`という形でそのままインデックスとして使える（「サイズ」ではなく「位置」を
+  表す名前にしている）。
 - `valid`/`validMask`: 「後続のボディをどう解釈すべきか」を示すメタ情報のため、実データより
   先に読める位置（ヘッダ側）に置いている。`validMask`は`kPids[]`配列順のPIDごとのデコード成否。
 
