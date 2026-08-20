@@ -3,7 +3,7 @@
 
 // GU0 コネクタ（gu00Pin=TX, gu01Pin=RX, gu0EnPin=EN）に接続した MCP2562FD 経由で
 // Honda N-VAN の OBD-II（Mode 01、29bit 拡張アドレッシング）と通信する。
-// 詳細は CAN_TEST.md / CAN_REFERENCE.md / OBD.md 参照。
+// 詳細は CAN_REFERENCE.md / OBD.md 参照。
 
 // CAN 起動（電源 ON → TWAI 500kbps NORMAL 起動）。既に起動済みなら即 true を返す（冪等）
 bool canInit();

@@ -1,7 +1,7 @@
 # OBD-II 統合設計
 
 フェーズ1（実車接続確認・PID スキャン）の結果と、フェーズ2以降の実装設計をまとめる。  
-プロトコル詳細は `CAN_REFERENCE.md`、フェーズ1手順・ハードウェア構成は `CAN_TEST.md` を参照。
+プロトコル詳細・ブレッドボード試験手順は `CAN_REFERENCE.md` を参照。
 
 ---
 
@@ -334,7 +334,7 @@ ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeou
 - `CAN_TX_PIN = boardPins().gu00Pin`（GPIO4、MCP2562FD TXD 側）
 - `CAN_EN_PIN = boardPins().gu0EnPin`（GPIO6、AO3401A ゲート）
 
-`CAN_TEST.md` のブレッドボード試験章の配線（GPIO5=TXD, GPIO4=RXD）そのまま。当初ドラフトは
+`CAN_REFERENCE.md`「7. ブレッドボード単体試験」の配線（GPIO5=TXD, GPIO4=RXD）そのまま。当初ドラフトは
 GU1（GPIO7/8/9）想定で TX/RX が逆だったため、実装時に修正した。
 
 ### バスオフ自動リカバリ（`can.cpp` 内にカプセル化）
