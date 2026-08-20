@@ -84,10 +84,16 @@ struct ObdBlePacket
   // （フィールドの入れ替え等）をアプリ側が検出できるようにするための値。
   uint8_t  schemaVersion;
 
-  // このパケットのコア部分（このヘッダバイト自身を含む、ヘッダ+ボディ）の全長。
-  // 常に sizeof(ObdBlePacket) 固定（obdReadingToBlePacket()がセットする）。アプリ側はこの値から
-  // TLV拡張領域の開始位置（bytes[coreLen]）を逆算できるため、コア構造体のサイズが変わっても
-  // オフセットのハードコード（アプリ側の定数）を直さずに済む。
+  // ヘッダ部分（このバイト自身を含む、schemaVersion〜validMaskまで）の全長。常に
+  // offsetof(ObdBlePacket, rpm) 固定。アプリ側はこの値からボディの開始位置（bytes[headerLen]）
+  // を逆算できるため、将来ヘッダにフィールドを追加してもボディ側オフセットの
+  // ハードコード（アプリ側の定数）を直さずに済む。
+  uint8_t  headerLen;
+
+  // このパケットのコア部分（ヘッダ+ボディ）の全長。常に sizeof(ObdBlePacket) 固定
+  // （obdReadingToBlePacket()がセットする）。アプリ側はこの値からTLV拡張領域の開始位置
+  // （bytes[coreLen]）を逆算できるため、コア構造体のサイズが変わってもオフセットの
+  // ハードコード（アプリ側の定数）を直さずに済む。
   uint8_t  coreLen;
 
   uint8_t  valid;     // 全体の有効性フラグ（bool を1バイト固定で送る）

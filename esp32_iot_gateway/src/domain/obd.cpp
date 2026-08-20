@@ -378,6 +378,7 @@ bool obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb c
 void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
 {
   out.schemaVersion = OBD_BLE_SCHEMA_VERSION;
+  out.headerLen = (uint8_t)offsetof(ObdBlePacket, rpm);
   out.coreLen = (uint8_t)sizeof(ObdBlePacket);
   out.valid = r.valid ? 1 : 0;
   out.validMask = r.validMask;
