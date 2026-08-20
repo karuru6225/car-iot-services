@@ -122,12 +122,12 @@ class _MeterSettingsSheetState extends State<MeterSettingsSheet> {
               children: [
                 Expanded(child: cardLabel('メーター項目の編集')),
                 IconButton(
-                  icon: const Icon(Icons.file_upload_outlined),
+                  icon: const Icon(Icons.file_download_outlined),
                   tooltip: 'ファイルからインポート',
                   onPressed: _importFromFile,
                 ),
                 IconButton(
-                  icon: const Icon(Icons.file_download_outlined),
+                  icon: const Icon(Icons.file_upload_outlined),
                   tooltip: 'ファイルへエクスポート',
                   onPressed: _exportToFile,
                 ),
