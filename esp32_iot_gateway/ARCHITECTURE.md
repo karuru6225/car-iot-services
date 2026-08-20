@@ -75,7 +75,8 @@ device / service を include してはいけない。標準ライブラリのみ
 | `monitor.h/.cpp` | 計測サイクル（`measure()`＝非同期BLEスキャン開始＋アナログ計測 / `collectBle()`＝スキャン完了時のみ収集 / `publishBattery()` / `publishBle()`）・`MeasureResult` 定義 |
 | `menu.h/.cpp` | OLED + 2ボタン設定メニュー、`enterMenuMode()` → `OperationMode` を返す |
 | `menu_util.h/.cpp` | メニュー用パスユーティリティ（pathPush / pathPop / pathTitle 等） |
-| `obdpoll.h/.cpp` | `obdPoll()`。全29PIDを6PIDずつ計5リクエストにバッチ化して問い合わせ（`canInit()`済み前提）。CONTINUOUSモードの1秒ティックから呼ばれる |
+| `obdpoll.h/.cpp` | `obdPoll()`。全29PIDを6PIDずつ計5リクエストにバッチ化して問い合わせ（`canInit()`済み前提）。CONTINUOUSモードの1秒ティックから呼ばれる。末尾でMode22 UDS単発リクエスト（DID 0x2201 ATF油温）も実行する |
+| `diddscan.h/.cpp` | `didScanRun()`。Mode22 (UDS) DID総当たりスキャン。指定範囲を`22XXYY`で問い合わせ、正常応答とNRC 0x22/0x33ヒットのみ記録する。燃料残量・油温等の未確定DIDを探すための一時的な調査機能で、OLEDメニュー「OBD > DID Scan」から手動実行する |
 | `operation_mode.h/.cpp` | `IOperationModeHandler`（`beforeRun()`/`run()`を持つ抽象ハンドラ）+ `OperationModeManager`。`OperationMode` ごとにハンドラインスタンスを登録・ディスパッチするレジストリ（`main.cpp`のloop()分岐を集約）。モード状態自体は持たず`OperationModeContext`を参照する |
 | `mode_context.h/.cpp` | `OperationModeContext`。動作モードハンドラ間で共有する実行時状態（現在モード・直近計測値・BLE昇格フラグ等）。状態遷移系プロパティはsetter経由でのみ変更させ、変更時に`[MODE_CTX]`ログを出す |
 | `mode_common.h/.cpp` | 複数モードハンドラから呼ばれる横断ヘルパー（`updateChargingState()`/`secsToNextBoundary()`/`pollBleCollect()`/`checkAndHandleJob()`） |
