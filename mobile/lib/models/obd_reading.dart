@@ -12,6 +12,10 @@ class _Reader {
   int _pos;
   // 設定されていれば、読み取り後にこの位置を超えた時点で警告する（setLimit()参照）。
   int? _limit;
+  // limitを一度でも超えたらtrueになる。呼び出し側はこれを見て、値が信頼できないパースを
+  // 破棄する（境界がズレている以上、それ以前に読んだボディの値も正しいオフセットで
+  // 読めている保証がなく、そのまま使うのは危険なため）。
+  bool overran = false;
 
   _Reader(Uint8List bytes, int start)
       : _d = ByteData.sublistView(bytes),
@@ -23,7 +27,7 @@ class _Reader {
   void skip(int n) => _pos += n;
   void seekTo(int pos) => _pos = pos;
 
-  // 以降の読み取りがlimitを超えたらdebugPrintで警告する。ボディの型・順序が
+  // 以降の読み取りがlimitを超えたらdebugPrintで警告してoverranを立てる。ボディの型・順序が
   // ObdBlePacketの実際のレイアウトとズレて、意図せずTLV拡張フィールド領域まで
   // 読み込んでしまうバグを実行時に検出するためのもの（ヘッダのextOffsetを渡す想定）。
   void setLimit(int limit) => _limit = limit;
@@ -31,6 +35,7 @@ class _Reader {
   void _warnIfOverLimit() {
     final limit = _limit;
     if (limit != null && _pos > limit) {
+      overran = true;
       debugPrint('[ObdReading] _Reader: 読み取り位置(pos=$_pos)がlimit($limit)を超えました。'
           'TLV拡張フィールド領域に突入しています。ObdBlePacketのボディ定義とヘッダの'
           'extOffset計算がズレている可能性があります。');
@@ -214,10 +219,16 @@ class ObdReading {
     // ボディを読み終えた時点でちょうどextOffsetに到達しているはず。setLimit()は「超えたら」
     // しか検知しないため、逆に「読み足りない」（ObdBlePacketに存在するのに読み忘れている
     // フィールドがある）ケースはここで別途拾う。
-    if (r.pos != extOffset) {
+    final bodyMismatch = r.pos != extOffset;
+    if (bodyMismatch) {
       debugPrint('[ObdReading] ボディ読み取り完了後の位置(${r.pos})がextOffset($extOffset)と'
           '一致しません。ObdBlePacketとの定義ズレの可能性があります。');
     }
+
+    // 境界がズレている場合、それ以前に読んだボディの値も正しいオフセットで読めている保証が
+    // ない。壊れた値のObdReadingを組み立てて表示してしまわないよう、ここで打ち切ってnullを
+    // 返す（TLV拡張領域のパースやコンストラクタ呼び出しは行わない）。
+    if (r.overran || bodyMismatch) return null;
 
     // TLV拡張フィールド領域: [extCount:1]([fieldId:1][len:1][data:len])×extCount。
     // 知らないfieldIdはlen分読み飛ばす。firmware側で新しいフィールドが追加されても、
