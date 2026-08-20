@@ -17,6 +17,8 @@ class ObdReading {
   final bool valid;
   final int ts;
   final int iatC, iat2C;
+  final int atfTempC;
+  final bool atfTempValid;
   final int validMask;
 
   ObdReading._({
@@ -35,6 +37,7 @@ class ObdReading {
     required this.secO2TrimStPct, required this.secO2TrimLtPct,
     required this.valid, required this.ts,
     required this.iatC, required this.iat2C,
+    required this.atfTempC, required this.atfTempValid,
     required this.validMask,
   });
 
@@ -78,7 +81,9 @@ class ObdReading {
       ts: d.getUint32(83, e),
       iatC: d.getInt16(87, e),
       iat2C: d.getInt16(89, e),
-      validMask: d.getUint32(91, e),
+      atfTempC: d.getInt16(91, e),
+      atfTempValid: d.getUint8(93) != 0,
+      validMask: d.getUint32(94, e),
     );
   }
 }
