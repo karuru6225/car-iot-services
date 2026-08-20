@@ -78,16 +78,17 @@ struct ObdBlePacket
 {
   // ---- ヘッダ ----
 
+  // ボディのレイアウトバージョン（OBD_BLE_SCHEMA_VERSION固定）。バージョンによって以降の
+  // ヘッダ・ボディの解釈自体が変わりうるため、パケットの一番先頭に置く（coreLenより前）。
+  // coreLenは「サイズが同じか」しか保証しないため、サイズは同じだが意味が変わった変更
+  // （フィールドの入れ替え等）をアプリ側が検出できるようにするための値。
+  uint8_t  schemaVersion;
+
   // このパケットのコア部分（このヘッダバイト自身を含む、ヘッダ+ボディ）の全長。
   // 常に sizeof(ObdBlePacket) 固定（obdReadingToBlePacket()がセットする）。アプリ側はこの値から
   // TLV拡張領域の開始位置（bytes[coreLen]）を逆算できるため、コア構造体のサイズが変わっても
   // オフセットのハードコード（アプリ側の定数）を直さずに済む。
   uint8_t  coreLen;
-
-  // ボディのレイアウトバージョン（OBD_BLE_SCHEMA_VERSION固定）。coreLenは「サイズが同じか」
-  // しか保証しないため、サイズは同じだが意味が変わった変更（フィールドの入れ替え等）を
-  // アプリ側が検出できるようにするための値。
-  uint8_t  schemaVersion;
 
   uint8_t  valid;     // 全体の有効性フラグ（bool を1バイト固定で送る）
   uint32_t validMask; // kPids[]（service/obdpoll.cpp）の配列順に対応するPIDごとのデコード成否
