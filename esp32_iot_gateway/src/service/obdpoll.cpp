@@ -123,7 +123,7 @@ void finalizeAndLog(OBDReading &r)
     logger.printf("[OBD2] stft=%.1f%% ltft=%.1f%% o2b1s2=%.2fV/%.1f%% o2s1=%.3f/%.2fV "
                   "runtime=%us milDist=%ukm evap=%u%% warmups=%u distCleared=%ukm "
                   "cat=%.0fC absLoad=%.1f%% afr=%.2f tpsB=%u%% padD=%u%% padE=%u%% "
-                  "fuelType=%u secO2st=%.1f%% secO2lt=%.1f%% iat=%dC/%dC\n",
+                  "fuelType=%u secO2st=%.1f%% secO2lt=%.1f%% iat=%dC/%dC atf=%dC(valid=%d)\n",
                   r.stftPct, r.ltftPct, r.o2B1s2V, r.o2B1s2TrimPct,
                   r.o2S1Ratio, r.o2S1Voltage,
                   r.engineRunTimeSec, r.milDistanceKm, r.evapPurgePct,
@@ -131,7 +131,7 @@ void finalizeAndLog(OBDReading &r)
                   r.catalystTempC, r.absoluteLoadPct, r.commandedAfr,
                   r.throttleBPct, r.accelPedalDPct, r.accelPedalEPct,
                   r.fuelType, r.secO2TrimStPct, r.secO2TrimLtPct,
-                  r.iatC, r.iat2C);
+                  r.iatC, r.iat2C, r.atfTempC, (int)r.atfTempValid);
   }
   else
   {
@@ -188,6 +188,25 @@ OBDReading obdPoll()
     for (uint8_t i = 0; i < groupCount; i++)
       if (!ctx.seen[i])
         missingCount++;
+  }
+
+  // Mode22 (UDS) 追加分: ATF油温（DID 0x2201）。Mode01の多PIDバッチ機構とは別経路の単発問い合わせ。
+  // 実車未テスト（OBD.md「Mode 22 実機テスト候補」参照）。
+  if (!canSendObdRequestUds(0x2201))
+  {
+    logger.println("[OBD] ATF(0x2201): 送信失敗");
+  }
+  else if (canReceiveObdResponse(data, &dlc, 50, sizeof(data)) != ObdRecvResult::Ok)
+  {
+    logger.println("[OBD] ATF(0x2201): 応答なし");
+  }
+  else if (!obdDecodeAtfTemp(data, dlc, r))
+  {
+    logger.println("[OBD] ATF(0x2201): デコード失敗");
+  }
+  else
+  {
+    r.atfTempValid = true;
   }
 
   logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d 未応答PID=%d 所要%lums\n",
