@@ -5,18 +5,6 @@
 // 燃料残量・油温等、Mode 01 非対応データの独自 PID を探すための一時的な調査機能
 // （OBD.md「Mode 22 PID 探索方法論」参照）。canInit() 済み前提、通常運用のポーリングには含めない。
 
-// スキャン範囲プリセット。全域(0x0000-0xFFFF)を0x1000刻みで16分割し、
-// OBD.md記載の候補DID周辺を優先領域として先頭に加えたもの。
-struct DidScanPreset
-{
-  const char *label;
-  uint16_t    start;
-  uint16_t    end; // inclusive
-};
-
-extern const DidScanPreset kDidScanPresets[];
-extern const int kDidScanPresetCount;
-
 // 1件のヒット（正常応答、またはNRC 0x22/0x33で「存在するが今は読めない」判定されたDID）
 struct DidScanFinding
 {
