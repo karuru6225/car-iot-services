@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 
 // ObdReading（esp32_iot_gateway/src/domain/obd.h の ObdBlePacket）のDart側パース結果。
-// フィールド順・オフセットは ObdBlePacket と完全一致させること。
+// コア構造体（下記CORE_LENバイト）のフィールド順・オフセットは ObdBlePacket と完全一致させること。
+// コア構造体の直後にはTLV拡張フィールド領域が続く（ObdExtFieldId参照）。新しいセンサー値は
+// こちら側で追加され、firmware側のフィールド追加ではコア構造体側のオフセットは変わらない。
 class ObdReading {
   final int rpm, speedKmh, loadPct, mapKpa, baroKpa, boostKpa, throttlePct;
   final double timingDeg, ecuVoltage, mafGs;
@@ -17,9 +19,10 @@ class ObdReading {
   final bool valid;
   final int ts;
   final int iatC, iat2C;
+  final int validMask;
+  // 以下はTLV拡張フィールド領域から読み取る（コア構造体には含まれない）
   final int atfTempC;
   final bool atfTempValid;
-  final int validMask;
 
   ObdReading._({
     required this.rpm, required this.speedKmh, required this.loadPct,
@@ -37,13 +40,48 @@ class ObdReading {
     required this.secO2TrimStPct, required this.secO2TrimLtPct,
     required this.valid, required this.ts,
     required this.iatC, required this.iat2C,
-    required this.atfTempC, required this.atfTempValid,
     required this.validMask,
+    required this.atfTempC, required this.atfTempValid,
   });
+
+  // コア構造体（ObdBlePacketのTLV拡張フィールドより前の部分）のバイト数。
+  static const _coreLen = 95;
+
+  // ファーム側 domain/obd.h の ObdExtFieldId と対応させること。
+  static const _extFieldAtfTempC = 1;
+  static const _extFieldAtfTempValid = 2;
 
   factory ObdReading.fromBytes(Uint8List bytes) {
     final d = ByteData.sublistView(bytes);
     const e = Endian.little;
+
+    // TLV拡張フィールド領域: [extCount:1]([fieldId:1][len:1][data:len])×extCount。
+    // 知らないfieldIdはlen分読み飛ばす。firmware側で新しいフィールドが追加されても、
+    // 対応するcaseを足すだけで済み、他フィールドのオフセット計算には影響しない。
+    var atfTempC = 0;
+    var atfTempValid = false;
+    if (bytes.length > _coreLen) {
+      var pos = _coreLen;
+      final extCount = bytes[pos];
+      pos++;
+      for (var i = 0; i < extCount && pos + 2 <= bytes.length; i++) {
+        final fieldId = bytes[pos];
+        final len = bytes[pos + 1];
+        pos += 2;
+        if (pos + len > bytes.length) break; // データ不足（壊れたパケット）、安全に打ち切り
+        switch (fieldId) {
+          case _extFieldAtfTempC:
+            atfTempC = ByteData.sublistView(bytes, pos, pos + len).getInt16(0, e);
+            break;
+          case _extFieldAtfTempValid:
+            atfTempValid = bytes[pos] != 0;
+            break;
+          // 未知のfieldIdは何もしない（posはこの後len分進めてスキップする）
+        }
+        pos += len;
+      }
+    }
+
     return ObdReading._(
       rpm: d.getUint16(0, e),
       speedKmh: d.getUint8(2),
@@ -81,9 +119,9 @@ class ObdReading {
       ts: d.getUint32(83, e),
       iatC: d.getInt16(87, e),
       iat2C: d.getInt16(89, e),
-      atfTempC: d.getInt16(91, e),
-      atfTempValid: d.getUint8(93) != 0,
-      validMask: d.getUint32(94, e),
+      validMask: d.getUint32(91, e),
+      atfTempC: atfTempC,
+      atfTempValid: atfTempValid,
     );
   }
 }
