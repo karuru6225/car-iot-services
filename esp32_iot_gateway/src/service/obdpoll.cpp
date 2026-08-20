@@ -1,4 +1,5 @@
 #include "obdpoll.h"
+#include "diddscan.h"
 #include "../logger.h"
 #include "../device/can.h"
 #include <string.h>
@@ -208,6 +209,12 @@ OBDReading obdPoll()
   {
     r.atfTempValid = true;
   }
+
+  // 燃料残量・油温DID調査用（OBD.md「DID Values 実測記録」参照）。走行中もCONTINUOUSモードの
+  // 1秒間隔ポーリングに相乗りさせることで、PA/SA停車時のスナップショットだけでなく走行中の
+  // 連続データを取れるようにする。結果はresult自体は使わずログ出力のみ（BLE/AWSには送らない）。
+  DidValueResult didValueResult;
+  didReadCandidateValues(didValueResult);
 
   logger.printf("[OBD] poll: OK=%d/%d 送信失敗=%d 応答なし=%d デコード失敗=%d 未応答PID=%d 所要%lums\n",
                 okCount, kPidCount, sendFailCount, recvFailCount, decodeFailCount, missingCount,
