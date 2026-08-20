@@ -35,8 +35,10 @@ enum class MenuState
   RESTART,
   BLE_PHONE,
   DONE_CONTINUOUS,
-  DID_SCAN_RUNNING, // Mode22 DIDスキャン: 全域(0x0000-0xFFFF)総当たり実行中（ブロッキング、BTN1長押しで中断）
-  DID_SCAN_RESULT,  // ヒットしたDID一覧
+  DID_SCAN_RUNNING,   // Mode22 DIDスキャン: 全域(0x0000-0xFFFF)総当たり実行中（ブロッキング、BTN1長押しで中断）
+  DID_SCAN_RESULT,    // ヒットしたDID一覧
+  DID_VALUES_RUNNING, // kDidCandidates[]の実値読み取り実行中（ブロッキング、9件のみで即完了）
+  DID_VALUES_RESULT,  // 読み取ったDID実値一覧
 };
 
 // ---- 一時メッセージ表示 ----
@@ -120,7 +122,8 @@ static const MenuItem ITEMS[] = {
     {"Device QR",    "/System",       MenuState::DEVICE_QR,       {}},
     {"NVS Clear",    "/System",       MenuState::CONFIRM,         {"NVS Clear?", "Keep MQTT host", doNvsClear}},
     // path="/OBD"
-    {"DID Scan",     "/OBD",          MenuState::DID_SCAN_RUNNING, {}},
+    {"DID Scan",     "/OBD",          MenuState::DID_SCAN_RUNNING,  {}},
+    {"DID Values",   "/OBD",          MenuState::DID_VALUES_RUNNING, {}},
 
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
@@ -148,6 +151,8 @@ static ConfirmDef s_confirm;
 
 static DidScanResult s_didScanResult;
 static int s_didScanResultCursor = 0;
+static DidValueResult s_didValueResult;
+static int s_didValueResultCursor = 0;
 
 // ---- tick 関数 ----
 
@@ -634,6 +639,61 @@ static MenuState tickDidScanResult(ButtonEvent ev)
   return MenuState::DID_SCAN_RESULT;
 }
 
+// kDidCandidates[]（didScanRun()で発見済みのOK系DID）の実値を読む。9件のみで
+// 即完了するためショルダーアボート等は不要（didScanShouldAbort()のような監視は無し）。
+static MenuState tickDidValuesRunning(ButtonEvent)
+{
+  canInit();
+  oledShowMessage("DID Values", "reading...");
+  didReadCandidateValues(s_didValueResult);
+  s_didValueResultCursor = 0;
+  return MenuState::DID_VALUES_RESULT;
+}
+
+static MenuState tickDidValuesResult(ButtonEvent ev)
+{
+  if (s_didValueResult.count == 0)
+  {
+    oledShowMessage("No candidates", "BTN1 long: back");
+    if (ev == ButtonEvent::BTN1_LONG) { canDeinit(); return MenuState::MENU_NAV; }
+    return MenuState::DID_VALUES_RESULT;
+  }
+
+  char items[DidValueResult::MAX_ITEMS][20];
+  const char *ptrs[DidValueResult::MAX_ITEMS];
+  for (int i = 0; i < s_didValueResult.count; i++)
+  {
+    const DidValueReading &v = s_didValueResult.items[i];
+    if (!v.ok)
+    {
+      snprintf(items[i], sizeof(items[i]), "0x%04X no resp", v.did);
+    }
+    else
+    {
+      char hex[2 * sizeof(v.data) + 1] = {0};
+      for (uint8_t b = 0; b < v.len && b < sizeof(v.data); b++)
+        snprintf(hex + b * 2, 3, "%02X", v.data[b]);
+      snprintf(items[i], sizeof(items[i]), "0x%04X:%s", v.did, hex);
+    }
+    ptrs[i] = items[i];
+  }
+  char title[20];
+  snprintf(title, sizeof(title), "Values (%d)", s_didValueResult.count);
+  oledShowMenu(title, ptrs, s_didValueResult.count, s_didValueResultCursor);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_didValueResultCursor = (s_didValueResultCursor + 1) % s_didValueResult.count;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    s_didValueResultCursor = 0;
+    canDeinit();
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::DID_VALUES_RESULT;
+}
+
 // ---- エントリポイント ----
 
 OperationMode enterMenuMode()
@@ -667,6 +727,8 @@ OperationMode enterMenuMode()
     case MenuState::BLE_PHONE:          next = tickBlePhone(ev);         break;
     case MenuState::DID_SCAN_RUNNING:   next = tickDidScanRunning(ev);   break;
     case MenuState::DID_SCAN_RESULT:    next = tickDidScanResult(ev);    break;
+    case MenuState::DID_VALUES_RUNNING: next = tickDidValuesRunning(ev); break;
+    case MenuState::DID_VALUES_RESULT:  next = tickDidValuesResult(ev);  break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;
