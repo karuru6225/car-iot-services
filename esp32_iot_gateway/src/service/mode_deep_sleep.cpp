@@ -4,6 +4,7 @@
 #include "monitor.h"
 #include "shadow.h"
 #include "pubqueue.h"
+#include "obdpoll.h"
 #include "../device/ble_peripheral.h"
 #include "../device/ble_scan.h"
 #include "../device/lte.h"
@@ -24,8 +25,10 @@ DeepSleepModeHandler deepSleepMode(modeCtx);
 // DeepSleepModeHandler::run() でのみ使用するため、このファイルに閉じる
 #define WAKE_PIN GPIO_NUM_0
 
-// BLE 接続 → CONTINUOUS 昇格。未接続なら DeepSleep 突入前に BLE_WAKE_WINDOW_SEC 秒だけ
-// 接続を待つ（起床直後の setup() 中もアドバタイズ済みのため、実際の待受はそれより長い）。
+// BLE 接続 または CAN 応答（IGN ON 相当）→ CONTINUOUS 昇格。
+// BLE未接続なら DeepSleep 突入前に BLE_WAKE_WINDOW_SEC 秒だけ接続を待つ（起床直後の
+// setup() 中もアドバタイズ済みのため、実際の待受はそれより長い）。CANは接続待ちの概念がない
+// ため即座に1回ポーリングして判定する。
 // _ctx.userForcedSleep() 中は BTN1 での DEEP_SLEEP 選択を BLE 接続中でも尊重し、自動昇格させない。
 // BLEが切断されている場合はここでuserForcedSleepフラグをリセットし、次回接続時は通常通り自動昇格させる
 void DeepSleepModeHandler::beforeRun()
@@ -40,6 +43,16 @@ void DeepSleepModeHandler::beforeRun()
   {
     _ctx.setMode(OperationMode::CONTINUOUS);
     _ctx.setBleUpgradedToContinuous(true);
+    return;
+  }
+
+  // CANが応答する(=IGN ON/エンジン始動中)場合もCONTINUOUS昇格。BLEと違い接続待ちの
+  // 概念がないため即座に1回ポーリングして判定する
+  OBDReading obd = obdPoll();
+  if (obd.valid)
+  {
+    _ctx.setMode(OperationMode::CONTINUOUS);
+    _ctx.setCanUpgradedToContinuous(true);
     return;
   }
 
@@ -64,7 +77,7 @@ void DeepSleepModeHandler::run()
   shadowPollDelta();
   delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
 #ifndef DEBUG_SKIP_NETWORK
-  // このサイクルのBLEスキャン結果をqueue.save()に含めるため、非同期スキャンの完了を待って収集する。
+  // このサイクルのBLEスキャン結果を同サイクル内でflush()できるよう、非同期スキャンの完了を待って収集する。
   // NimBLEスタック異常時に無限待機しないようSCAN_TIME+マージンで打ち切り、強制停止する
   if (_ctx.blePending())
   {
@@ -84,6 +97,9 @@ void DeepSleepModeHandler::run()
     _ctx.setBlePending(false);
   }
 
+  // publishBle()はloop()側のflush()より後に呼ばれるため、ここでflush()しないと
+  // このサイクルのBLEデータが未送信のまま次サイクルまで1周分遅延してしまう
+  queue.flush();
   queue.save();
   lte.disconnect();
   lte.radioOff();

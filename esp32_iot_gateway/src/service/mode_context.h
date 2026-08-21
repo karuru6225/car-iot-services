@@ -15,6 +15,9 @@ public:
   bool bleUpgradedToContinuous() const { return _bleUpgradedToContinuous; }
   void setBleUpgradedToContinuous(bool v);
 
+  bool canUpgradedToContinuous() const { return _canUpgradedToContinuous; }
+  void setCanUpgradedToContinuous(bool v);
+
   bool userForcedSleep() const { return _userForcedSleep; }
   void setUserForcedSleep(bool v);
 
@@ -33,6 +36,7 @@ private:
   MeasureResult _lastResult = {};
   bool _blePending = false;
   bool _bleUpgradedToContinuous = false;
+  bool _canUpgradedToContinuous = false;
   bool _userForcedSleep = false;
   time_t _continuousUntilEpoch = 0;
 };

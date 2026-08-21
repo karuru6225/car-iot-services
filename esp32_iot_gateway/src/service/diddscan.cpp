@@ -2,6 +2,7 @@
 #include "../device/can.h"
 #include "../logger.h"
 #include <string.h>
+#include <time.h>
 
 namespace
 {
@@ -9,32 +10,25 @@ const uint8_t NRC_CONDITIONS_NOT_CORRECT = 0x22;
 const uint8_t NRC_SECURITY_ACCESS_DENIED = 0x33;
 // 応答なしDIDでの待ち時間を抑えるため通常ポーリング(50ms)より短めに設定
 const uint32_t DID_SCAN_TIMEOUT_MS = 30;
-} // namespace
 
-const DidScanPreset kDidScanPresets[] = {
-    // OBD.md「Mode 22 実機テスト候補」記載の候補DID周辺（優先領域、先頭に配置）
-    {"ATF near 0x22xx", 0x2200, 0x22FF},
-    {"Coolant cand 0x11xx", 0x1100, 0x11FF},
-    {"Coolant cand 0x40xx", 0x4000, 0x40FF},
-    // 全域を0x1000刻みで16分割
-    {"0x0000-0x0FFF", 0x0000, 0x0FFF},
-    {"0x1000-0x1FFF", 0x1000, 0x1FFF},
-    {"0x2000-0x2FFF", 0x2000, 0x2FFF},
-    {"0x3000-0x3FFF", 0x3000, 0x3FFF},
-    {"0x4000-0x4FFF", 0x4000, 0x4FFF},
-    {"0x5000-0x5FFF", 0x5000, 0x5FFF},
-    {"0x6000-0x6FFF", 0x6000, 0x6FFF},
-    {"0x7000-0x7FFF", 0x7000, 0x7FFF},
-    {"0x8000-0x8FFF", 0x8000, 0x8FFF},
-    {"0x9000-0x9FFF", 0x9000, 0x9FFF},
-    {"0xA000-0xAFFF", 0xA000, 0xAFFF},
-    {"0xB000-0xBFFF", 0xB000, 0xBFFF},
-    {"0xC000-0xCFFF", 0xC000, 0xCFFF},
-    {"0xD000-0xDFFF", 0xD000, 0xDFFF},
-    {"0xE000-0xEFFF", 0xE000, 0xEFFF},
-    {"0xF000-0xFFFF", 0xF000, 0xFFFF},
-};
-const int kDidScanPresetCount = sizeof(kDidScanPresets) / sizeof(kDidScanPresets[0]);
+// AWS側にアップロードされるOBDデータ（mobile側obd_uploader.dartが送るts=time(nullptr)の秒値）と
+// 突き合わせられるよう、読み取り直前の時刻を記録する。未同期（time(nullptr)がNTP/LTE同期前の
+// 1970年付近を指す）の場合はlog_storage.cppと同じ閾値でmillis()基準にフォールバックする。
+void logCurrentTime(const char *tag)
+{
+  time_t now = time(nullptr);
+  if (now > 1577836800L) // 2020-01-01以降なら同期済みとみなす
+  {
+    char timebuf[24];
+    strftime(timebuf, sizeof(timebuf), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
+    logger.printf("%s ts=%ld (%s)\n", tag, (long)now, timebuf);
+  }
+  else
+  {
+    logger.printf("%s ts=未同期 millis=%lu\n", tag, millis());
+  }
+}
+} // namespace
 
 void didScanRun(uint16_t start, uint16_t end, DidScanResult &result, bool (*shouldAbort)())
 {
@@ -77,7 +71,6 @@ void didScanRun(uint16_t start, uint16_t end, DidScanResult &result, bool (*shou
     else if (r == ObdRecvResult::NegativeResponse &&
              (nrc == NRC_CONDITIONS_NOT_CORRECT || nrc == NRC_SECURITY_ACCESS_DENIED))
     {
-      logger.printf("[DIDScan] ヒット(NRC 0x%02X、存在確認のみ) DID=0x%04X\n", nrc, did);
       if (result.findingCount < DidScanResult::MAX_FINDINGS)
       {
         DidScanFinding &f = result.findings[result.findingCount++];
@@ -91,4 +84,49 @@ void didScanRun(uint16_t start, uint16_t end, DidScanResult &result, bool (*shou
 
   logger.printf("[DIDScan] 終了 スキャン=%d/%d ヒット=%d 中断=%d\n",
                 result.scannedCount, result.totalCount, result.findingCount, (int)result.aborted);
+}
+
+const uint16_t kDidCandidates[] = {
+    0x2341, 0x2342, 0x2601, 0x2630, 0xE5FF, 0xE600, 0xE602, 0xF100, 0xF806,
+};
+const int kDidCandidateCount = sizeof(kDidCandidates) / sizeof(kDidCandidates[0]);
+static_assert(sizeof(kDidCandidates) / sizeof(kDidCandidates[0]) <= DidValueResult::MAX_ITEMS,
+              "kDidCandidatesがDidValueResult::MAX_ITEMSを超えている");
+
+void didReadCandidateValues(DidValueResult &result)
+{
+  result = {};
+  logCurrentTime("[DIDVal] 開始");
+
+  uint8_t data[8];
+  uint8_t dlc;
+
+  for (int i = 0; i < kDidCandidateCount; i++)
+  {
+    uint16_t did = kDidCandidates[i];
+    DidValueReading &item = result.items[result.count++];
+    item.did = did;
+
+    if (!canSendObdRequestUds(did))
+    {
+      logger.printf("[DIDVal] DID=0x%04X 送信失敗\n", did);
+      continue;
+    }
+    if (canReceiveObdResponse(data, &dlc, DID_SCAN_TIMEOUT_MS, sizeof(data)) != ObdRecvResult::Ok)
+    {
+      logger.printf("[DIDVal] DID=0x%04X 応答なし\n", did);
+      continue;
+    }
+
+    // dataは[0]=0x62 [1..2]=DID [3..]=ペイロード。62/DIDエコー部分は自明なので
+    // ログ・resultにはペイロード（実値）だけを残す。
+    item.ok = true;
+    item.len = dlc > 3 ? dlc - 3 : 0;
+    memcpy(item.data, data + 3, item.len < sizeof(item.data) ? item.len : sizeof(item.data));
+
+    char hex[3 * sizeof(item.data) + 1] = {0};
+    for (uint8_t b = 0; b < item.len && b < sizeof(item.data); b++)
+      snprintf(hex + b * 3, 4, "%02X ", item.data[b]);
+    logger.printf("[DIDVal] DID=0x%04X len=%u data=%s\n", did, item.len, hex);
+  }
 }

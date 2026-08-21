@@ -196,6 +196,11 @@ void loop()
   modeCtx.setBlePending(true); // BLE分はpollBleCollect()/DeepSleepModeHandler::run()側で非同期に収集する
   publishBattery(modeCtx.lastResult().reading);
   queue.flush();
+  // flush()はRTCメモリのみ操作しSPIFFSには触れない。ここでも同期しておかないと、
+  // 圏内復帰でflush()がRTCキューを空にした直後にCONTINUOUSへ昇格した場合、
+  // DeepSleepModeHandler::run()のsave()が呼ばれずSPIFFS上に送信済みデータが
+  // 残り続け、次のリセットでload()が古いデータを重複送信してしまう。
+  queue.save();
   shadowPollDelta();
   oledShowSensorData(modeCtx.lastResult().reading);
 #endif

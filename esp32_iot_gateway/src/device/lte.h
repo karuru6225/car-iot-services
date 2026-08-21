@@ -53,6 +53,7 @@ public:
 
 private:
   TinyGsm _modem{SerialAT};
+  unsigned long _lastFailMs = 0;
 
   void uploadCert(const char *filename, const char *pem);
 };
