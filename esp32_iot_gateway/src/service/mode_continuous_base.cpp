@@ -47,6 +47,14 @@ void ContinuousModeHandlerBase::onTick()
 {
   OBDReading r = obdPoll();
   blePeripheral.notifyObd(r);
+
+  // CAN応答で昇格した場合、応答が途絶えたら（IGN OFF相当）DEEP_SLEEPへ戻す
+  if (_ctx.canUpgradedToContinuous() && !r.valid)
+  {
+    logger.println("[MAIN] CAN応答途絶 → DEEP_SLEEPへ切り替え");
+    _ctx.setMode(OperationMode::DEEP_SLEEP);
+    _ctx.setCanUpgradedToContinuous(false);
+  }
 }
 
 // 次の5分境界（UTC）まで待機しながらボタン監視・カウントダウン表示・BLE Notify

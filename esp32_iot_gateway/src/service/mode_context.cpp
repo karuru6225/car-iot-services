@@ -36,6 +36,14 @@ void OperationModeContext::setBleUpgradedToContinuous(bool v)
   _bleUpgradedToContinuous = v;
 }
 
+void OperationModeContext::setCanUpgradedToContinuous(bool v)
+{
+  if (v == _canUpgradedToContinuous)
+    return;
+  logger.printf("[MODE_CTX] canUpgradedToContinuous: %d -> %d\n", _canUpgradedToContinuous, v);
+  _canUpgradedToContinuous = v;
+}
+
 void OperationModeContext::setUserForcedSleep(bool v)
 {
   if (v == _userForcedSleep)
