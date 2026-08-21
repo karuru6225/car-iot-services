@@ -47,20 +47,34 @@ bool Lte::sendCmd(const char *cmd, uint32_t timeoutMs)
 
 // ─── 接続管理 ─────────────────────────────────────────────────────────────
 
+// 圏外時、mqtt.connect()等の複数箇所が同一サイクル内で立て続けにconnect()を
+// 呼ぶと60秒待ちが何重にも積み重なり、圏外の間ほぼ起きっぱなしになってしまう
+// （DeepSleepの節電効果が失われる）。直近で失敗していれば待たずに即失敗を返す。
+static const unsigned long CONNECT_RETRY_COOLDOWN_MS = 60000;
+
 bool Lte::connect()
 {
+  if (_lastFailMs != 0 && millis() - _lastFailMs < CONNECT_RETRY_COOLDOWN_MS)
+  {
+    logger.println("[LTE] 直近でネットワーク登録失敗済み → 再試行を抑制");
+    return false;
+  }
+
   logger.println("[LTE] ネットワーク登録待ち（最大60秒）...");
   if (!_modem.waitForNetwork(60000))
   {
     logger.println("[LTE] ネットワーク登録失敗");
+    _lastFailMs = millis();
     return false;
   }
   logger.printf("[LTE] Signal: %d\n", _modem.getSignalQuality());
   if (!_modem.gprsConnect(APN, APN_USER, APN_PASS))
   {
     logger.println("[LTE] GPRS 接続失敗");
+    _lastFailMs = millis();
     return false;
   }
+  _lastFailMs = 0;
   logger.printf("[LTE] IP: %s\n", _modem.localIP().toString().c_str());
   return true;
 }

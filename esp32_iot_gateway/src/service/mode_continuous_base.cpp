@@ -105,6 +105,15 @@ void ContinuousModeHandlerBase::continuousLoopCore()
       updateChargingState();
       pollBleCollect(); // measure()で開始した非同期BLEスキャンの完了をここで拾う
 
+      // beforeRun()と同じ判定だが、continuousLoopCore()は最大5分ブロックするため
+      // beforeRun()の次回呼び出し（最大5分後）を待たず1秒ティックで即座に検知する
+      if (_ctx.bleUpgradedToContinuous() && !blePeripheral.isConnected())
+      {
+        logger.println("[MAIN] BLE切断検出 → DEEP_SLEEPへ切り替え");
+        _ctx.setMode(OperationMode::DEEP_SLEEP);
+        _ctx.setBleUpgradedToContinuous(false);
+      }
+
 #ifndef DEBUG_SKIP_NETWORK
       // 継続モード中は5分待機ループに留まり続けるため、1秒ティックでもShadow deltaを確認する
       shadowPollDelta();
