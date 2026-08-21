@@ -11,7 +11,8 @@ enum GaugeStyle {
   const GaugeStyle(this.label);
 }
 
-// ObdReadingのts/valid/atfTempValidを除く全35フィールドに対応する識別子。
+// ObdReadingのts/valid/atfTempValidを除く全35フィールドに対応する識別子
+// （末尾のfuelEconomyKmLのみ、speedKmh/fuelRateLphから算出する派生値）。
 // 宣言順はobd_card.dartの表示順と完全に一致させること（ObdMetric.valuesを
 // そのままグリッド順として使うため、順序を変えると既存OBDタブの見た目が変わる）。
 enum ObdMetric {
@@ -50,6 +51,7 @@ enum ObdMetric {
   iatC,
   iat2C,
   atfTempC,
+  fuelEconomyKmL,
 }
 
 // 各ObdMetricの表示・ゲージ描画に必要なメタ情報。
@@ -249,6 +251,16 @@ final Map<ObdMetric, ObdMetricMeta> obdMetricMeta = {
     label: 'ATF油温(仮)', unit: '°C', decimals: 0,
     min: -20, max: 150,
     valueOf: (r) => r.atfTempC.toDouble(),
+  ),
+  // speedKmh/fuelRateLphからの算出値（km/h ÷ L/h = km/L）。fuelRateLphが
+  // ほぼ0（アイドル・減速時の燃料カット等）だと発散するため、停車中は0、
+  // 走行中の燃料カットはmax値に丸める。
+  ObdMetric.fuelEconomyKmL: ObdMetricMeta(
+    label: '瞬間燃費', unit: 'km/L', decimals: 1,
+    min: 0, max: 40,
+    valueOf: (r) => r.fuelRateLph > 0.05
+        ? (r.speedKmh / r.fuelRateLph).clamp(0.0, 40.0)
+        : (r.speedKmh > 0 ? 40.0 : 0.0),
   ),
 };
 
