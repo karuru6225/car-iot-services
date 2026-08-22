@@ -100,6 +100,196 @@ def test_compute_summary_handles_missing_gps_and_zero_fuel(trip_analysis):
     assert summary["catalyst_temp_max"] is None
 
 
+def test_compute_summary_adds_avg_std_for_baseline_pooling(trip_analysis):
+    rows = [
+        {"obd_ts": 100, "ltft_pct": -4.0, "stft_pct": -1.0, "boost_kpa": 10.0, "timing_deg": 20.0},
+        {"obd_ts": 110, "ltft_pct": -8.0, "stft_pct": 3.0, "boost_kpa": 30.0, "timing_deg": 24.0},
+    ]
+    summary = trip_analysis._compute_summary(rows)
+
+    assert summary["ltft_avg"] == pytest.approx(-6.0)
+    assert summary["ltft_std"] == pytest.approx(2.0)
+    assert summary["stft_avg"] == pytest.approx(1.0)
+    assert summary["stft_std"] == pytest.approx(2.0)
+    assert summary["boost_kpa_avg"] == pytest.approx(20.0)
+    assert summary["boost_kpa_std"] == pytest.approx(10.0)
+    assert summary["timing_deg_avg"] == pytest.approx(22.0)
+    assert summary["timing_deg_std"] == pytest.approx(2.0)
+
+
+def test_compute_summary_excludes_comm_dropout_rows_from_coolant_only(trip_analysis):
+    rows = [
+        {"obd_ts": 100, "coolant_c": 74.0, "ecu_voltage": 12.0, "rpm": 1500.0},
+        {"obd_ts": 110, "coolant_c": 87.0, "ecu_voltage": 14.2, "rpm": 1600.0},
+        # 通信断: coolant_c/ecu_voltage同時ゼロ（rpmは通常どおり0で本来ありうる値なので除外対象外）
+        {"obd_ts": 120, "coolant_c": 0.0, "ecu_voltage": 0.0, "rpm": 0.0},
+    ]
+    summary = trip_analysis._compute_summary(rows)
+
+    assert summary["coolant_start"] == 74.0
+    assert summary["coolant_end"] == 87.0  # 通信断行のcoolant_c=0が終端値として拾われない
+
+
+def test_is_comm_dropout_requires_both_coolant_and_voltage_zero(trip_analysis):
+    assert trip_analysis._is_comm_dropout({"coolant_c": 0.0, "ecu_voltage": 0.0}) is True
+    assert trip_analysis._is_comm_dropout({"coolant_c": 0.0, "ecu_voltage": 12.0}) is False
+    assert trip_analysis._is_comm_dropout({"coolant_c": 74.0, "ecu_voltage": 0.0}) is False
+    assert trip_analysis._is_comm_dropout({"coolant_c": None, "ecu_voltage": None}) is False
+
+
+# ---- _bucket_rows ----
+
+
+def test_bucket_rows_groups_by_bucket_sec_and_computes_fast_field_stats(trip_analysis):
+    rows = [
+        {"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "rpm": 1000.0},
+        {"obd_ts": 1010, "lat": 35.2, "lon": 139.2, "rpm": 2000.0},
+        {"obd_ts": 1030, "lat": 35.3, "lon": 139.3, "rpm": 1500.0},  # 次バケット（30秒境界）
+    ]
+    buckets = trip_analysis._bucket_rows(rows, trip_start=1000, bucket_sec=30)
+
+    assert len(buckets) == 2
+    assert buckets[0]["t_sec"] == 0
+    assert buckets[0]["lat"] == 35.1 and buckets[0]["lon"] == 139.1  # バケット内先頭行の代表座標
+    assert buckets[0]["rpm_max"] == 2000.0
+    assert buckets[0]["rpm_min"] == 1000.0
+    assert buckets[0]["rpm_mean"] == pytest.approx(1500.0)
+    assert buckets[1]["t_sec"] == 30
+    assert buckets[1]["rpm_max"] == 1500.0
+
+
+def test_bucket_rows_excludes_comm_dropout_from_slow_field_mean(trip_analysis):
+    rows = [
+        {"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "coolant_c": 80.0, "ecu_voltage": 13.0},
+        {"obd_ts": 1010, "lat": 35.1, "lon": 139.1, "coolant_c": 0.0, "ecu_voltage": 0.0},  # 通信断
+    ]
+    buckets = trip_analysis._bucket_rows(rows, trip_start=1000, bucket_sec=30)
+
+    assert buckets[0]["coolant_c_mean"] == 80.0  # 通信断行が平均から除外される
+    assert buckets[0]["ecu_voltage_mean"] == 13.0
+
+
+def test_bucket_rows_missing_field_values_become_none(trip_analysis):
+    rows = [{"obd_ts": 1000, "lat": None, "lon": None}]
+    buckets = trip_analysis._bucket_rows(rows, trip_start=1000, bucket_sec=30)
+
+    assert buckets[0]["lat"] is None
+    assert buckets[0]["rpm_max"] is None
+    assert buckets[0]["rpm_mean"] is None
+
+
+# ---- _weighted_mean_std / ベースライン ----
+
+
+def test_weighted_mean_std_matches_flat_average_when_weights_equal(trip_analysis):
+    mean, std = trip_analysis._weighted_mean_std([(10.0, 1), (20.0, 1), (30.0, 1)])
+    assert mean == pytest.approx(20.0)
+    assert std == pytest.approx((((10 - 20) ** 2 + (20 - 20) ** 2 + (30 - 20) ** 2) / 3) ** 0.5)
+
+
+def test_weighted_mean_std_weights_larger_groups_more(trip_analysis):
+    mean, _ = trip_analysis._weighted_mean_std([(10.0, 9), (20.0, 1)])
+    assert mean == pytest.approx(11.0)
+
+
+def test_weighted_mean_std_returns_none_when_no_weight(trip_analysis):
+    assert trip_analysis._weighted_mean_std([]) == (None, None)
+    assert trip_analysis._weighted_mean_std([(10.0, 0)]) == (None, None)
+
+
+def test_baseline_trips_excludes_ghost_trips_below_min_distance(trip_analysis):
+    trips = [
+        {"distance_km": 0.0, "row_count": 500},  # 幽霊トリップ
+        {"distance_km": 0.3, "row_count": 100},  # 下限未満
+        {"distance_km": 5.0, "row_count": 200},
+    ]
+    result = trip_analysis._baseline_trips(trips, min_distance_km=0.5)
+    assert result == [{"distance_km": 5.0, "row_count": 200}]
+
+
+def test_compute_trip_baseline_weights_by_row_count(trip_analysis):
+    trips = [
+        {"distance_km": 5.0, "row_count": 100, "ltft_avg": -10.0, "stft_avg": -2.0,
+         "boost_kpa_avg": 20.0, "fuel_economy_km_l": 10.0},
+        {"distance_km": 5.0, "row_count": 300, "ltft_avg": -6.0, "stft_avg": 2.0,
+         "boost_kpa_avg": 30.0, "fuel_economy_km_l": 12.0},
+    ]
+    baseline = trip_analysis._compute_trip_baseline(trips)
+
+    expected_mean, expected_std = trip_analysis._weighted_mean_std([(-10.0, 100), (-6.0, 300)])
+    assert baseline["ltft_avg"]["mean"] == pytest.approx(expected_mean)
+    assert baseline["ltft_avg"]["std"] == pytest.approx(expected_std)
+    assert baseline["ltft_avg"]["n"] == 400
+
+
+def test_compute_trip_baseline_excludes_ghost_trips(trip_analysis):
+    trips = [{"distance_km": 0.0, "row_count": 1000, "ltft_avg": -99.0}]
+    baseline = trip_analysis._compute_trip_baseline(trips)
+    assert "ltft_avg" not in baseline
+
+
+def test_compute_row_baseline_pooled_stats_match_flat_calculation_over_raw_rows(trip_analysis):
+    """複数トリップに分けてpooled variance公式で合成した結果が、全トリップの生データを
+    1つにまとめて素朴に計算した場合と一致することを検証する（重要な正しさの保証）。"""
+    group_a = [10.0, 12.0, 14.0, 16.0]
+    group_b = [30.0, 30.0, 34.0, 34.0, 40.0]
+    all_vals = group_a + group_b
+
+    def mean_std(vals):
+        m = sum(vals) / len(vals)
+        return m, (sum((v - m) ** 2 for v in vals) / len(vals)) ** 0.5
+
+    mean_a, std_a = mean_std(group_a)
+    mean_b, std_b = mean_std(group_b)
+    expected_mean, expected_std = mean_std(all_vals)
+
+    trips = [
+        {"distance_km": 5.0, "row_count": len(group_a), "ltft_avg": mean_a, "ltft_std": std_a,
+         "stft_avg": 0.0, "stft_std": 0.0, "boost_kpa_avg": 0.0, "boost_kpa_std": 0.0,
+         "timing_deg_avg": 0.0, "timing_deg_std": 0.0},
+        {"distance_km": 5.0, "row_count": len(group_b), "ltft_avg": mean_b, "ltft_std": std_b,
+         "stft_avg": 0.0, "stft_std": 0.0, "boost_kpa_avg": 0.0, "boost_kpa_std": 0.0,
+         "timing_deg_avg": 0.0, "timing_deg_std": 0.0},
+    ]
+
+    baseline = trip_analysis._compute_row_baseline(trips)
+
+    assert baseline["ltft_pct"]["mean"] == pytest.approx(expected_mean)
+    assert baseline["ltft_pct"]["std"] == pytest.approx(expected_std)
+    assert baseline["ltft_pct"]["n"] == len(all_vals)
+
+
+def test_compute_row_baseline_excludes_ghost_trips(trip_analysis):
+    trips = [{"distance_km": 0.0, "row_count": 1000, "ltft_avg": -99.0, "ltft_std": 1.0}]
+    baseline = trip_analysis._compute_row_baseline(trips)
+    assert "ltft_pct" not in baseline
+
+
+# ---- _label_for_zscore / _fuel_economy_benchmark ----
+
+
+def test_label_for_zscore_large_and_slight_high(trip_analysis):
+    assert trip_analysis._label_for_zscore("boost_kpa", 2.5) == "大きく高め"
+    assert trip_analysis._label_for_zscore("boost_kpa", 1.2) == "やや高め"
+
+
+def test_label_for_zscore_large_and_slight_low(trip_analysis):
+    assert trip_analysis._label_for_zscore("ltft_pct", -2.1) == "大きく濃いめ"
+    assert trip_analysis._label_for_zscore("ltft_pct", -1.1) == "やや濃いめ"
+
+
+def test_label_for_zscore_normal_range_and_none(trip_analysis):
+    assert trip_analysis._label_for_zscore("timing_deg", 0.5) == "通常どおり"
+    assert trip_analysis._label_for_zscore("timing_deg", None) == "通常どおり"
+
+
+def test_fuel_economy_benchmark_below_within_above_range(trip_analysis):
+    assert "下回っています" in trip_analysis._fuel_economy_benchmark(10.0)
+    assert "範囲内です" in trip_analysis._fuel_economy_benchmark(17.0)
+    assert "上回っています" in trip_analysis._fuel_economy_benchmark(25.0)
+    assert trip_analysis._fuel_economy_benchmark(None) == ""
+
+
 # ---- _partition_filters ----
 
 

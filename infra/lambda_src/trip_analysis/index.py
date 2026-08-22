@@ -344,6 +344,7 @@ def _handle_start(event: dict) -> dict:
 _SELECT_COLS = [
     "obd_ts", "lat", "lon", "fuel_rate_lph",
     "ltft_pct", "stft_pct", "catalyst_temp_c", "boost_kpa", "coolant_c",
+    "rpm", "throttle_pct", "speed_kmh", "timing_deg", "iat_c", "ecu_voltage",
 ]
 
 
@@ -505,9 +506,27 @@ def _avg(vals: list[float]):
     return sum(vals) / len(vals) if vals else None
 
 
+def _std(vals: list[float]):
+    """母集団標準偏差（分母n）。AIナレーティブ生成のベースラインpooling用。"""
+    if not vals:
+        return None
+    m = _avg(vals)
+    return (sum((v - m) ** 2 for v in vals) / len(vals)) ** 0.5
+
+
+def _is_comm_dropout(row: dict) -> bool:
+    """イグニッションOFF直前・アイドリングストップ切替瞬間に、通信断で複数センサー値が
+    同時にゼロ埋めされる実データ上のパターンを検出する（AIナレーティブ生成のPOCで確認済み）。
+    coolant_c/ecu_voltageが物理的にありえない組み合わせで同時にゼロになる行だけを対象にし、
+    他フィールドの集計には影響させない狭いスコープの判定。"""
+    return row.get("coolant_c") == 0 and row.get("ecu_voltage") == 0
+
+
 def _compute_summary(rows: list[dict]) -> dict:
     """obd_ts昇順のrowsから、距離（GPS積算）・燃料消費（台形積分）・
-    LTFT/STFT平均・触媒温度/ブースト最大値・冷却水温の始点終点を算出する。"""
+    LTFT/STFT平均・触媒温度/ブースト最大値・冷却水温の始点終点を算出する。
+    boost_kpa/ltft_pct/stft_pct/timing_degのavg/stdは、AIナレーティブ生成の
+    ベースラインpooling（_compute_row_baseline）用に追加した。"""
     rows = sorted(rows, key=lambda r: r["obd_ts"])
 
     distance_m = 0.0
@@ -524,7 +543,9 @@ def _compute_summary(rows: list[dict]) -> dict:
     stft = [r["stft_pct"] for r in rows if r.get("stft_pct") is not None]
     catalyst = [r["catalyst_temp_c"] for r in rows if r.get("catalyst_temp_c") is not None]
     boost = [r["boost_kpa"] for r in rows if r.get("boost_kpa") is not None]
-    coolant = [r["coolant_c"] for r in rows if r.get("coolant_c") is not None]
+    timing = [r["timing_deg"] for r in rows if r.get("timing_deg") is not None]
+    # 通信断でゼロ埋めされた行はcoolant_c/ecu_voltageの集計からのみ除外する
+    coolant = [r["coolant_c"] for r in rows if r.get("coolant_c") is not None and not _is_comm_dropout(r)]
 
     distance_km = distance_m / 1000.0
     duration_sec = int(rows[-1]["obd_ts"] - rows[0]["obd_ts"])
@@ -535,12 +556,175 @@ def _compute_summary(rows: list[dict]) -> dict:
         "fuel_l": fuel_l,
         "fuel_economy_km_l": (distance_km / fuel_l) if fuel_l > 0 else None,
         "ltft_avg": _avg(ltft),
+        "ltft_std": _std(ltft),
         "stft_avg": _avg(stft),
+        "stft_std": _std(stft),
         "catalyst_temp_max": max(catalyst) if catalyst else None,
         "boost_kpa_max": max(boost) if boost else None,
+        "boost_kpa_avg": _avg(boost),
+        "boost_kpa_std": _std(boost),
+        "timing_deg_avg": _avg(timing),
+        "timing_deg_std": _std(timing),
         "coolant_start": coolant[0] if coolant else None,
         "coolant_end": coolant[-1] if coolant else None,
     }
+
+
+# ─── AIナレーティブ生成 ────────────────────────────────────────────────────────
+# 30秒バケットの時系列＋車固有ベースラインからBedrockへの入力を組み立てる。
+# 設計方針の詳細はesp32_iot_gateway/CONTEXT.mdの「OBDトリップのAIナレーティブ生成」TODO参照。
+
+BUCKET_SEC = 30
+# 変動が速く、バケットごとのmax/min/meanを見た方が意味を持つ項目
+FAST_FIELDS = ["rpm", "boost_kpa", "throttle_pct", "speed_kmh", "ltft_pct", "stft_pct", "timing_deg", "iat_c"]
+# ゆっくり変化し、バケットごとの平均だけでよい項目（通信断除外フィルタの対象でもある）
+SLOW_FIELDS = ["coolant_c", "ecu_voltage"]
+
+# 値が大きい方向(high)/小さい方向(low)がそれぞれ何を意味するかの事前マッピング。
+# 「正常/異常」の概念になじむ項目だけに限定する（rpm/throttle_pct/speed_kmhはドライバー操作依存、
+# iat_cはトレンドの方が意味を持つため対象外、というPOCでの検証結果を踏襲）。
+FIELD_LABELS = {
+    "ltft_pct": {"high": "薄め", "low": "濃いめ"},
+    "stft_pct": {"high": "薄め", "low": "濃いめ"},
+    "boost_kpa": {"high": "高め", "low": "低め"},
+    "timing_deg": {"high": "進角気味", "low": "遅角気味"},
+}
+
+# _compute_row_baseline用: バケット項目名 → 保存済みトリップ集計値のavg/stdフィールド名
+_ROW_BASELINE_FIELD_MAP = {
+    "ltft_pct": ("ltft_avg", "ltft_std"),
+    "stft_pct": ("stft_avg", "stft_std"),
+    "boost_kpa": ("boost_kpa_avg", "boost_kpa_std"),
+    "timing_deg": ("timing_deg_avg", "timing_deg_std"),
+}
+
+# _compute_trip_baseline用: トリップ全体の評価に使うフィールド
+_TRIP_BASELINE_FIELDS = ["ltft_avg", "stft_avg", "boost_kpa_avg", "fuel_economy_km_l"]
+
+# ベースライン計算対象から"幽霊トリップ"（GPS未捕捉でdistance_km≈0なのにduration/fuelは
+# 正常値、というノイズ）を除外する距離下限。fuel_economy_km_l等の「距離が分母」の指標が
+# 汚染されるためPOCで確認済み。
+BASELINE_MIN_DISTANCE_KM = 0.5
+
+
+def _bucket_rows(rows: list[dict], trip_start: int, bucket_sec: int = BUCKET_SEC) -> list[dict]:
+    """obd_ts昇順のrowsをbucket_sec秒ごとに分割し、各バケットについて代表座標
+    （バケット内先頭行のlat/lon）とFAST_FIELDSのmax/min/mean、SLOW_FIELDSのmean
+    （通信断除外後）を算出する。"""
+    buckets: dict[int, list[dict]] = {}
+    for row in rows:
+        idx = int((row["obd_ts"] - trip_start) // bucket_sec)
+        buckets.setdefault(idx, []).append(row)
+
+    result = []
+    for idx in sorted(buckets):
+        bucket_rows = buckets[idx]
+        clean_rows = [r for r in bucket_rows if not _is_comm_dropout(r)]
+        entry = {
+            "t_sec": idx * bucket_sec,
+            "lat": bucket_rows[0].get("lat"),
+            "lon": bucket_rows[0].get("lon"),
+        }
+        for field in FAST_FIELDS:
+            vals = [r[field] for r in bucket_rows if r.get(field) is not None]
+            entry[f"{field}_max"] = max(vals) if vals else None
+            entry[f"{field}_min"] = min(vals) if vals else None
+            entry[f"{field}_mean"] = _avg(vals)
+        for field in SLOW_FIELDS:
+            vals = [r[field] for r in clean_rows if r.get(field) is not None]
+            entry[f"{field}_mean"] = _avg(vals)
+        result.append(entry)
+    return result
+
+
+def _weighted_mean_std(pairs: list[tuple[float, int]]) -> tuple[float, float] | tuple[None, None]:
+    """(value, weight)のリストから重みつき平均・標準偏差を返す。
+    weightにはrow_count（トリップの行数）や過去トリップの行数合計を渡す想定。"""
+    total_w = sum(w for _, w in pairs if w > 0)
+    if total_w == 0:
+        return None, None
+    mean = sum(v * w for v, w in pairs if w > 0) / total_w
+    variance = sum(w * (v - mean) ** 2 for v, w in pairs if w > 0) / total_w
+    return mean, variance ** 0.5
+
+
+def _baseline_trips(past_trips: list[dict], min_distance_km: float = BASELINE_MIN_DISTANCE_KM) -> list[dict]:
+    """ベースライン計算対象のトリップだけに絞る（"幽霊トリップ"除外）。"""
+    return [t for t in past_trips if (t.get("distance_km") or 0.0) > min_distance_km]
+
+
+def _compute_trip_baseline(past_trips: list[dict], min_distance_km: float = BASELINE_MIN_DISTANCE_KM) -> dict:
+    """過去トリップの集計値（トリップ単位のスカラー）から、row_count重みつき平均・標準偏差を
+    計算する。「今回のトリップ全体が普段と違うか」の評価に使う。"""
+    candidates = _baseline_trips(past_trips, min_distance_km)
+    result = {}
+    for field in _TRIP_BASELINE_FIELDS:
+        pairs = [(t[field], t["row_count"]) for t in candidates if t.get(field) is not None and t.get("row_count")]
+        mean, std = _weighted_mean_std(pairs)
+        if mean is not None:
+            result[field] = {"mean": mean, "std": std, "n": sum(w for _, w in pairs)}
+    return result
+
+
+def _compute_row_baseline(past_trips: list[dict], min_distance_km: float = BASELINE_MIN_DISTANCE_KM) -> dict:
+    """過去トリップに保存済みの行単位avg/std/row_countを、pooled varianceの合成公式で
+    合成し、「全トリップの行データを1つにまとめて計算した場合」と同一の行単位mean/std/nを
+    過去の生データを取り直さずに復元する。「トリップ内のこの瞬間が普段と違うか」
+    （バケットのz-scoreラベル付け）に使う。
+
+    pooled_mean = Σ(n_i * mean_i) / Σn_i
+    pooled_var  = Σ(n_i * (std_i^2 + (mean_i - pooled_mean)^2)) / Σn_i
+    """
+    candidates = _baseline_trips(past_trips, min_distance_km)
+    result = {}
+    for field, (avg_key, std_key) in _ROW_BASELINE_FIELD_MAP.items():
+        groups = [
+            (t[avg_key], t[std_key], t["row_count"])
+            for t in candidates
+            if t.get(avg_key) is not None and t.get(std_key) is not None and t.get("row_count")
+        ]
+        total_n = sum(n for _, _, n in groups)
+        if total_n == 0:
+            continue
+        pooled_mean = sum(n * mean for mean, _, n in groups) / total_n
+        pooled_var = sum(n * (std**2 + (mean - pooled_mean) ** 2) for mean, std, n in groups) / total_n
+        result[field] = {"mean": pooled_mean, "std": pooled_var ** 0.5, "n": total_n}
+    return result
+
+
+def _label_for_zscore(field: str, z: float | None) -> str:
+    """z-scoreを、FIELD_LABELSのhigh/low表現＋帯（大きく/やや/通常どおり）を組み合わせた
+    完成済みの自然言語ラベルに変換する。AIには生の数値・統計用語を渡さず、このラベルだけを渡す。"""
+    labels = FIELD_LABELS[field]
+    if z is None:
+        return "通常どおり"
+    if z >= 2:
+        return f"大きく{labels['high']}"
+    if z >= 1:
+        return f"やや{labels['high']}"
+    if z <= -2:
+        return f"大きく{labels['low']}"
+    if z <= -1:
+        return f"やや{labels['low']}"
+    return "通常どおり"
+
+
+# 軽自動車・ターボ車の一般的な実燃費目安（車種依存のため参考程度、断定はしない）
+_GENERAL_FUEL_ECONOMY_RANGE_KM_L = (15.0, 20.0)
+
+
+def _fuel_economy_benchmark(fuel_economy_km_l: float | None) -> str:
+    """車固有ベースラインとは別に、一般的な軽ターボ車の実燃費目安との比較も機械的に
+    判定する。車固有だけだと「そもそも一般的にどうか」という素朴な感覚が抜け落ちるため
+    （POCで確認済み）。数値の大小判定はAIに委ねずここで済ませる。"""
+    if fuel_economy_km_l is None:
+        return ""
+    low, high = _GENERAL_FUEL_ECONOMY_RANGE_KM_L
+    if fuel_economy_km_l < low:
+        return f"一般的な軽ターボ車の目安（{low:.0f}〜{high:.0f}km/L程度）を下回っています"
+    if fuel_economy_km_l > high:
+        return f"一般的な軽ターボ車の目安（{low:.0f}〜{high:.0f}km/L程度）を上回っています"
+    return f"一般的な軽ターボ車の目安（{low:.0f}〜{high:.0f}km/L程度）の範囲内です"
 
 
 def _is_admin(event: dict) -> bool:
