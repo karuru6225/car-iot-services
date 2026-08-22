@@ -2,6 +2,20 @@
 
 `CONTEXT.md` の「作業中・引き継ぎ事項」セクションから、実装済み/対応済みになったTODO、および対応しない方針に決めたTODOをここに移した。現在進行中のTODOは `CONTEXT.md` を参照。
 
+### ~~TODO: OBDトリップのAIナレーティブ生成~~ **実装済み**
+
+`experiments/trip-analysis-ai-poc/`（gitignore対象）でのプロンプト設計検証（DESIGN_LOG.md）に基づき、`infra/lambda_src/trip_analysis/index.py`の`_process_job()`にBedrock連携を実装した。
+
+- `_bucket_rows()`/`_bucket_csv()`: 30秒バケットの時系列（`FAST_FIELDS`のmax/min/mean、`SLOW_FIELDS`のmean）
+- `_compute_trip_baseline()`/`_compute_row_baseline()`: 過去トリップの`row_count`重みつき統計。行単位のz-score母集団は、POCのように過去の生データを毎回読み直すのではなく、`_compute_summary()`に追加保存した各トリップのavg/std/row_countをpooled variance公式で合成して復元する設計に変更（Athenaへの追加クエリを避けるため）
+- `_label_for_zscore()`/`FIELD_LABELS`: z-scoreを自然言語ラベル（「やや薄め」等）に変換
+- `_reverse_geocode()`/`_describe_location()`: AWS Location Service（Here、Terraformでリソース化）で逆ジオコーディング。自宅は`HOME_LAT`/`HOME_LON`（`terraform.tfvars`のsensitive変数）+半径判定で匿名化
+- `_is_comm_dropout()`: 通信断（coolant_c/ecu_voltage同時ゼロ）の集計除外
+- `_build_narrative_prompt()`/`_invoke_bedrock()`: POCで確定した最終プロンプト構成（①サマリー②数値指摘③平易な説明④提案）でBedrock Nova Pro（`apac.amazon.nova-pro-v1:0`、converse API）を呼び出す
+- Lambdaランタイム同梱のbotocoreがconverse APIに対応していない場合があるため、固定バージョンのboto3/botocoreをLambda Layerとしてバンドル（`infra/lambda_src/trip_analysis/layer/`、pip installは手動一回限りの手順）
+- `_generate_narrative()`は失敗時に空文字へフォールバックし、ナレーティブ生成の失敗がトリップ集計自体の保存を妨げないようにした
+- 残課題として認識した上で対応しなかった点: 一般論的な注意喚起（「点検がおすすめです」等）を完全にゼロにする指示は、POC検証で複数回試しても効果が不完全だった。「④提案」への隔離で実害は抑えられているため、追加対応はせず許容する方針とした
+
 ### ~~TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）~~ **設計変更により対応済み**
 
 Shadow はテレメトリではなく設定値（ah_offset / fw_version）を管理するよう刷新。

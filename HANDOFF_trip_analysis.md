@@ -9,10 +9,10 @@
 
 **実装済み・`main`にマージ済み・実運用中**（PR #35、他に燃料列/期間フィルタ追加のPRあり）。
 
-- バックエンド: `infra/lambda_src/trip_analysis/index.py`（Lambda 1本、テスト63件）
+- バックエンド: `infra/lambda_src/trip_analysis/index.py`（Lambda 1本、テスト99件）
 - インフラ: `infra/trip_analysis.tf`（Lambda・API Gateway・IAM）
 - Web管理画面: `web/trip-analysis.html`
-- **未実装**: トリップJSONの`narrative`フィールド（AIによる自然言語ナレーティブ生成）は常に空文字。この部分だけ大規模なプロトタイプ検証を実施済みで、設計方針は固まっているが本実装はこれから。詳細は`esp32_iot_gateway/CONTEXT.md`の「OBDトリップのAIナレーティブ生成」TODO、および実行可能な試作コード一式は`experiments/trip-analysis-ai-poc/`（gitignore対象）を参照。
+- **AIナレーティブ生成（`narrative`フィールド）も実装済み**。`_process_job()`からBedrock（Nova Pro、converse API）を呼び出し、位置情報（AWS Location Service・Here）・車固有ベースライン・z-scoreラベルを組み込んだレポートを生成する。詳細は`esp32_iot_gateway/CONTEXT_ARCHIVE.md`の該当TODOアーカイブ、実行可能な試作コード一式（本実装の元ネタ）は`experiments/trip-analysis-ai-poc/`（gitignore対象）を参照。
 
 ---
 
@@ -145,7 +145,7 @@ trip-analysis-jobs/{device_id}/{started_at:010d}_{job_id}.json
 
 ## 5. テスト（`infra/lambda_src/trip_analysis/tests/`）
 
-t-wada式TDD（Red→Green→Refactor）で全関数を実装、**63テスト**（moto + pytest + Docker）。
+t-wada式TDD（Red→Green→Refactor）で全関数を実装、**99テスト**（moto + pytest + Docker）。
 
 ```bash
 cd infra/lambda_src
@@ -162,20 +162,22 @@ docker compose -f docker-compose.test.yml run --build --rm test pytest trip_anal
 
 トリップ終端付近（エンジン停止・イグニッションOFF直前）やアイドリングストップ切替瞬間に、
 `coolant_c`/`ecu_voltage`が同時にゼロになる、あるいは`absolute_load_pct`が桁外れの異常値
-（5000%超）になる通信断パターンが実データで確認されている。**`_compute_summary()`は
-現状これらの異常値をバリデーションせずそのまま集計に使っている**（実害は今のところ
-軽微だが、将来対応する場合は`esp32_iot_gateway/CONTEXT.md`の該当TODO参照）。
-モバイルアプリ側の同種の問題（グラフ表示）はPR #36で対策済み。
+（5000%超）になる通信断パターンが実データで確認されている。**`coolant_c`/`ecu_voltage`の
+同時ゼロは`_is_comm_dropout()`で検出し`_compute_summary()`/`_bucket_rows()`の集計から
+除外済み**（この2フィールドのみの狭いスコープ、他フィールドの集計には影響させない）。
+`absolute_load_pct`の桁外れ値は別問題で、モバイルアプリ側のグラフ表示はPR #36で対策済みだが、
+`trip_analysis`側の集計（`_compute_summary()`は現状`absolute_load_pct`自体を扱っていない）は
+未対応のまま。
 
-### 6.2 AIナレーティブ生成を実装する場合
+### 6.2 AIナレーティブ生成 **実装済み**
 
-`_process_job()`に、Bedrock呼び出しを追加してトリップJSONの`narrative`を埋める形になる。
-確立している設計方針（数値異常判定はコード側でz-score計算→ラベル化してから渡す、
-位置情報はAWS Location Service経由、提案は独立枠に隔離、等）は
-`esp32_iot_gateway/CONTEXT.md`の該当TODO冒頭「引き継ぎサマリー」に要約がある。
-実行可能な試作コード一式（バケット化・ラベル化・プロンプト生成・Bedrock呼び出し）は
-`experiments/trip-analysis-ai-poc/`（**gitignore対象**、`README.md`に手順あり）を
-出発点にできる。
+`_process_job()`にBedrock呼び出しを組み込み済み（`_generate_narrative()`）。POCの設計方針は
+ほぼそのまま踏襲したが、**1点だけ意図的に変更した**: POCの`compute_baseline.py`等は
+バケット時系列のz-score母集団を過去トリップの生OBD行データを毎回読み直して計算していたが、
+本実装ではAthenaへの追加クエリを避けるため、`_compute_summary()`に保存した各トリップの
+avg/std/row_countを`_compute_row_baseline()`でpooled variance公式により合成する方式にした
+（過去の生データを取り直さずに数学的に同一の母集団統計を復元する）。
+実装の詳細は`esp32_iot_gateway/CONTEXT_ARCHIVE.md`の該当TODOアーカイブを参照。
 
 ### 6.3 OBDのdevice_id名前空間について
 
