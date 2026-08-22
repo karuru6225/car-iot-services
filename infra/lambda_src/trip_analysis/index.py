@@ -39,11 +39,20 @@ import boto3
 athena = boto3.client("athena")
 s3 = boto3.client("s3")
 lambda_client = boto3.client("lambda")
+location_client = boto3.client("location")
+bedrock_client = boto3.client("bedrock-runtime")
 
 S3_BUCKET = os.environ["S3_BUCKET"]
 ATHENA_DATABASE = os.environ["ATHENA_DATABASE"]
 ATHENA_WORKGROUP = os.environ["ATHENA_WORKGROUP"]
 SELF_FUNCTION_NAME = os.environ["SELF_FUNCTION_NAME"]
+
+# AIナレーティブ生成用（位置情報・Bedrock）
+HOME_LAT = float(os.environ["HOME_LAT"])
+HOME_LON = float(os.environ["HOME_LON"])
+HOME_RADIUS_M = float(os.environ.get("HOME_RADIUS_M", "50"))
+PLACE_INDEX_NAME = os.environ["PLACE_INDEX_NAME"]
+BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 
 ATHENA_POLL_INTERVAL_SEC = 2.0
 ATHENA_POLL_TIMEOUT_SEC = 240
@@ -107,7 +116,7 @@ def _partition_filters(start_ts: int, end_ts: int) -> list[str]:
 _TRIP_KEY_SEQ_RE = re.compile(r"_v\d+_(\d+)\.json$")
 
 
-def _save_trip(device_id: str, start_ts: int, end_ts: int, summary: dict, row_count: int) -> None:
+def _save_trip(device_id: str, start_ts: int, end_ts: int, summary: dict, row_count: int, narrative: str = "") -> None:
     """トリップ集計結果をS3へ保存する。session_end(UTC)基準でyear/monthパーティション化し、
     同一区間・同一ANALYSIS_VERSIONの既存ファイル数から次のseqを採番する
     （将来の「分析再実行」機能で同じ区間を再計算しても上書きせず新バージョンとして残せるようにする布石）。"""
@@ -131,7 +140,7 @@ def _save_trip(device_id: str, start_ts: int, end_ts: int, summary: dict, row_co
         "session_start": start_ts,
         "session_end": end_ts,
         "row_count": row_count,
-        "narrative": "",  # Bedrockナラティブ生成は将来実装
+        "narrative": narrative,
         "created_at": int(time.time()),
     }
     for k, v in summary.items():
@@ -377,7 +386,8 @@ def _process_job(job_id: str, device_id: str, start_ts: int, end_ts: int, starte
             if trip_end - trip_start < MIN_TRIP_DURATION_SEC:
                 continue  # ノイズとして破棄
             summary = _compute_summary(trip_rows)
-            _save_trip(device_id, int(trip_start), int(trip_end), summary, row_count=len(trip_rows))
+            narrative = _generate_narrative(device_id, int(trip_start), int(trip_end), trip_rows, summary)
+            _save_trip(device_id, int(trip_start), int(trip_end), summary, row_count=len(trip_rows), narrative=narrative)
             trips_saved += 1
 
         status = {
@@ -725,6 +735,251 @@ def _fuel_economy_benchmark(fuel_economy_km_l: float | None) -> str:
     if fuel_economy_km_l > high:
         return f"一般的な軽ターボ車の目安（{low:.0f}〜{high:.0f}km/L程度）を上回っています"
     return f"一般的な軽ターボ車の目安（{low:.0f}〜{high:.0f}km/L程度）の範囲内です"
+
+
+def _reverse_geocode(lat: float | None, lon: float | None) -> dict | None:
+    """緯度経度をAWS Location Service（Here）で逆ジオコーディングし、地名文字列に変換する。
+    LLMに生の緯度経度を渡すとハルシネーション（特に住宅地で誤った地名を自信満々に返す）の
+    リスクが高いため、実データとして得た文字列だけを渡す方針（POCで検証済み）。
+    自宅座標から半径HOME_RADIUS_M以内は逆ジオコーディングを呼ばず「自宅」と匿名化する。"""
+    if lat is None or lon is None:
+        return None
+    if _haversine_m(lat, lon, HOME_LAT, HOME_LON) <= HOME_RADIUS_M:
+        return {"kind": "home"}
+
+    resp = location_client.search_place_index_for_position(
+        IndexName=PLACE_INDEX_NAME, Position=[lon, lat], MaxResults=5, Language="ja"
+    )
+    results = resp.get("Results", [])
+    if not results:
+        return {"kind": "unknown"}
+
+    place = results[0]["Place"]
+    coarse = f"{place.get('Region', '')}{place.get('Municipality', '')}"
+    nearby_poi = [
+        r["Place"]["Label"].split(" ", 1)[-1]
+        for r in results
+        if "PointOfInterestType" in r["Place"].get("Categories", [])
+    ][:3]
+    return {"kind": "address", "coarse": coarse, "nearby_poi": nearby_poi}
+
+
+def _describe_location(lat: float | None, lon: float | None) -> str:
+    """プロンプトにそのまま埋め込める1行の地点説明文にする。"""
+    geo = _reverse_geocode(lat, lon)
+    if geo is None:
+        return "位置情報が記録されていません"
+    if geo["kind"] == "home":
+        return "自宅"
+    if geo["kind"] == "address":
+        return f"{geo['coarse']}付近" if geo["coarse"] else "不明な地点付近"
+    return "不明な地点"
+
+
+def _clean_field_endpoints(rows: list[dict], field: str) -> tuple[float | None, float | None]:
+    """obd_ts昇順のrowsから、通信断（_is_comm_dropout）を除外したfieldの始点・終点値を返す。
+    _compute_summary()に保存しないフィールド（ecu_voltage等）の始点終点をナレーティブ生成時に
+    その場で算出するために使う。"""
+    rows = sorted(rows, key=lambda r: r["obd_ts"])
+    vals = [r[field] for r in rows if r.get(field) is not None and not _is_comm_dropout(r)]
+    return (vals[0], vals[-1]) if vals else (None, None)
+
+
+def _fmt(v: float | None, precision: int = 1) -> str:
+    return "" if v is None else f"{v:.{precision}f}"
+
+
+# CSVの数値項目のうち、判定済みラベルを併記する項目（FIELD_LABELSと同じ4項目）
+_LABELED_CSV_FIELDS = list(FIELD_LABELS)
+# ラベルなし・生の統計値だけを参考情報として渡す項目
+_UNLABELED_CSV_FIELDS = ["rpm", "throttle_pct", "speed_kmh", "iat_c"]
+
+
+def _bucket_csv(buckets: list[dict], row_baseline: dict) -> str:
+    """_bucket_rows()の出力を、行単位ベースラインに対するz-scoreラベルを付けたCSV文字列にする。
+    ラベル付き項目は{field}_mean/{field}_level、ラベルなし項目は{field}_max/min/meanの列を持つ。"""
+    header = ["lat", "lon"]
+    for field in _LABELED_CSV_FIELDS:
+        header += [f"{field}_mean", f"{field}_level"]
+    for field in _UNLABELED_CSV_FIELDS:
+        header += [f"{field}_max", f"{field}_min", f"{field}_mean"]
+    lines = [",".join(header)]
+
+    for b in buckets:
+        row = [_fmt(b["lat"], 7), _fmt(b["lon"], 7)]
+        for field in _LABELED_CSV_FIELDS:
+            mean = b.get(f"{field}_mean")
+            baseline = row_baseline.get(field)
+            z = None
+            if mean is not None and baseline and baseline["std"]:
+                z = (mean - baseline["mean"]) / baseline["std"]
+            row += [_fmt(mean), _label_for_zscore(field, z)]
+        for field in _UNLABELED_CSV_FIELDS:
+            row += [_fmt(b.get(f"{field}_max")), _fmt(b.get(f"{field}_min")), _fmt(b.get(f"{field}_mean"))]
+        lines.append(",".join(row))
+    return "\n".join(lines)
+
+
+def _fuel_economy_car_comparison(fuel_economy_km_l: float | None, trip_baseline: dict) -> str:
+    """車固有ベースライン（_compute_trip_baseline）と比較した評価文。一般的な目安との比較
+    （_fuel_economy_benchmark）だけだと「この車としてはどうか」が抜け落ちるため両方渡す。"""
+    fb = trip_baseline.get("fuel_economy_km_l")
+    if fuel_economy_km_l is None or not fb or not fb.get("std"):
+        return "この車の実績と比較できるデータがまだ十分ではありません"
+    z = (fuel_economy_km_l - fb["mean"]) / fb["std"]
+    if z >= 1:
+        return "この車の実績としては良め"
+    if z <= -1:
+        return "この車の実績としてはやや低め"
+    return "この車の実績としては普段どおり"
+
+
+_FIELD_LABEL_MEANINGS = """  - `ltft_pct`/`stft_pct`が「薄め」: 燃料噴射を減らす方向に補正されている状態。軽負荷の巡航等では
+    自然に起こりうるが、大きく・継続的に薄い場合は吸気系のわずかな空気の漏れ込み等が背景にある
+    こともある一般的な傾向
+  - `boost_kpa`が「高め」: ターボの過給圧が普段より高い状態。加速や上り坂等、エンジンに大きな
+    出力を求めた場面で自然に高くなる
+  - `timing_deg`が「遅角気味」: 点火時期が普段より遅らせてある状態。エンジンが自己判断でノッキング
+    (異常燃焼)を避けるために点火を遅らせている場合に起こりうる一般的な傾向
+  - `timing_deg`が「進角気味」: 点火時期が普段より早めてある状態。効率よく燃焼できている時に
+    起こりやすい
+  - 度合い: 「通常どおり」＝いつもと変わらない、「やや◯◯」＝いつもよりわずかに◯◯の傾向、
+    「大きく◯◯」＝いつもよりはっきり◯◯の傾向（この場合のみ「注意すべき数値」として触れる）"""
+
+
+def _build_narrative_prompt(
+    summary: dict,
+    start_desc: str,
+    end_desc: str,
+    slow_endpoints: dict,
+    trip_baseline: dict,
+    csv_text: str,
+) -> list[dict]:
+    """experiments/trip-analysis-ai-poc/build_prompt_latest_trip.py（POCで確定した最終形）を
+    そのまま実装したBedrock Converse API用messagesを組み立てる。渡す数値はすべて機械的に
+    算出済みの事実のみで、Claude（検証時）の解釈を混入させない。"""
+    coolant_start, coolant_end = slow_endpoints["coolant_c"]
+    ecu_start, ecu_end = slow_endpoints["ecu_voltage"]
+    fuel_economy = summary.get("fuel_economy_km_l")
+    vs_car = _fuel_economy_car_comparison(fuel_economy, trip_baseline)
+    vs_general = _fuel_economy_benchmark(fuel_economy)
+
+    fuel_line = (
+        f"燃費: {fuel_economy:.2f} km/L\n"
+        f"  - この車の実績と比較した評価（判定済み、再解釈しないこと）: {vs_car}\n"
+        f"  - 一般的な目安と比較した評価（判定済み、再解釈しないこと）: {vs_general}"
+        if fuel_economy is not None
+        else "燃費: 走行距離または燃料消費が記録されておらず算出できません"
+    )
+
+    prompt = f"""以下はホンダN-VAN(ターボ車)の1トリップ分のOBD-IIデータです。この車の過去の実績データ
+(車固有のベースライン)も一緒に渡すので、単なる一般論ではなくこの車自身の傾向と比較した分析を
+してください。①一言サマリー（開始地点・終了地点も含める） ②注意すべき数値の指摘 ③車に詳しくない
+人にもわかる平易な説明 ④提案 の4点を含む日本語レポート(300〜350字程度)でお願いします。
+
+**④提案について（重要）**: 提案・アドバイス・「〜がおすすめです」「〜が必要かもしれません」の
+ような文言は**④にのみ**書いてください。①②③の本文中には一切書かないでください。④に書く提案は、
+②で「大きく」判定の項目に触れた場合のみ、具体的な次のアクションを1文程度で書いてください。
+②で「大きく」判定が無かった場合、④は「特にありません」としてください。
+
+**①一言サマリーについて**: 燃費・消費燃料は数値を明記し、下記の評価も一言添えてください。
+それ以外（冷却水温・ECU電圧等）は数値を列挙せず、アバウトな一言に留めてください。
+
+## トリップ全体の集計値
+- 走行距離: {summary["distance_km"]:.2f} km / 推定消費燃料: {summary["fuel_l"]:.2f} L / {fuel_line}
+- 開始地点: {start_desc}
+- 終了地点: {end_desc}
+- 冷却水温: 開始{_fmt(coolant_start)}°C → 終了{_fmt(coolant_end)}°C
+- ECU電圧: 開始{_fmt(ecu_start, 2)}V → 終了{_fmt(ecu_end, 2)}V
+  （参考: エンジン始動直後は12V前後、始動後は14V前後に上がるのが正常。この変化自体は異常ではない）
+
+## {BUCKET_SEC}秒バケットごとの時系列データ（CSV、各行は該当バケットの代表座標`lat`/`lon`から始まります）
+
+**重要（時刻ではなく座標で言及すること）**: このCSVには秒数の列がありません。特定の瞬間・区間に
+ついて触れる際は、「◯◯秒付近では」のような秒数表現は使わず、**該当する行の`lat`/`lon`を使って
+`{{lat:35.7931576,lon:139.5804419}}`のような形式でその瞬間を示してください**（本文中にそのまま
+埋め込んでよい）。この座標マーカーは後で地図上の位置に機械的に変換されるための出力なので、
+値は該当行の`lat`/`lon`列の数値をそのまま使い、四捨五入や丸めをしないでください。**lat/lonが
+空欄の行では座標マーカーを使わず、「GPS未捕捉の時間帯」のように表現してください。**
+
+**重要**: `ltft_pct`/`stft_pct`/`boost_kpa`/`timing_deg`には、この車の過去の実績と比較した
+判定済みのラベル（`_level`列）が付いています。数値そのものを再解釈したり独自に「異常」「正常」を
+判断し直したりしないでください（それは既に判定済みです）。**ただし、ラベルを単なるタグとして
+文中に繰り返すだけでなく、そのラベルが物理的・機械的に何を意味するかを踏まえて分析・説明に
+組み込んでください**（例えば「やや薄め」であれば燃料が薄い方向に補正されている状態が一般的に
+どういう状況で起きやすいか、といった意味を汲んだ説明）。**ただし「この車の場合は具体的に◯◯が
+原因」のようにこの車固有の根本原因を断定するのは避け、一般的に起こりうる背景の説明に留めてください**
+（DTC等の診断情報は渡していないため、断定できる根拠がない）。
+
+**重要**: ラベルの意味の説明は、以下で与えた説明の範囲に留めてください。そこから独自に一般知識に
+基づく注意喚起を付け加えないでください。レポートは今回のデータから実際に読み取れた事実の報告を
+優先し、そこから発展した一般論的な警告・懸念表明は最小限にしてください。
+
+ラベルの意味（この物理的な意味を踏まえて説明すること）:
+{_FIELD_LABEL_MEANINGS}
+**説明文では、統計用語（偏差値・標準偏差・z-score等）は一切使わず、自然な日本語だけで表現してください。**
+
+**最重要**: ②「注意すべき数値の指摘」は、CSV中に実際に「やや◯◯」または「大きく◯◯」という
+判定ラベルが1つ以上存在する場合のみ書いてください。全てのバケット・全ての項目が「通常どおり」
+だった場合は、無理に何かを指摘しようとせず、②には「今回のデータでは特筆すべき数値の逸脱は
+ありませんでした」と正直に書いてください。存在しないラベルを作り出したり、ある区間の座標と
+別の区間・別の項目のラベルを組み合わせて言及したりしないでください。座標マーカーを使う場合は、
+必ずその座標と同じ行にあるラベル・数値だけを紐づけてください。
+
+- `ltft_pct_mean`/`ltft_pct_level`: 長期燃料補正(%)の区間平均と判定ラベル
+- `stft_pct_mean`/`stft_pct_level`: 短期燃料補正(%)の区間平均と判定ラベル
+- `boost_kpa_mean`/`boost_kpa_level`: ブースト圧(kPa、負値は負圧)の区間平均と判定ラベル
+- `timing_deg_mean`/`timing_deg_level`: 点火時期(°BTDC)の区間平均と判定ラベル
+- `rpm`/`throttle_pct`/`speed_kmh`/`iat_c`: 判定ラベルなし、各項目に_max/_min/_meanの3列のみ（参考情報）
+
+```csv
+{csv_text}
+```"""
+
+    return [{"role": "user", "content": [{"text": prompt}]}]
+
+
+def _invoke_bedrock(messages: list[dict]) -> str:
+    resp = bedrock_client.converse(modelId=BEDROCK_MODEL_ID, messages=messages)
+    return resp["output"]["message"]["content"][0]["text"]
+
+
+# AIが「lat/lonが空欄なら座標マーカーを使わない」という指示に従わず、値が空のマーカーを
+# 出力することがPOCで確認されている（プロンプト指示だけでは防ぎきれない残課題）ための後段ガード
+_EMPTY_COORD_MARKER_RE = re.compile(r"\{lat:\s*,\s*lon:\s*\}")
+
+
+def _strip_empty_coord_markers(text: str) -> str:
+    return _EMPTY_COORD_MARKER_RE.sub("", text)
+
+
+def _generate_narrative(device_id: str, trip_start: int, trip_end: int, rows: list[dict], summary: dict) -> str:
+    """バケット化・ベースライン計算・位置情報取得・Bedrock呼び出しを結線する。ナレーティブは
+    補助的機能のため、途中で何が失敗しても例外を握りつぶし空文字を返す
+    （トリップ集計自体の保存を失敗させてはならないため）。"""
+    try:
+        past_trips = _load_trips(device_id)
+        trip_baseline = _compute_trip_baseline(past_trips)
+        row_baseline = _compute_row_baseline(past_trips)
+
+        buckets = _bucket_rows(rows, trip_start)
+        csv_text = _bucket_csv(buckets, row_baseline)
+
+        sorted_rows = sorted(rows, key=lambda r: r["obd_ts"])
+        start_desc = _describe_location(sorted_rows[0].get("lat"), sorted_rows[0].get("lon"))
+        end_desc = _describe_location(sorted_rows[-1].get("lat"), sorted_rows[-1].get("lon"))
+
+        slow_endpoints = {
+            "coolant_c": (summary.get("coolant_start"), summary.get("coolant_end")),
+            "ecu_voltage": _clean_field_endpoints(rows, "ecu_voltage"),
+        }
+
+        messages = _build_narrative_prompt(summary, start_desc, end_desc, slow_endpoints, trip_baseline, csv_text)
+        text = _invoke_bedrock(messages)
+        return _strip_empty_coord_markers(text)
+    except Exception as e:
+        print(f"[trip_analysis] narrative generation failed (device_id={device_id}, trip_start={trip_start}): {e}")
+        return ""
 
 
 def _is_admin(event: dict) -> bool:

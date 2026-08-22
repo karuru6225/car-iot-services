@@ -290,6 +290,230 @@ def test_fuel_economy_benchmark_below_within_above_range(trip_analysis):
     assert trip_analysis._fuel_economy_benchmark(None) == ""
 
 
+# ---- _reverse_geocode / _describe_location ----
+
+
+def test_reverse_geocode_returns_home_within_radius(trip_analysis):
+    # conftest.pyでHOME_LAT=35.0/HOME_LON=139.0/HOME_RADIUS_M=50
+    geo = trip_analysis._reverse_geocode(35.0001, 139.0)  # 約11m
+    assert geo == {"kind": "home"}
+
+
+def test_reverse_geocode_calls_location_service_outside_home_radius(trip_analysis, monkeypatch):
+    captured = {}
+
+    def _fake_search(**kwargs):
+        captured.update(kwargs)
+        return {
+            "Results": [
+                {"Place": {"Region": "東京都", "Municipality": "練馬区", "Label": "日本 コンビニA", "Categories": ["PointOfInterestType"]}},
+                {"Place": {"Region": "東京都", "Municipality": "練馬区", "Label": "日本 練馬区", "Categories": []}},
+            ]
+        }
+
+    monkeypatch.setattr(trip_analysis.location_client, "search_place_index_for_position", _fake_search)
+    geo = trip_analysis._reverse_geocode(35.5, 139.5)  # 自宅から十分離れている
+
+    assert geo["kind"] == "address"
+    assert geo["coarse"] == "東京都練馬区"
+    assert geo["nearby_poi"] == ["コンビニA"]
+    assert captured["IndexName"] == "test-place-index"
+    assert captured["Position"] == [139.5, 35.5]
+
+
+def test_reverse_geocode_returns_none_for_missing_coords(trip_analysis):
+    assert trip_analysis._reverse_geocode(None, None) is None
+
+
+def test_reverse_geocode_returns_unknown_when_no_results(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis.location_client, "search_place_index_for_position", lambda **kw: {"Results": []})
+    geo = trip_analysis._reverse_geocode(35.5, 139.5)
+    assert geo == {"kind": "unknown"}
+
+
+def test_describe_location_formats_each_kind(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis, "_reverse_geocode", lambda lat, lon: {"kind": "home"})
+    assert trip_analysis._describe_location(35.0, 139.0) == "自宅"
+
+    monkeypatch.setattr(trip_analysis, "_reverse_geocode", lambda lat, lon: {"kind": "address", "coarse": "東京都練馬区", "nearby_poi": []})
+    assert trip_analysis._describe_location(35.5, 139.5) == "東京都練馬区付近"
+
+    monkeypatch.setattr(trip_analysis, "_reverse_geocode", lambda lat, lon: None)
+    assert trip_analysis._describe_location(None, None) == "位置情報が記録されていません"
+
+
+# ---- _clean_field_endpoints ----
+
+
+def test_clean_field_endpoints_excludes_comm_dropout(trip_analysis):
+    rows = [
+        {"obd_ts": 100, "coolant_c": 74.0, "ecu_voltage": 12.0},
+        {"obd_ts": 110, "coolant_c": 87.0, "ecu_voltage": 14.2},
+        {"obd_ts": 120, "coolant_c": 0.0, "ecu_voltage": 0.0},  # 通信断
+    ]
+    start, end = trip_analysis._clean_field_endpoints(rows, "ecu_voltage")
+    assert start == 12.0
+    assert end == 14.2
+
+
+def test_clean_field_endpoints_returns_none_when_all_missing(trip_analysis):
+    rows = [{"obd_ts": 100, "ecu_voltage": None}]
+    assert trip_analysis._clean_field_endpoints(rows, "ecu_voltage") == (None, None)
+
+
+# ---- _bucket_csv ----
+
+
+def test_bucket_csv_includes_header_and_labels_deviating_bucket(trip_analysis):
+    buckets = [
+        {"t_sec": 0, "lat": 35.1, "lon": 139.1,
+         "ltft_pct_mean": -6.0, "stft_pct_mean": 0.0, "boost_kpa_mean": 20.0, "timing_deg_mean": 22.0,
+         "rpm_max": 2000.0, "rpm_min": 1000.0, "rpm_mean": 1500.0,
+         "throttle_pct_max": None, "throttle_pct_min": None, "throttle_pct_mean": None,
+         "speed_kmh_max": None, "speed_kmh_min": None, "speed_kmh_mean": None,
+         "iat_c_max": None, "iat_c_min": None, "iat_c_mean": None},
+    ]
+    row_baseline = {"ltft_pct": {"mean": -6.0, "std": 1.0, "n": 100}}
+    csv_text = trip_analysis._bucket_csv(buckets, row_baseline)
+
+    lines = csv_text.splitlines()
+    assert lines[0].startswith("lat,lon,ltft_pct_mean,ltft_pct_level")
+    assert "通常どおり" in lines[1]  # z=0なので
+
+
+def test_bucket_csv_labels_large_deviation(trip_analysis):
+    buckets = [{
+        "t_sec": 0, "lat": None, "lon": None,
+        "ltft_pct_mean": -12.0, "stft_pct_mean": None, "boost_kpa_mean": None, "timing_deg_mean": None,
+        "rpm_max": None, "rpm_min": None, "rpm_mean": None,
+        "throttle_pct_max": None, "throttle_pct_min": None, "throttle_pct_mean": None,
+        "speed_kmh_max": None, "speed_kmh_min": None, "speed_kmh_mean": None,
+        "iat_c_max": None, "iat_c_min": None, "iat_c_mean": None,
+    }]
+    row_baseline = {"ltft_pct": {"mean": -6.0, "std": 1.0, "n": 100}}  # z = (-12-(-6))/1 = -6
+    csv_text = trip_analysis._bucket_csv(buckets, row_baseline)
+    assert "大きく濃いめ" in csv_text
+
+
+# ---- _fuel_economy_car_comparison ----
+
+
+def test_fuel_economy_car_comparison_bands(trip_analysis):
+    baseline = {"fuel_economy_km_l": {"mean": 10.0, "std": 2.0, "n": 5}}
+    assert trip_analysis._fuel_economy_car_comparison(13.0, baseline) == "この車の実績としては良め"
+    assert trip_analysis._fuel_economy_car_comparison(7.0, baseline) == "この車の実績としてはやや低め"
+    assert trip_analysis._fuel_economy_car_comparison(10.5, baseline) == "この車の実績としては普段どおり"
+
+
+def test_fuel_economy_car_comparison_insufficient_baseline(trip_analysis):
+    assert "十分ではありません" in trip_analysis._fuel_economy_car_comparison(10.0, {})
+    assert "十分ではありません" in trip_analysis._fuel_economy_car_comparison(None, {"fuel_economy_km_l": {"mean": 1, "std": 1}})
+
+
+# ---- _strip_empty_coord_markers ----
+
+
+def test_strip_empty_coord_markers_removes_empty_marker_only(trip_analysis):
+    text = "走行は良好でした{lat:,lon:}。特に{lat:35.1,lon:139.1}付近で薄めでした。"
+    result = trip_analysis._strip_empty_coord_markers(text)
+    assert "{lat:,lon:}" not in result
+    assert "{lat:35.1,lon:139.1}" in result
+
+
+# ---- _build_narrative_prompt ----
+
+
+def test_build_narrative_prompt_includes_key_sections(trip_analysis):
+    summary = {"distance_km": 5.91, "fuel_l": 0.65, "fuel_economy_km_l": 9.03,
+               "coolant_start": 74.0, "coolant_end": 87.0}
+    messages = trip_analysis._build_narrative_prompt(
+        summary, "自宅付近", "自宅",
+        {"coolant_c": (74.0, 87.0), "ecu_voltage": (12.05, 14.28)},
+        {"fuel_economy_km_l": {"mean": 9.8, "std": 1.0, "n": 5}},
+        "lat,lon\n35.0,139.0",
+    )
+    text = messages[0]["content"][0]["text"]
+    assert "9.03" in text
+    assert "自宅" in text
+    assert "④提案" in text or "④" in text
+    assert "35.0,139.0" in text
+
+
+# ---- _invoke_bedrock ----
+
+
+def test_invoke_bedrock_extracts_text_from_converse_response(trip_analysis, monkeypatch):
+    def _fake_converse(modelId, messages):
+        assert modelId == "apac.amazon.nova-pro-v1:0"
+        return {"output": {"message": {"content": [{"text": "レポート本文"}]}}}
+
+    monkeypatch.setattr(trip_analysis.bedrock_client, "converse", _fake_converse)
+    assert trip_analysis._invoke_bedrock([{"role": "user", "content": [{"text": "x"}]}]) == "レポート本文"
+
+
+# ---- _generate_narrative ----
+
+
+def test_generate_narrative_returns_bedrock_text_on_success(trip_analysis, monkeypatch):
+    rows = [
+        {"obd_ts": 100, "lat": 35.0, "lon": 139.0, "ltft_pct": -6.0, "stft_pct": 0.0,
+         "boost_kpa": 20.0, "timing_deg": 22.0, "coolant_c": 74.0, "ecu_voltage": 12.0,
+         "rpm": 1500.0, "throttle_pct": 20.0, "speed_kmh": 30.0, "iat_c": 25.0},
+    ]
+    summary = trip_analysis._compute_summary(rows)
+    monkeypatch.setattr(trip_analysis, "_load_trips", lambda device_id: [])
+    monkeypatch.setattr(trip_analysis, "_invoke_bedrock", lambda messages: "生成されたレポート")
+
+    result = trip_analysis._generate_narrative("dev1", 100, 100, rows, summary)
+    assert result == "生成されたレポート"
+
+
+def test_generate_narrative_returns_empty_string_on_bedrock_failure(trip_analysis, monkeypatch):
+    rows = [{"obd_ts": 100, "lat": 35.0, "lon": 139.0}]
+    summary = trip_analysis._compute_summary(rows)
+    monkeypatch.setattr(trip_analysis, "_load_trips", lambda device_id: [])
+
+    def _raise(messages):
+        raise RuntimeError("bedrock boom")
+
+    monkeypatch.setattr(trip_analysis, "_invoke_bedrock", _raise)
+    assert trip_analysis._generate_narrative("dev1", 100, 100, rows, summary) == ""
+
+
+def test_generate_narrative_returns_empty_string_on_geocode_failure(trip_analysis, monkeypatch):
+    rows = [{"obd_ts": 100, "lat": 35.0, "lon": 139.0}]
+    summary = trip_analysis._compute_summary(rows)
+    monkeypatch.setattr(trip_analysis, "_load_trips", lambda device_id: [])
+
+    def _raise(lat, lon):
+        raise RuntimeError("location service boom")
+
+    monkeypatch.setattr(trip_analysis, "_describe_location", _raise)
+    assert trip_analysis._generate_narrative("dev1", 100, 100, rows, summary) == ""
+
+
+# ---- _process_job narrative wiring ----
+
+
+def test_process_job_saves_narrative_from_generate_narrative(trip_analysis, monkeypatch):
+    rows = [_row(1000), _row(1060)]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1060 + trip_analysis.GAP_TIMEOUT_SEC + 1)
+    monkeypatch.setattr(trip_analysis, "_generate_narrative", lambda *a, **kw: "テスト用ナレーティブ")
+
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
+         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
+    )
+    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
+
+    keys = _list_trip_keys("dev1")
+    assert len(keys) == 1
+    body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=keys[0])["Body"].read())
+    assert body["narrative"] == "テスト用ナレーティブ"
+
+
 # ---- _partition_filters ----
 
 
