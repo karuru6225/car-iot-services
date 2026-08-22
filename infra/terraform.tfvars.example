@@ -4,3 +4,7 @@ web_subdomain  = "iot"
 # Google Cloud Console で発行したOAuthクライアント（Cognito Google IdP連携用）
 google_oauth_client_id     = "xxxxxxxxxx.apps.googleusercontent.com"
 google_oauth_client_secret = "xxxxxxxxxx"
+
+# OBDトリップAIナレーティブ生成の「自宅」判定用座標（半径50m以内を自宅として匿名化）
+home_lat = 35.6812
+home_lon = 139.7671
