@@ -185,7 +185,7 @@ ESP32-S3-MINI-1
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"continuous_until_time":null,"fw_version":"1.24.0+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"continuous_until_time":null,"fw_version":"1.24.1+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
