@@ -36,9 +36,29 @@
     }
     .tab-btn:hover { background: #16213e; }
     .tab-btn.active { background: #4f8ef7; color: white; border-color: #4f8ef7; }
-    .trip-table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin-top: 12px; }
-    .trip-table th, .trip-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1e2d4a; }
-    .trip-table th { color: #888; font-weight: normal; }
+    .trip-list { margin-top: 12px; font-size: 0.85em; }
+    .trip-item { border-bottom: 1px solid #1e2d4a; }
+    .trip-header {
+      display: flex; align-items: center; gap: 16px; padding: 8px; cursor: pointer;
+    }
+    .trip-header:hover { background: #0f3460; }
+    .trip-header .col { min-width: 90px; }
+    .trip-header .col-grafana { margin-left: auto; }
+    .trip-header .expand-icon { color: #888; width: 1em; text-align: center; }
+    .trip-detail {
+      display: none; padding: 12px 16px 16px 32px; background: #0f1c33;
+      font-size: 0.95em; line-height: 1.6;
+    }
+    .trip-item.expanded .trip-detail { display: block; }
+    .trip-item.expanded .expand-icon { transform: rotate(90deg); }
+    .trip-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px 16px; margin-bottom: 12px; }
+    .trip-stats div { color: #aac0e0; }
+    .trip-stats span { color: #e0e0e0; }
+    .narrative-box {
+      background: #16213e; border: 1px solid #1e2d4a; border-radius: 6px;
+      padding: 10px 12px; white-space: pre-wrap; margin-bottom: 8px;
+    }
+    .narrative-empty { color: #888; font-style: italic; margin-bottom: 8px; }
     .empty { color: #888; text-align: center; padding: 20px; }
     .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 0.85em; }
     .filter-row label { color: #888; display: flex; align-items: center; gap: 6px; }
@@ -335,6 +355,38 @@ function buildGrafanaUrl(deviceId, sessionStart, sessionEnd) {
   return `${GRAFANA_BASE_URL}${GRAFANA_DASHBOARD_PATH}?${params}`;
 }
 
+// アコーディオンの開閉状態はanalysis_keyで保持する（フィルタ変更・再読み込みをまたいで
+// 開いたままにしたいトリップがある想定はないが、少なくとも同一レンダリング内での
+// 開閉トグルには必要）
+const expandedKeys = new Set();
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function toggleTrip(key) {
+  if (expandedKeys.has(key)) expandedKeys.delete(key);
+  else expandedKeys.add(key);
+  applyFilter();
+}
+
+function renderNarrativeSection(t) {
+  const box = t.narrative
+    ? `<div class="narrative-box">${escapeHtml(t.narrative)}</div>`
+    : `<div class="narrative-empty">まだAI分析されていません</div>`;
+  const label = t.narrative ? 'AI分析を再実行' : 'AI分析を実行';
+  return `
+    ${box}
+    <button onclick="event.stopPropagation(); runNarrative('${activeDeviceId}', '${t.analysis_key}', this)">${label}</button>
+    <span class="msg" id="narrative-msg-${cssId(t.analysis_key)}"></span>
+  `;
+}
+
+// analysis_key（S3キー、'/'や'.'を含む）をDOM idに使えるよう置換する
+function cssId(key) {
+  return key.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 function renderTrips(trips) {
   const area      = document.getElementById('trips-area');
   const summaryEl = document.getElementById('trip-summary');
@@ -350,25 +402,68 @@ function renderTrips(trips) {
   summaryEl.textContent =
     `表示中 ${trips.length} 件 — 合計走行距離 ${totalDistance.toFixed(1)} km / 合計推定消費燃料 ${totalFuel.toFixed(2)} L`;
 
-  const rows = trips.map(t => `
-    <tr>
-      <td>${fmtTime(t.session_start)}</td>
-      <td>${fmtTime(t.session_end)}</td>
-      <td>${t.duration_sec != null ? Math.round(t.duration_sec / 60) + '分' : '-'}</td>
-      <td>${fmtNum(t.distance_km)} km</td>
-      <td>${fmtNum(t.fuel_l, 2)} L</td>
-      <td>${fmtNum(t.fuel_economy_km_l)} km/L</td>
-      <td>${t.session_start != null && t.session_end != null
-        ? `<a href="${buildGrafanaUrl(activeDeviceId, t.session_start, t.session_end)}" target="grafana-trip">Grafana</a>`
-        : '-'}</td>
-    </tr>
-  `).join('');
-  area.innerHTML = `
-    <table class="trip-table">
-      <thead><tr><th>開始</th><th>終了</th><th>時間</th><th>距離</th><th>推定消費燃料</th><th>燃費</th><th>グラフ</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
+  const items = trips.map(t => {
+    const expanded = t.analysis_key && expandedKeys.has(t.analysis_key);
+    const grafanaLink = t.session_start != null && t.session_end != null
+      ? `<a href="${buildGrafanaUrl(activeDeviceId, t.session_start, t.session_end)}" target="grafana-trip" onclick="event.stopPropagation()">Grafana</a>`
+      : '-';
+    return `
+      <div class="trip-item${expanded ? ' expanded' : ''}">
+        <div class="trip-header" onclick="toggleTrip('${t.analysis_key}')">
+          <span class="expand-icon">▶</span>
+          <span class="col">${fmtTime(t.session_start)}</span>
+          <span class="col">〜 ${fmtTime(t.session_end)}</span>
+          <span class="col">${t.duration_sec != null ? Math.round(t.duration_sec / 60) + '分' : '-'}</span>
+          <span class="col">${fmtNum(t.distance_km)} km</span>
+          <span class="col">${fmtNum(t.fuel_economy_km_l)} km/L</span>
+          <span class="col col-grafana">${grafanaLink}</span>
+        </div>
+        <div class="trip-detail">
+          <div class="trip-stats">
+            <div>推定消費燃料 <span>${fmtNum(t.fuel_l, 2)} L</span></div>
+            <div>LTFT平均 <span>${fmtNum(t.ltft_avg)} %</span></div>
+            <div>STFT平均 <span>${fmtNum(t.stft_avg)} %</span></div>
+            <div>触媒温度最大 <span>${fmtNum(t.catalyst_temp_max, 0)} °C</span></div>
+            <div>ブースト圧最大 <span>${fmtNum(t.boost_kpa_max, 0)} kPa</span></div>
+            <div>点火時期平均 <span>${fmtNum(t.timing_deg_avg)} °BTDC</span></div>
+            <div>冷却水温 <span>${fmtNum(t.coolant_start, 0)} → ${fmtNum(t.coolant_end, 0)} °C</span></div>
+            <div>サンプル数 <span>${t.row_count ?? '-'}</span></div>
+          </div>
+          ${renderNarrativeSection(t)}
+        </div>
+      </div>
+    `;
+  }).join('');
+  area.innerHTML = `<div class="trip-list">${items}</div>`;
+}
+
+async function runNarrative(deviceId, key, btnEl) {
+  const msgEl = document.getElementById(`narrative-msg-${cssId(key)}`);
+  btnEl.disabled = true;
+  msgEl.textContent = 'AI分析を実行しています...';
+  msgEl.className   = 'msg';
+  try {
+    const res  = await apiFetch('/trip-analysis/narrative', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ device_id: deviceId, key }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const updated = await res.json();
+    const idx = currentTrips.findIndex(t => t.analysis_key === key);
+    if (idx !== -1) currentTrips[idx] = updated;
+    expandedKeys.add(key);
+    applyFilter();
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      msgEl.textContent = 'エラー: ' + e.message;
+      msgEl.className   = 'msg err';
+      btnEl.disabled = false;
+    }
+  }
 }
 
 // ─── 初期化 ───────────────────────────────────────────────────────────────────
