@@ -12,44 +12,17 @@
 locals {
   trip_analysis_src_dir   = "${path.module}/lambda_src/trip_analysis"
   trip_analysis_func_name = "${var.project}-trip-analysis"
-  # AIナレーティブ生成用モデル。inference profile経由必須（ap-northeast-1はon-demand未対応）
-  trip_analysis_bedrock_model_id = "apac.amazon.nova-pro-v1:0"
 }
 
 data "archive_file" "trip_analysis" {
   type        = "zip"
   source_dir  = local.trip_analysis_src_dir
   output_path = "${local.build_dir}/trip_analysis.zip"
-  excludes    = ["tests", "layer"]
+  excludes    = ["tests"]
 }
 
-# ─── AIナレーティブ生成用の依存パッケージ（Lambda Layer） ───────────────────────
-# Lambdaランタイム同梱のbotocoreはbedrock-runtimeのconverse APIに対応していない場合があるため、
-# 固定バージョンのboto3/botocoreをLayerとしてバンドルする。boto3/botocoreは純粋なPythonパッケージ
-# なのでOS間の互換性問題は無い。
-#
-# Layerの中身（lambda_src/trip_analysis/layer/python/）はビルド成果物のためgitignore対象。
-# requirements.txt更新時・初回のみ、以下を手動実行してから terraform apply すること
-# （TerraformからDocker/pipを自動実行する構成は、Windows上でのlocal-execの脆弱さを避けるため
-# 意図的に採用していない）:
-#   ~/.platformio/penv/Scripts/python.exe -m pip install \
-#     -r infra/lambda_src/trip_analysis/layer/requirements.txt \
-#     -t infra/lambda_src/trip_analysis/layer/python
-data "archive_file" "trip_analysis_layer" {
-  type        = "zip"
-  source_dir  = "${local.trip_analysis_src_dir}/layer"
-  output_path = "${local.build_dir}/trip_analysis_layer.zip"
-}
-
-resource "aws_lambda_layer_version" "trip_analysis_deps" {
-  layer_name          = "${var.project}-trip-analysis-deps"
-  filename            = data.archive_file.trip_analysis_layer.output_path
-  source_code_hash    = data.archive_file.trip_analysis_layer.output_base64sha256
-  compatible_runtimes = ["python3.12"]
-}
-
-# ─── AIナレーティブ生成用の位置情報（AWS Location Service） ─────────────────────
-# 逆ジオコーディングで生の緯度経度をAIに渡さず地名文字列に変換してから渡す。
+# ─── 開始/終了地点の逆ジオコーディング（AWS Location Service） ───────────────────
+# 生の緯度経度をそのままWeb管理画面に出さず地名文字列に変換する。
 # データソースはHere固定（Esriは日本のPOI検索精度が低く実用にならないことを検証済み）。
 # intended_use=SingleUse: 結果を保存・再利用せず都度取得するだけのため。
 resource "aws_location_place_index" "trip_narrative" {
@@ -69,7 +42,6 @@ resource "aws_lambda_function" "trip_analysis" {
   handler          = "index.handler"
   role             = aws_iam_role.lambda_trip_analysis.arn
   timeout          = 600
-  layers           = [aws_lambda_layer_version.trip_analysis_deps.arn]
 
   environment {
     variables = {
@@ -83,7 +55,6 @@ resource "aws_lambda_function" "trip_analysis" {
       HOME_LON              = tostring(var.home_lon)
       HOME_RADIUS_M         = "50"
       PLACE_INDEX_NAME      = aws_location_place_index.trip_narrative.index_name
-      BEDROCK_MODEL_ID      = local.trip_analysis_bedrock_model_id
     }
   }
 }
@@ -111,11 +82,12 @@ resource "aws_apigatewayv2_route" "trip_analysis_post" {
   authorization_type = "JWT"
 }
 
-# 個別トリップのnarrative（再）生成。自動実行はせずWeb管理画面から都度呼び出す
+# 個別トリップの開始/終了地点を取得する。_process_job()は新規トリップに対して自動で
+# 行うが、それより前に保存された過去のトリップ用にWeb管理画面から個別に呼び出せるようにする
 # （同一Lambda・同一integrationを使い回す、新規APIは作らない）
-resource "aws_apigatewayv2_route" "trip_analysis_narrative" {
+resource "aws_apigatewayv2_route" "trip_analysis_location" {
   api_id             = aws_apigatewayv2_api.main.id
-  route_key          = "POST /trip-analysis/narrative"
+  route_key          = "POST /trip-analysis/location"
   target             = "integrations/${aws_apigatewayv2_integration.trip_analysis.id}"
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
   authorization_type = "JWT"
@@ -200,22 +172,10 @@ resource "aws_iam_role_policy" "lambda_trip_analysis" {
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.trip_analysis_func_name}"
       },
       {
-        # AIナレーティブ生成: 位置情報の逆ジオコーディング
+        # 開始/終了地点の逆ジオコーディング
         Effect   = "Allow"
         Action   = "geo:SearchPlaceIndexForPosition"
         Resource = aws_location_place_index.trip_narrative.index_arn
-      },
-      {
-        # AIナレーティブ生成: Bedrock呼び出し。apac.*のようなクロスリージョン推論プロファイルは
-        # 推論プロファイルARNと、実際にルーティングされるリージョンのfoundation-model ARNの
-        # 両方に権限が無いとAccessDeniedになるため両方を許可する
-        # （foundation-model ARNはアカウントID部分を持たない形式）
-        Effect = "Allow"
-        Action = "bedrock:InvokeModel"
-        Resource = [
-          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/${local.trip_analysis_bedrock_model_id}",
-          "arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0",
-        ]
       },
     ]
   })

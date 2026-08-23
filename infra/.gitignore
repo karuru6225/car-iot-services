@@ -3,4 +3,3 @@
 *.tfstate.backup
 .build/
 terraform.tfvars
-lambda_src/trip_analysis/layer/python/
