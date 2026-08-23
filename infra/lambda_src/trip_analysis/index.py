@@ -39,11 +39,18 @@ import boto3
 athena = boto3.client("athena")
 s3 = boto3.client("s3")
 lambda_client = boto3.client("lambda")
+location_client = boto3.client("location")
 
 S3_BUCKET = os.environ["S3_BUCKET"]
 ATHENA_DATABASE = os.environ["ATHENA_DATABASE"]
 ATHENA_WORKGROUP = os.environ["ATHENA_WORKGROUP"]
 SELF_FUNCTION_NAME = os.environ["SELF_FUNCTION_NAME"]
+
+# 開始/終了地点の逆ジオコーディング用
+HOME_LAT = float(os.environ["HOME_LAT"])
+HOME_LON = float(os.environ["HOME_LON"])
+HOME_RADIUS_M = float(os.environ.get("HOME_RADIUS_M", "50"))
+PLACE_INDEX_NAME = os.environ["PLACE_INDEX_NAME"]
 
 ATHENA_POLL_INTERVAL_SEC = 2.0
 ATHENA_POLL_TIMEOUT_SEC = 240
@@ -107,7 +114,10 @@ def _partition_filters(start_ts: int, end_ts: int) -> list[str]:
 _TRIP_KEY_SEQ_RE = re.compile(r"_v\d+_(\d+)\.json$")
 
 
-def _save_trip(device_id: str, start_ts: int, end_ts: int, summary: dict, row_count: int) -> None:
+def _save_trip(
+    device_id: str, start_ts: int, end_ts: int, summary: dict, row_count: int,
+    start_location: str = "", end_location: str = "",
+) -> None:
     """トリップ集計結果をS3へ保存する。session_end(UTC)基準でyear/monthパーティション化し、
     同一区間・同一ANALYSIS_VERSIONの既存ファイル数から次のseqを採番する
     （将来の「分析再実行」機能で同じ区間を再計算しても上書きせず新バージョンとして残せるようにする布石）。"""
@@ -131,7 +141,8 @@ def _save_trip(device_id: str, start_ts: int, end_ts: int, summary: dict, row_co
         "session_start": start_ts,
         "session_end": end_ts,
         "row_count": row_count,
-        "narrative": "",  # Bedrockナラティブ生成は将来実装
+        "start_location": start_location,
+        "end_location": end_location,
         "created_at": int(time.time()),
     }
     for k, v in summary.items():
@@ -190,7 +201,9 @@ def _load_trips(device_id: str, limit: int = 200) -> list[dict]:
                 if not _TRIP_FILENAME_RE.match(key.rsplit("/", 1)[-1]):
                     continue
                 obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
-                trips.append(json.loads(obj["Body"].read()))
+                trip = json.loads(obj["Body"].read())
+                trip["analysis_key"] = key  # 位置情報の個別取得（_handle_fill_location）が対象を特定するために使う
+                trips.append(trip)
                 if len(trips) >= limit:
                     return trips
     return trips
@@ -343,7 +356,7 @@ def _handle_start(event: dict) -> dict:
 
 _SELECT_COLS = [
     "obd_ts", "lat", "lon", "fuel_rate_lph",
-    "ltft_pct", "stft_pct", "catalyst_temp_c", "boost_kpa", "coolant_c",
+    "ltft_pct", "stft_pct", "catalyst_temp_c", "boost_kpa", "coolant_c", "ecu_voltage",
 ]
 
 
@@ -376,7 +389,12 @@ def _process_job(job_id: str, device_id: str, start_ts: int, end_ts: int, starte
             if trip_end - trip_start < MIN_TRIP_DURATION_SEC:
                 continue  # ノイズとして破棄
             summary = _compute_summary(trip_rows)
-            _save_trip(device_id, int(trip_start), int(trip_end), summary, row_count=len(trip_rows))
+            start_location = _describe_location(trip_rows[0].get("lat"), trip_rows[0].get("lon"))
+            end_location = _describe_location(trip_rows[-1].get("lat"), trip_rows[-1].get("lon"))
+            _save_trip(
+                device_id, int(trip_start), int(trip_end), summary, row_count=len(trip_rows),
+                start_location=start_location, end_location=end_location,
+            )
             trips_saved += 1
 
         status = {
@@ -411,6 +429,51 @@ def _handle_get(event: dict) -> dict:
         return _resp(200, status)
 
     return _resp(200, {"trips": _load_trips(device_id)})
+
+
+def _valid_trip_key(device_id: str, key: str) -> bool:
+    """位置情報個別取得APIが受け取ったkeyが、指定device_id配下の実在しうるトリップ
+    ファイル名パターンに一致するかを検証する（他device_idのファイルを指定させない・
+    S3キーインジェクション対策）。"""
+    prefix = f"{TRIP_PREFIX}/{device_id}/"
+    return key.startswith(prefix) and bool(_TRIP_FILENAME_RE.match(key.rsplit("/", 1)[-1]))
+
+
+def _fill_trip_location(device_id: str, key: str) -> dict:
+    """指定トリップの開始/終了地点を逆ジオコーディングし、同じS3キーへ上書き保存する。
+    _process_job()は新規トリップに対して自動で行うが、それより前に保存された過去のトリップは
+    start_location/end_locationを持たないため、Web管理画面から個別に取得できるようにする。"""
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+    trip = json.loads(obj["Body"].read())
+
+    rows = sorted(
+        _query_obd_data(device_id, trip["session_start"], trip["session_end"]),
+        key=lambda r: r["obd_ts"],
+    )
+    if rows:
+        trip["start_location"] = _describe_location(rows[0].get("lat"), rows[0].get("lon"))
+        trip["end_location"] = _describe_location(rows[-1].get("lat"), rows[-1].get("lon"))
+
+    s3.put_object(Bucket=S3_BUCKET, Key=key, Body=json.dumps(trip).encode(), ContentType="application/json")
+    trip["analysis_key"] = key
+    return trip
+
+
+def _handle_fill_location(event: dict) -> dict:
+    """POST /trip-analysis/location {device_id, key} — 指定トリップの開始/終了地点を取得する。"""
+    body = json.loads(event.get("body") or "{}")
+    device_id = body.get("device_id", "")
+    key = body.get("key", "")
+    if not DEVICE_ID_RE.match(device_id):
+        return _err(400, "invalid device_id")
+    if not _valid_trip_key(device_id, key):
+        return _err(400, "invalid key")
+
+    try:
+        trip = _fill_trip_location(device_id, key)
+    except s3.exceptions.NoSuchKey:
+        return _err(404, "trip not found")
+    return _resp(200, trip)
 
 
 def _run_athena_query(query: str) -> list[dict]:
@@ -505,6 +568,14 @@ def _avg(vals: list[float]):
     return sum(vals) / len(vals) if vals else None
 
 
+def _is_comm_dropout(row: dict) -> bool:
+    """イグニッションOFF直前・アイドリングストップ切替瞬間に、通信断で複数センサー値が
+    同時にゼロ埋めされる実データ上のパターンを検出する。coolant_c/ecu_voltageが
+    物理的にありえない組み合わせで同時にゼロになる行だけを対象にし、他フィールドの
+    集計には影響させない狭いスコープの判定。"""
+    return row.get("coolant_c") == 0 and row.get("ecu_voltage") == 0
+
+
 def _compute_summary(rows: list[dict]) -> dict:
     """obd_ts昇順のrowsから、距離（GPS積算）・燃料消費（台形積分）・
     LTFT/STFT平均・触媒温度/ブースト最大値・冷却水温の始点終点を算出する。"""
@@ -513,6 +584,13 @@ def _compute_summary(rows: list[dict]) -> dict:
     distance_m = 0.0
     fuel_l = 0.0
     for prev, cur in pairwise(rows):
+        # 通信断行を挟む区間は距離・燃料どちらも積算しない。通信断の前後は往々にして
+        # 長時間のデータ欠落（DeepSleepからの復帰待ち等）を伴い、GPS座標だけは前後の
+        # 行に残っているため、そこで実際に移動していたとしても燃料側はfuel_rate_lph=0の
+        # 区間として積分され「距離はあるのに燃料がほぼゼロ」という不整合な燃費が生じる
+        # （実データで確認済み、esp32_iot_gateway/CONTEXT_ARCHIVE.mdの該当TODO参照）
+        if _is_comm_dropout(prev) or _is_comm_dropout(cur):
+            continue
         if prev.get("lat") is not None and cur.get("lat") is not None:
             distance_m += _haversine_m(prev["lat"], prev["lon"], cur["lat"], cur["lon"])
         dt = cur["obd_ts"] - prev["obd_ts"]
@@ -524,7 +602,8 @@ def _compute_summary(rows: list[dict]) -> dict:
     stft = [r["stft_pct"] for r in rows if r.get("stft_pct") is not None]
     catalyst = [r["catalyst_temp_c"] for r in rows if r.get("catalyst_temp_c") is not None]
     boost = [r["boost_kpa"] for r in rows if r.get("boost_kpa") is not None]
-    coolant = [r["coolant_c"] for r in rows if r.get("coolant_c") is not None]
+    # 通信断でゼロ埋めされた行はcoolant_c/ecu_voltageの集計からのみ除外する
+    coolant = [r["coolant_c"] for r in rows if r.get("coolant_c") is not None and not _is_comm_dropout(r)]
 
     distance_km = distance_m / 1000.0
     duration_sec = int(rows[-1]["obd_ts"] - rows[0]["obd_ts"])
@@ -541,6 +620,46 @@ def _compute_summary(rows: list[dict]) -> dict:
         "coolant_start": coolant[0] if coolant else None,
         "coolant_end": coolant[-1] if coolant else None,
     }
+
+
+_POSTAL_CODE_PREFIX_RE = re.compile(r"^〒\d{3}-\d{4}\s*")
+
+
+def _reverse_geocode(lat: float | None, lon: float | None) -> dict | None:
+    """緯度経度をAWS Location Service（Here）で逆ジオコーディングし、地名文字列に変換する。
+    データソースはHere固定（Esriは日本のPOI検索精度が低く実用にならないことを検証済み）。
+    自宅座標から半径HOME_RADIUS_M以内は逆ジオコーディングを呼ばず「自宅」と匿名化する
+    （自宅以外は町名・番地までの詳細表示にしても実害がないため、あえてマスクしない）。"""
+    if lat is None or lon is None:
+        return None
+    if _haversine_m(lat, lon, HOME_LAT, HOME_LON) <= HOME_RADIUS_M:
+        return {"kind": "home"}
+
+    resp = location_client.search_place_index_for_position(
+        IndexName=PLACE_INDEX_NAME, Position=[lon, lat], MaxResults=1, Language="ja"
+    )
+    results = resp.get("Results", [])
+    if not results:
+        return {"kind": "unknown"}
+
+    place = results[0]["Place"]
+    # Hereの日本語Labelは「〒{郵便番号} {都道府県}{市区町村}{町名}{丁目}{番地}」形式
+    # （実データで確認済み）。郵便番号は表示上不要なため取り除き、それ以外はそのまま使う
+    label = _POSTAL_CODE_PREFIX_RE.sub("", place.get("Label", ""))
+    coarse = label or f"{place.get('Region', '')}{place.get('Municipality', '')}"
+    return {"kind": "address", "coarse": coarse}
+
+
+def _describe_location(lat: float | None, lon: float | None) -> str:
+    """Web管理画面にそのまま表示できる1行の地点説明文にする。"""
+    geo = _reverse_geocode(lat, lon)
+    if geo is None:
+        return "位置情報が記録されていません"
+    if geo["kind"] == "home":
+        return "自宅"
+    if geo["kind"] == "address":
+        return f"{geo['coarse']}付近" if geo["coarse"] else "不明な地点付近"
+    return "不明な地点"
 
 
 def _is_admin(event: dict) -> bool:
@@ -565,6 +684,9 @@ def handler(event, context):
         return _err(403, "admin only")
 
     method = event["requestContext"]["http"]["method"]
+    path = event.get("rawPath", "")
+    if method == "POST" and path.endswith("/location"):
+        return _handle_fill_location(event)
     if method == "POST":
         return _handle_start(event)
     if method == "GET":

@@ -9,10 +9,19 @@
 
 **実装済み・`main`にマージ済み・実運用中**（PR #35、他に燃料列/期間フィルタ追加のPRあり）。
 
-- バックエンド: `infra/lambda_src/trip_analysis/index.py`（Lambda 1本、テスト63件）
-- インフラ: `infra/trip_analysis.tf`（Lambda・API Gateway・IAM）
-- Web管理画面: `web/trip-analysis.html`
-- **未実装**: トリップJSONの`narrative`フィールド（AIによる自然言語ナレーティブ生成）は常に空文字。この部分だけ大規模なプロトタイプ検証を実施済みで、設計方針は固まっているが本実装はこれから。詳細は`esp32_iot_gateway/CONTEXT.md`の「OBDトリップのAIナレーティブ生成」TODO、および実行可能な試作コード一式は`experiments/trip-analysis-ai-poc/`（gitignore対象）を参照。
+- バックエンド: `infra/lambda_src/trip_analysis/index.py`（Lambda 1本、テスト83件）
+- インフラ: `infra/trip_analysis.tf`（Lambda・API Gateway・IAM・AWS Location Service）
+- Web管理画面: `web/trip-analysis.html`（トリップ一覧はアコーディオン形式）
+- **開始/終了地点の表示も実装済み**。AWS Location Service（Here）で逆ジオコーディングし、
+  `start_location`/`end_location`として保存・表示する。新規トリップは`_process_job()`が
+  自動取得、過去のトリップはWeb管理画面から個別に取得できる（`POST /trip-analysis/location`）
+- **AIナレーティブ生成は一度実装したが、実運用データでの検証の結果撤去した**（2026-08-23）。
+  Bedrock（Nova Pro）に数値の閾値判定を明示的に指示してもハルシネーションが繰り返し
+  発生し（例: 最高速度71km/hの一般道走行を「高速道路のような速度域」と誤判定、
+  372km/Lという物理的にありえない燃費を「良好」と評価）、AIの役割を「判定済み事実の
+  文章化」に絞っても当初期待した価値に見合わないと判断した。詳細な経緯・教訓は
+  `esp32_iot_gateway/CONTEXT_ARCHIVE.md`の該当TODOアーカイブを参照。
+  試作コード一式は`experiments/trip-analysis-ai-poc/`（gitignore対象）に残っている。
 
 ---
 
@@ -50,7 +59,15 @@
     `timeout=600`秒まで自由に使う。
   - レスポンス: `{job_id, status, range, trips_saved, has_more, error}`
 - `GET /trip-analysis?device_id=&job_id=` → `_handle_get()` でジョブ状態をポーリング用に返す
-- `GET /trip-analysis?device_id=` → `_handle_get()` でトリップ一覧を返す（`job_id`省略時）
+- `GET /trip-analysis?device_id=` → `_handle_get()` でトリップ一覧を返す（`job_id`省略時）。
+  各トリップには`_load_trips()`が付与する`analysis_key`（S3キー）が含まれ、下記location APIが
+  対象トリップを特定するのに使う
+- `POST /trip-analysis/location {device_id, key}` → `_handle_fill_location()`。
+  指定した1トリップの開始/終了地点を`_describe_location()`で取得し、同じS3キーへ
+  上書き保存して更新後のトリップJSONを返す。`_process_job()`は新規トリップに対して
+  自動でこれを行うため、このAPIは主に自動取得より前に保存された過去のトリップの
+  バックフィル用。`handler()`は`event["rawPath"]`が`/location`で終わるかで
+  `_handle_start()`と区別してルーティングする
 - 自己呼び出しイベント（`event.get("trip_analysis_job")`が真）の場合は`_process_job()`を
   直接呼び、admin権限チェック・HTTPルーティングをスキップする（内部呼び出しのため）
 
@@ -98,12 +115,21 @@ trip-analysis-jobs/{device_id}/{started_at:010d}_{job_id}.json
 - 燃料消費: `fuel_rate_lph`の台形積分
 - LTFT/STFT平均、触媒温度・ブースト圧の最大値、冷却水温の始点・終点
 
+**通信断（`_is_comm_dropout()`）の扱い**: イグニッションOFF直前・アイドリングストップ
+切替瞬間に`coolant_c`/`ecu_voltage`が同時にゼロになる通信断パターンが実データで確認されている。
+- `coolant_c`はこの行を集計（start/end）から除外
+- `prev`/`cur`のどちらかが通信断行の区間は、距離・燃料の積算からも除外する
+  （2026-08-23修正。通信断に隣接する時間ギャップ中に実移動があったトリップで、
+  燃料だけゼロ扱いになり燃費が物理的にありえない値になるバグの対策。詳細は
+  `esp32_iot_gateway/CONTEXT_ARCHIVE.md`参照）
+
 **トリップ分割・確定ロジック（`_process_job`内）**:
 - `_split_trips()`: `obd_ts`間隔が`GAP_TIMEOUT_SEC`（デフォルト600秒、環境変数で変更可）
   を超えた箇所で分割
 - 末尾のトリップ候補は、現在時刻から見て`GAP_TIMEOUT_SEC`経過していなければ
   「走行中の可能性がある」として保存せず次回に持ち越す
 - `MIN_TRIP_DURATION_SEC`（デフォルト30秒）未満のトリップはノイズとして破棄
+- 各トリップ確定時、`_describe_location()`で開始/終了地点を取得し`_save_trip()`に渡す
 
 ### 2.6 重複コードについて
 
@@ -123,6 +149,10 @@ trip-analysis-jobs/{device_id}/{started_at:010d}_{job_id}.json
   self-invoke用の`lambda:InvokeFunction`は**IAMのidentity-basedポリシーのみで十分**
   （resource-basedの`aws_lambda_permission`は同一関数の自己呼び出しには不要、
   循環依存を避けるため関数名はローカル変数からリテラル組み立て）
+- `aws_location_place_index.trip_narrative`（データソース`Here`）で開始/終了地点の
+  逆ジオコーディングを行う。`geo:SearchPlaceIndexForPosition`権限を付与
+- `HOME_LAT`/`HOME_LON`（自宅判定用座標、半径50m以内は「自宅」と匿名化）は
+  `google_oauth_client_secret`等と同じくsensitive変数として`terraform.tfvars`から注入
 - `infra/s3.tf`に`trip-analysis-jobs/`用の7日expireルールを追記済み
 
 ---
@@ -136,16 +166,23 @@ trip-analysis-jobs/{device_id}/{started_at:010d}_{job_id}.json
   `deriveObdDeviceId()`でOBD側のBLE名（`car-iot-{MAC上位6桁}`）を機械的に導出し、
   Thingごとに1タブを構築する。この変換ロジックは
   `esp32_iot_gateway/src/device/ble_scan.cpp:44`の`"car-iot-%.6s"`フォーマットに対応
-- 各タブ: 「分析開始」ボタン（`POST /trip-analysis`→2秒間隔ポーリング）＋トリップ一覧
-  テーブル（開始/終了/時間/距離/推定消費燃料/燃費）＋期間フィルタ（開始日〜終了日、
-  クライアント側絞り込み）＋絞り込み後の合計走行距離・合計推定消費燃料表示
+- 各タブ: 「分析開始」ボタン（`POST /trip-analysis`→2秒間隔ポーリング）＋期間フィルタ
+  （開始日〜終了日、クライアント側絞り込み）＋絞り込み後の合計走行距離・合計推定消費燃料表示
+- **トリップ一覧はアコーディオン形式**（`.trip-item`/`.trip-header`/`.trip-detail`）。
+  ヘッダー行に開始/終了/時間/距離/燃費/Grafanaリンク、クリックで展開すると詳細統計
+  （LTFT/STFT平均・触媒温度最大・ブースト圧最大・冷却水温・サンプル数）と
+  開始/終了地点が出る。開閉状態は`expandedKeys`（`analysis_key`の`Set`）で保持し、
+  フィルタ再適用（`applyFilter()`）をまたいでも維持される
+- `start_location`/`end_location`が未取得の過去トリップには「位置情報を取得」ボタンが出る。
+  `POST /trip-analysis/location {device_id, key}`を呼び、レスポンスの更新後トリップJSONで
+  `currentTrips`内の該当要素を差し替えて再描画する（ページ全体の再取得はしない）
 - `admin.html`のヘッダーに導線リンクあり
 
 ---
 
 ## 5. テスト（`infra/lambda_src/trip_analysis/tests/`）
 
-t-wada式TDD（Red→Green→Refactor）で全関数を実装、**63テスト**（moto + pytest + Docker）。
+t-wada式TDD（Red→Green→Refactor）で全関数を実装、**83テスト**（moto + pytest + Docker）。
 
 ```bash
 cd infra/lambda_src
@@ -158,24 +195,25 @@ docker compose -f docker-compose.test.yml run --build --rm test pytest trip_anal
 
 ## 6. 別セッション継続用の補足メモ
 
-### 6.1 実データで見つかった問題（AIナレーティブ検証中に副産物として発覚）
+### 6.1 AIナレーティブ生成は実装後に撤去した（重要）
 
-トリップ終端付近（エンジン停止・イグニッションOFF直前）やアイドリングストップ切替瞬間に、
-`coolant_c`/`ecu_voltage`が同時にゼロになる、あるいは`absolute_load_pct`が桁外れの異常値
-（5000%超）になる通信断パターンが実データで確認されている。**`_compute_summary()`は
-現状これらの異常値をバリデーションせずそのまま集計に使っている**（実害は今のところ
-軽微だが、将来対応する場合は`esp32_iot_gateway/CONTEXT.md`の該当TODO参照）。
-モバイルアプリ側の同種の問題（グラフ表示）はPR #36で対策済み。
+`narrative`フィールド・Bedrock連携は一度実装し実運用データで試したが、**明示的な数値閾値を
+指示してもAIが無視するハルシネーションが繰り返し確認されたため撤去した**（実例:
+最高速度71km/hの一般道を「高速道路のような速度域」と誤判定、`_compute_summary()`側の
+別バグで生じた372km/Lという燃費を「良好」と評価）。数値判定を全てコード側の判定済み
+ラベルに寄せる設計でも、AIの役割が「文章化」だけに縮小し価値に見合わないと判断した。
+**この機能を再検討する場合は、まず`esp32_iot_gateway/CONTEXT_ARCHIVE.md`の該当TODOと
+`experiments/trip-analysis-ai-poc/`（gitignore対象、DESIGN_LOG.mdに詳細な検証ログあり）を
+読むこと**。同じ轍を踏まないための教訓が詰まっている。
 
-### 6.2 AIナレーティブ生成を実装する場合
+### 6.2 実データで見つかった問題（AIナレーティブ検証中に副産物として発覚）
 
-`_process_job()`に、Bedrock呼び出しを追加してトリップJSONの`narrative`を埋める形になる。
-確立している設計方針（数値異常判定はコード側でz-score計算→ラベル化してから渡す、
-位置情報はAWS Location Service経由、提案は独立枠に隔離、等）は
-`esp32_iot_gateway/CONTEXT.md`の該当TODO冒頭「引き継ぎサマリー」に要約がある。
-実行可能な試作コード一式（バケット化・ラベル化・プロンプト生成・Bedrock呼び出し）は
-`experiments/trip-analysis-ai-poc/`（**gitignore対象**、`README.md`に手順あり）を
-出発点にできる。
+- `coolant_c`/`ecu_voltage`が同時にゼロになる通信断パターン（イグニッションOFF直前・
+  アイドリングストップ切替瞬間）→ `_is_comm_dropout()`で検出し、`_compute_summary()`の
+  集計（coolant・距離・燃料）から除外済み（**修正済み**、§2.5参照）
+- `absolute_load_pct`が桁外れの異常値（5000%超）になる別パターン → モバイルアプリ側の
+  グラフ表示はPR #36で対策済みだが、`trip_analysis`側の集計（`_compute_summary()`は
+  現状`absolute_load_pct`自体を扱っていない）は**未対応のまま**
 
 ### 6.3 OBDのdevice_id名前空間について
 

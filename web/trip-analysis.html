@@ -36,9 +36,25 @@
     }
     .tab-btn:hover { background: #16213e; }
     .tab-btn.active { background: #4f8ef7; color: white; border-color: #4f8ef7; }
-    .trip-table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin-top: 12px; }
-    .trip-table th, .trip-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1e2d4a; }
-    .trip-table th { color: #888; font-weight: normal; }
+    .trip-list { margin-top: 12px; font-size: 0.85em; }
+    .trip-item { border-bottom: 1px solid #1e2d4a; }
+    .trip-header {
+      display: flex; align-items: center; gap: 16px; padding: 8px; cursor: pointer;
+    }
+    .trip-header:hover { background: #0f3460; }
+    .trip-header .col { min-width: 90px; }
+    .trip-header .col-grafana { margin-left: auto; }
+    .trip-header .expand-icon { color: #888; width: 1em; text-align: center; }
+    .trip-detail {
+      display: none; padding: 12px 16px 16px 32px; background: #0f1c33;
+      font-size: 0.95em; line-height: 1.6;
+    }
+    .trip-item.expanded .trip-detail { display: block; }
+    .trip-item.expanded .expand-icon { transform: rotate(90deg); }
+    .trip-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px 16px; margin-bottom: 12px; }
+    .trip-stats div { color: #aac0e0; }
+    .trip-stats span { color: #e0e0e0; }
+    .location-missing { color: #888; font-style: italic; margin-bottom: 8px; }
     .empty { color: #888; text-align: center; padding: 20px; }
     .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 0.85em; }
     .filter-row label { color: #888; display: flex; align-items: center; gap: 6px; }
@@ -54,6 +70,7 @@
 <div class="header-row">
   <div>
     <h1>OBD トリップ分析</h1>
+    <div style="font-size:0.75em; color:#555; margin-top:2px">infra: <span id="infra-version">-</span></div>
     <div style="font-size:0.8em; margin-top:4px"><a href="/admin.html">← 管理コンソールへ</a></div>
   </div>
   <button class="secondary" onclick="logout()">ログアウト</button>
@@ -75,6 +92,16 @@ const COGNITO_CLIENT_ID = '__TMPL_COGNITO_CLIENT_ID__';
 // 再ログインは発生しない。ブックマーク等でこのページへ未ログイン状態で直接来た
 // 場合のみ、ログイン後にadmin.htmlへ着地する（許容する簡略化）
 const WEB_ADMIN_URL     = '__TMPL_WEB_ADMIN_URL__';
+
+// ─── infraバージョン表示 ─────────────────────────────────────────────────────
+// trip-analysis.html本体には焼き込まず、実行時にversion.jsonを取得して表示する
+// （admin.htmlと同じ仕組み。version.json自体はinfra/web.tfでadmin.html用に
+// 生成済みの共有オブジェクトをそのまま流用する）
+
+fetch('version.json')
+  .then(r => r.json())
+  .then(v => { document.getElementById('infra-version').textContent = v.commit; })
+  .catch(() => {});
 
 // GrafanaダッシュボードはこのリポジトリのTerraformでは管理していない（別途手動構築）ため、
 // APIエンドポイント等と違いテンプレート変数化せずここに直接定数として持つ
@@ -335,6 +362,44 @@ function buildGrafanaUrl(deviceId, sessionStart, sessionEnd) {
   return `${GRAFANA_BASE_URL}${GRAFANA_DASHBOARD_PATH}?${params}`;
 }
 
+// アコーディオンの開閉状態はanalysis_keyで保持する（フィルタ変更・再読み込みをまたいで
+// 開いたままにしたいトリップがある想定はないが、少なくとも同一レンダリング内での
+// 開閉トグルには必要）
+const expandedKeys = new Set();
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function toggleTrip(key) {
+  if (expandedKeys.has(key)) expandedKeys.delete(key);
+  else expandedKeys.add(key);
+  applyFilter();
+}
+
+function renderLocationSection(t) {
+  const hasLocation = t.start_location || t.end_location;
+  const display = hasLocation
+    ? `
+      <div>スタート地点: ${escapeHtml(t.start_location || '-')}</div>
+      <div>ゴール地点: ${escapeHtml(t.end_location || '-')}</div>
+    `
+    : `<div class="location-missing">位置情報が未取得です</div>`;
+  // 取得済みでも再取得できるようボタンは常に出す（表示形式の変更で古いトリップの
+  // 位置情報を更新したい場合等のため）
+  const label = hasLocation ? '位置情報を再取得' : '位置情報を取得';
+  return `
+    ${display}
+    <button onclick="event.stopPropagation(); fetchLocation('${activeDeviceId}', '${t.analysis_key}', this)">${label}</button>
+    <span class="msg" id="location-msg-${cssId(t.analysis_key)}"></span>
+  `;
+}
+
+// analysis_key（S3キー、'/'や'.'を含む）をDOM idに使えるよう置換する
+function cssId(key) {
+  return key.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 function renderTrips(trips) {
   const area      = document.getElementById('trips-area');
   const summaryEl = document.getElementById('trip-summary');
@@ -350,25 +415,67 @@ function renderTrips(trips) {
   summaryEl.textContent =
     `表示中 ${trips.length} 件 — 合計走行距離 ${totalDistance.toFixed(1)} km / 合計推定消費燃料 ${totalFuel.toFixed(2)} L`;
 
-  const rows = trips.map(t => `
-    <tr>
-      <td>${fmtTime(t.session_start)}</td>
-      <td>${fmtTime(t.session_end)}</td>
-      <td>${t.duration_sec != null ? Math.round(t.duration_sec / 60) + '分' : '-'}</td>
-      <td>${fmtNum(t.distance_km)} km</td>
-      <td>${fmtNum(t.fuel_l, 2)} L</td>
-      <td>${fmtNum(t.fuel_economy_km_l)} km/L</td>
-      <td>${t.session_start != null && t.session_end != null
-        ? `<a href="${buildGrafanaUrl(activeDeviceId, t.session_start, t.session_end)}" target="grafana-trip">Grafana</a>`
-        : '-'}</td>
-    </tr>
-  `).join('');
-  area.innerHTML = `
-    <table class="trip-table">
-      <thead><tr><th>開始</th><th>終了</th><th>時間</th><th>距離</th><th>推定消費燃料</th><th>燃費</th><th>グラフ</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
+  const items = trips.map(t => {
+    const expanded = t.analysis_key && expandedKeys.has(t.analysis_key);
+    const grafanaLink = t.session_start != null && t.session_end != null
+      ? `<a href="${buildGrafanaUrl(activeDeviceId, t.session_start, t.session_end)}" target="grafana-trip" onclick="event.stopPropagation()">Grafana</a>`
+      : '-';
+    return `
+      <div class="trip-item${expanded ? ' expanded' : ''}">
+        <div class="trip-header" onclick="toggleTrip('${t.analysis_key}')">
+          <span class="expand-icon">▶</span>
+          <span class="col">${fmtTime(t.session_start)}</span>
+          <span class="col">〜 ${fmtTime(t.session_end)}</span>
+          <span class="col">${t.duration_sec != null ? Math.round(t.duration_sec / 60) + '分' : '-'}</span>
+          <span class="col">${fmtNum(t.distance_km)} km</span>
+          <span class="col">${fmtNum(t.fuel_economy_km_l)} km/L</span>
+          <span class="col col-grafana">${grafanaLink}</span>
+        </div>
+        <div class="trip-detail">
+          <div class="trip-stats">
+            <div>推定消費燃料 <span>${fmtNum(t.fuel_l, 2)} L</span></div>
+            <div>LTFT平均 <span>${fmtNum(t.ltft_avg)} %</span></div>
+            <div>STFT平均 <span>${fmtNum(t.stft_avg)} %</span></div>
+            <div>触媒温度最大 <span>${fmtNum(t.catalyst_temp_max, 0)} °C</span></div>
+            <div>ブースト圧最大 <span>${fmtNum(t.boost_kpa_max, 0)} kPa</span></div>
+            <div>冷却水温 <span>${fmtNum(t.coolant_start, 0)} → ${fmtNum(t.coolant_end, 0)} °C</span></div>
+            <div>サンプル数 <span>${t.row_count ?? '-'}</span></div>
+          </div>
+          ${renderLocationSection(t)}
+        </div>
+      </div>
+    `;
+  }).join('');
+  area.innerHTML = `<div class="trip-list">${items}</div>`;
+}
+
+async function fetchLocation(deviceId, key, btnEl) {
+  const msgEl = document.getElementById(`location-msg-${cssId(key)}`);
+  btnEl.disabled = true;
+  msgEl.textContent = '位置情報を取得しています...';
+  msgEl.className   = 'msg';
+  try {
+    const res  = await apiFetch('/trip-analysis/location', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ device_id: deviceId, key }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const updated = await res.json();
+    const idx = currentTrips.findIndex(t => t.analysis_key === key);
+    if (idx !== -1) currentTrips[idx] = updated;
+    expandedKeys.add(key);
+    applyFilter();
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      msgEl.textContent = 'エラー: ' + e.message;
+      msgEl.className   = 'msg err';
+      btnEl.disabled = false;
+    }
+  }
 }
 
 // ─── 初期化 ───────────────────────────────────────────────────────────────────

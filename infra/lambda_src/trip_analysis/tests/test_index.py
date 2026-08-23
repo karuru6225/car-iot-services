@@ -100,6 +100,108 @@ def test_compute_summary_handles_missing_gps_and_zero_fuel(trip_analysis):
     assert summary["catalyst_temp_max"] is None
 
 
+def test_compute_summary_excludes_comm_dropout_rows_from_coolant_only(trip_analysis):
+    rows = [
+        {"obd_ts": 100, "coolant_c": 74.0, "ecu_voltage": 12.0, "rpm": 1500.0},
+        {"obd_ts": 110, "coolant_c": 87.0, "ecu_voltage": 14.2, "rpm": 1600.0},
+        # 通信断: coolant_c/ecu_voltage同時ゼロ（rpmは通常どおり0で本来ありうる値なので除外対象外）
+        {"obd_ts": 120, "coolant_c": 0.0, "ecu_voltage": 0.0, "rpm": 0.0},
+    ]
+    summary = trip_analysis._compute_summary(rows)
+
+    assert summary["coolant_start"] == 74.0
+    assert summary["coolant_end"] == 87.0  # 通信断行のcoolant_c=0が終端値として拾われない
+
+
+def test_compute_summary_excludes_distance_and_fuel_across_comm_dropout_gap(trip_analysis):
+    """実データで確認したバグの回帰テスト: 通信断行を挟む区間でGPSが大きく移動していても、
+    その区間の距離・燃料は積算しない（燃料側だけゼロ扱いになり燃費が破綻するのを防ぐ）。
+    通信断に無関係な正常区間の積算には影響しないことも合わせて確認する。"""
+    rows = [
+        {"obd_ts": 100, "lat": 35.0000, "lon": 139.0000, "fuel_rate_lph": 1.0, "coolant_c": 80.0, "ecu_voltage": 12.0},
+        {"obd_ts": 110, "lat": 35.0010, "lon": 139.0000, "fuel_rate_lph": 1.0, "coolant_c": 80.0, "ecu_voltage": 12.0},  # 正常区間（積算される）
+        # 通信断（245秒後、GPSは大きく移動しているがfuel_rate_lphは0）
+        {"obd_ts": 355, "lat": 35.0000, "lon": 139.0000, "fuel_rate_lph": 0.0, "coolant_c": 0.0, "ecu_voltage": 0.0},
+        {"obd_ts": 610, "lat": 35.0200, "lon": 139.0200, "fuel_rate_lph": 1.0, "coolant_c": 82.0, "ecu_voltage": 14.0},
+    ]
+    summary = trip_analysis._compute_summary(rows)
+
+    expected_normal_segment_km = trip_analysis._haversine_m(35.0000, 139.0000, 35.0010, 139.0000) / 1000.0
+    assert summary["distance_km"] == pytest.approx(expected_normal_segment_km)  # 通信断を挟む2区間の移動は含まない
+    assert summary["fuel_l"] == pytest.approx((1.0 + 1.0) / 2 * 10 / 3600.0)  # 正常区間(100→110)分だけ
+
+
+def test_is_comm_dropout_requires_both_coolant_and_voltage_zero(trip_analysis):
+    assert trip_analysis._is_comm_dropout({"coolant_c": 0.0, "ecu_voltage": 0.0}) is True
+    assert trip_analysis._is_comm_dropout({"coolant_c": 0.0, "ecu_voltage": 12.0}) is False
+    assert trip_analysis._is_comm_dropout({"coolant_c": 74.0, "ecu_voltage": 0.0}) is False
+    assert trip_analysis._is_comm_dropout({"coolant_c": None, "ecu_voltage": None}) is False
+
+
+# ---- _reverse_geocode / _describe_location ----
+
+
+def test_reverse_geocode_returns_home_within_radius(trip_analysis):
+    # conftest.pyでHOME_LAT=35.0/HOME_LON=139.0/HOME_RADIUS_M=50
+    geo = trip_analysis._reverse_geocode(35.0001, 139.0)  # 約11m
+    assert geo == {"kind": "home"}
+
+
+def test_reverse_geocode_calls_location_service_outside_home_radius(trip_analysis, monkeypatch):
+    # Hereの日本語Labelの実際の形式（実データで確認済み）: "〒{郵便番号} {住所...}"
+    captured = {}
+
+    def _fake_search(**kwargs):
+        captured.update(kwargs)
+        return {
+            "Results": [
+                {"Place": {
+                    "Region": "東京都", "Municipality": "練馬区",
+                    "Label": "〒179-0071 東京都練馬区旭町1丁目29-14",
+                }},
+            ]
+        }
+
+    monkeypatch.setattr(trip_analysis.location_client, "search_place_index_for_position", _fake_search)
+    geo = trip_analysis._reverse_geocode(35.5, 139.5)  # 自宅から十分離れている
+
+    assert geo["kind"] == "address"
+    assert geo["coarse"] == "東京都練馬区旭町1丁目29-14"  # 郵便番号は取り除かれる
+    assert captured["IndexName"] == "test-place-index"
+    assert captured["Position"] == [139.5, 35.5]
+    assert captured["MaxResults"] == 1
+
+
+def test_reverse_geocode_falls_back_to_region_municipality_when_label_missing(trip_analysis, monkeypatch):
+    monkeypatch.setattr(
+        trip_analysis.location_client, "search_place_index_for_position",
+        lambda **kw: {"Results": [{"Place": {"Region": "東京都", "Municipality": "練馬区"}}]},
+    )
+    geo = trip_analysis._reverse_geocode(35.5, 139.5)
+    assert geo["coarse"] == "東京都練馬区"
+
+
+def test_reverse_geocode_returns_none_for_missing_coords(trip_analysis):
+    assert trip_analysis._reverse_geocode(None, None) is None
+
+
+def test_reverse_geocode_returns_unknown_when_no_results(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis.location_client, "search_place_index_for_position", lambda **kw: {"Results": []})
+    geo = trip_analysis._reverse_geocode(35.5, 139.5)
+    assert geo == {"kind": "unknown"}
+
+
+def test_describe_location_formats_each_kind(trip_analysis, monkeypatch):
+    monkeypatch.setattr(trip_analysis, "_reverse_geocode", lambda lat, lon: {"kind": "home"})
+    assert trip_analysis._describe_location(35.0, 139.0) == "自宅"
+
+    monkeypatch.setattr(trip_analysis, "_reverse_geocode", lambda lat, lon: {"kind": "address", "coarse": "東京都練馬区", "nearby_poi": []})
+    assert trip_analysis._describe_location(35.5, 139.5) == "東京都練馬区付近"
+
+    monkeypatch.setattr(trip_analysis, "_reverse_geocode", lambda lat, lon: None)
+    assert trip_analysis._describe_location(None, None) == "位置情報が記録されていません"
+
+
 # ---- _partition_filters ----
 
 
@@ -316,7 +418,19 @@ def test_save_trip_content_has_expected_fields(trip_analysis):
     assert item["row_count"] == 50
     assert item["distance_km"] == 1.5
     assert "fuel_economy_km_l" not in item  # Noneのキーは書き込まない
-    assert item["narrative"] == ""
+    assert item["start_location"] == ""
+    assert item["end_location"] == ""
+
+
+def test_save_trip_stores_given_start_and_end_location(trip_analysis):
+    trip_analysis._save_trip(
+        "dev1", 1700000000, 1700001800, {}, row_count=10,
+        start_location="自宅", end_location="東京都練馬区付近",
+    )
+    key = _list_trip_keys("dev1")[0]
+    item = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=key)["Body"].read())
+    assert item["start_location"] == "自宅"
+    assert item["end_location"] == "東京都練馬区付近"
 
 
 def test_save_trip_key_is_partitioned_by_session_end_year_month(trip_analysis):
@@ -476,6 +590,86 @@ def test_load_trips_ignores_other_devices(trip_analysis):
     assert len(trips) == 1
 
 
+def test_load_trips_includes_analysis_key(trip_analysis):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
+    trips = trip_analysis._load_trips("dev1")
+    assert len(trips) == 1
+    assert trips[0]["analysis_key"] == _list_trip_keys("dev1")[0]
+
+
+# ---- 位置情報の個別取得: _valid_trip_key / _fill_trip_location / _handle_fill_location ----
+
+
+def test_valid_trip_key_accepts_matching_device_and_pattern(trip_analysis):
+    key = "trip-analysis/dev1/year=2026/month=08/1000000000_1000000600_v01_001.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is True
+
+
+def test_valid_trip_key_rejects_other_device(trip_analysis):
+    key = "trip-analysis/dev2/year=2026/month=08/1000000000_1000000600_v01_001.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is False
+
+
+def test_valid_trip_key_rejects_malformed_filename(trip_analysis):
+    key = "trip-analysis/dev1/year=2026/month=08/not-a-trip-file.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is False
+
+
+def test_fill_trip_location_overwrites_same_key(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
+    key = _list_trip_keys("dev1")[0]
+
+    rows = [{"obd_ts": 1000, "lat": 35.5, "lon": 139.5}, {"obd_ts": 1060, "lat": 35.6, "lon": 139.6}]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
+    monkeypatch.setattr(trip_analysis, "_describe_location", lambda lat, lon: f"{lat},{lon}付近")
+
+    result = trip_analysis._fill_trip_location("dev1", key)
+
+    assert result["start_location"] == "35.5,139.5付近"
+    assert result["end_location"] == "35.6,139.6付近"
+    assert _list_trip_keys("dev1") == [key]  # 新しいファイルを作らず同じキーに上書き
+    body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=key)["Body"].read())
+    assert body["start_location"] == "35.5,139.5付近"
+
+
+def test_handle_fill_location_rejects_invalid_device_id(trip_analysis):
+    event = {"body": json.dumps({"device_id": "../etc", "key": "x"})}
+    resp = trip_analysis._handle_fill_location(event)
+    assert resp["statusCode"] == 400
+
+
+def test_handle_fill_location_rejects_key_for_other_device(trip_analysis):
+    event = {"body": json.dumps({
+        "device_id": "dev1",
+        "key": "trip-analysis/dev2/year=2026/month=08/1000000000_1000000600_v01_001.json",
+    })}
+    resp = trip_analysis._handle_fill_location(event)
+    assert resp["statusCode"] == 400
+
+
+def test_handle_fill_location_returns_404_when_trip_missing(trip_analysis):
+    event = {"body": json.dumps({
+        "device_id": "dev1",
+        "key": "trip-analysis/dev1/year=2026/month=08/1000000000_1000000600_v01_001.json",
+    })}
+    resp = trip_analysis._handle_fill_location(event)
+    assert resp["statusCode"] == 404
+
+
+def test_handle_fill_location_returns_updated_trip(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
+    key = _list_trip_keys("dev1")[0]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: [{"obd_ts": 1000, "lat": 35.0, "lon": 139.0}])
+
+    event = {"body": json.dumps({"device_id": "dev1", "key": key})}
+    resp = trip_analysis._handle_fill_location(event)
+
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["start_location"] == "自宅"  # lat/lonがHOME_LAT/HOME_LONと一致
+    assert body["analysis_key"] == key
+
+
 # ---- _handle_start ----
 
 
@@ -596,6 +790,25 @@ def test_process_job_saves_settled_trips_and_marks_succeeded(trip_analysis, monk
     assert status["trips_saved"] == 2
     assert status["range"] == {"start_ts": 1000, "end_ts": 3000}  # 既存フィールドを保持
     assert len(_list_trip_keys("dev1")) == 2
+
+
+def test_process_job_fills_start_and_end_location_automatically(trip_analysis, monkeypatch):
+    # _row()のlat/lonはconftest.pyのHOME_LAT/HOME_LONと一致するため「自宅」判定になる
+    rows = [_row(1000), _row(1060)]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1060 + trip_analysis.GAP_TIMEOUT_SEC + 1)
+
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
+         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
+    )
+    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
+
+    keys = _list_trip_keys("dev1")
+    body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=keys[0])["Body"].read())
+    assert body["start_location"] == "自宅"
+    assert body["end_location"] == "自宅"
 
 
 def test_process_job_holds_back_unsettled_last_trip(trip_analysis, monkeypatch):
@@ -749,6 +962,24 @@ def test_handler_routes_self_invoke_to_process_job(trip_analysis, monkeypatch):
     trip_analysis.handler(event, None)
 
     assert called == {"job_id": "job-1", "device_id": "dev1", "start_ts": 1000, "end_ts": 2000, "started_at": 900}
+
+
+def test_handler_routes_post_location_path_to_fill_location(trip_analysis, monkeypatch):
+    called = {}
+
+    def _fake_handle(event):
+        called["event"] = event
+        return {"statusCode": 200}
+
+    monkeypatch.setattr(trip_analysis, "_handle_fill_location", _fake_handle)
+    event = {
+        "requestContext": {"http": {"method": "POST"}, "authorizer": {"jwt": {"claims": {"cognito:groups": "admin"}}}},
+        "rawPath": "/trip-analysis/location",
+        "body": "{}",
+    }
+    resp = trip_analysis.handler(event, None)
+    assert resp["statusCode"] == 200
+    assert "event" in called
 
 
 def test_handler_routes_post_to_handle_start(trip_analysis, monkeypatch):

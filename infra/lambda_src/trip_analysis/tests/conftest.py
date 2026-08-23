@@ -17,6 +17,10 @@ os.environ["ATHENA_WORKGROUP"] = "test-workgroup"
 os.environ["SELF_FUNCTION_NAME"] = "test-trip-analysis"
 os.environ["GAP_TIMEOUT_SEC"] = "600"
 os.environ["MIN_TRIP_DURATION_SEC"] = "30"
+os.environ["HOME_LAT"] = "35.0"
+os.environ["HOME_LON"] = "139.0"
+os.environ["HOME_RADIUS_M"] = "50"
+os.environ["PLACE_INDEX_NAME"] = "test-place-index"
 
 _INDEX_PATH = os.path.join(os.path.dirname(__file__), "..", "index.py")
 

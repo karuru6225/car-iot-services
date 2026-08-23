@@ -21,6 +21,19 @@ data "archive_file" "trip_analysis" {
   excludes    = ["tests"]
 }
 
+# ─── 開始/終了地点の逆ジオコーディング（AWS Location Service） ───────────────────
+# 生の緯度経度をそのままWeb管理画面に出さず地名文字列に変換する。
+# データソースはHere固定（Esriは日本のPOI検索精度が低く実用にならないことを検証済み）。
+# intended_use=SingleUse: 結果を保存・再利用せず都度取得するだけのため。
+resource "aws_location_place_index" "trip_narrative" {
+  index_name  = "${var.project}-trip-narrative-geocode"
+  data_source = "Here"
+
+  data_source_configuration {
+    intended_use = "SingleUse"
+  }
+}
+
 resource "aws_lambda_function" "trip_analysis" {
   function_name    = local.trip_analysis_func_name
   filename         = data.archive_file.trip_analysis.output_path
@@ -38,6 +51,10 @@ resource "aws_lambda_function" "trip_analysis" {
       SELF_FUNCTION_NAME    = local.trip_analysis_func_name
       GAP_TIMEOUT_SEC       = "600"
       MIN_TRIP_DURATION_SEC = "30"
+      HOME_LAT              = tostring(var.home_lat)
+      HOME_LON              = tostring(var.home_lon)
+      HOME_RADIUS_M         = "50"
+      PLACE_INDEX_NAME      = aws_location_place_index.trip_narrative.index_name
     }
   }
 }
@@ -60,6 +77,17 @@ resource "aws_apigatewayv2_route" "trip_analysis_get" {
 resource "aws_apigatewayv2_route" "trip_analysis_post" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "POST /trip-analysis"
+  target             = "integrations/${aws_apigatewayv2_integration.trip_analysis.id}"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
+}
+
+# 個別トリップの開始/終了地点を取得する。_process_job()は新規トリップに対して自動で
+# 行うが、それより前に保存された過去のトリップ用にWeb管理画面から個別に呼び出せるようにする
+# （同一Lambda・同一integrationを使い回す、新規APIは作らない）
+resource "aws_apigatewayv2_route" "trip_analysis_location" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "POST /trip-analysis/location"
   target             = "integrations/${aws_apigatewayv2_integration.trip_analysis.id}"
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
   authorization_type = "JWT"
@@ -142,6 +170,12 @@ resource "aws_iam_role_policy" "lambda_trip_analysis" {
         Effect   = "Allow"
         Action   = "lambda:InvokeFunction"
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.trip_analysis_func_name}"
+      },
+      {
+        # 開始/終了地点の逆ジオコーディング
+        Effect   = "Allow"
+        Action   = "geo:SearchPlaceIndexForPosition"
+        Resource = aws_location_place_index.trip_narrative.index_arn
       },
     ]
   })
