@@ -10,26 +10,19 @@
 - 保険として`_fuel_economy_car_comparison()`に`|z|>=3.0`を「大きく外れた値＝計測・集計の異常を疑うべき」という区分として追加。根本原因の修正だけに頼らず、AIナレーティブに「燃費は良好」のような誤った評価を渡さないようにした
 - AIナレーティブ機能を実運用データで試した際に発覚した（AIが372km/Lをそのまま「良好な結果」と報告してしまうことでユーザーが気づいた）
 
-### ~~TODO: OBDトリップのAIナレーティブ生成~~ **実装済み**
+### ~~TODO: OBDトリップのAIナレーティブ生成~~ **実装したが実データ検証の結果撤去した**
 
-`experiments/trip-analysis-ai-poc/`（gitignore対象）でのプロンプト設計検証（DESIGN_LOG.md）に基づき、`infra/lambda_src/trip_analysis/index.py`にBedrock連携を実装した。
+`experiments/trip-analysis-ai-poc/`（gitignore対象）でのプロンプト設計検証（DESIGN_LOG.md）に基づき`infra/lambda_src/trip_analysis/index.py`にBedrock連携（バケット化・車固有ベースラインのpooled variance合成・z-scoreラベル化・Nova Pro converse API呼び出し）を一度実装し、Web管理画面から個別トリップを指定して実行できるようにした。
 
-- **自動実行ではなく、Web管理画面から特定のトリップを指定して手動実行する方式**
-  （`POST /trip-analysis/narrative {device_id, key}` → `_handle_regenerate_narrative()` →
-  `_regenerate_trip_narrative()`）。当初は`_process_job()`に直接組み込んでいたが、
-  「新規トリップにしか生成されない・過去のトリップに遡って生成できない」という制約が
-  あったため、個別指定・何度でも再実行可能な方式に変更した。`_load_trips()`が返す
-  各トリップに`analysis_key`（S3キー）を付与し、Web側が対象を特定できるようにしている
-- `_bucket_rows()`/`_bucket_csv()`: 30秒バケットの時系列（`FAST_FIELDS`のmax/min/mean、`SLOW_FIELDS`のmean）
-- `_compute_trip_baseline()`/`_compute_row_baseline()`: 過去トリップの`row_count`重みつき統計。行単位のz-score母集団は、POCのように過去の生データを毎回読み直すのではなく、`_compute_summary()`に追加保存した各トリップのavg/std/row_countをpooled variance公式で合成して復元する設計に変更（Athenaへの追加クエリを避けるため）
-- `_label_for_zscore()`/`FIELD_LABELS`: z-scoreを自然言語ラベル（「やや薄め」等）に変換
-- `_reverse_geocode()`/`_describe_location()`: AWS Location Service（Here、Terraformでリソース化）で逆ジオコーディング。自宅は`HOME_LAT`/`HOME_LON`（`terraform.tfvars`のsensitive変数）+半径判定で匿名化
-- `_is_comm_dropout()`: 通信断（coolant_c/ecu_voltage同時ゼロ）の集計除外
-- `_build_narrative_prompt()`/`_invoke_bedrock()`: POCで確定した最終プロンプト構成（①サマリー②数値指摘③平易な説明④提案）でBedrock Nova Pro（`apac.amazon.nova-pro-v1:0`、converse API）を呼び出す
-- Lambdaランタイム同梱のbotocoreがconverse APIに対応していない場合があるため、固定バージョンのboto3/botocoreをLambda Layerとしてバンドル（`infra/lambda_src/trip_analysis/layer/`、pip installは手動一回限りの手順）
-- `_generate_narrative()`は失敗時に空文字へフォールバックする（`_regenerate_trip_narrative()`はそれをそのまま`narrative`へ書き込むため、生成失敗時は空文字で上書きされる）
-- Web管理画面（`web/trip-analysis.html`）のトリップ一覧はテーブルからアコーディオンに変更し、展開すると詳細統計とナレーティブ・「AI分析を実行」ボタンが表示される
-- 残課題として認識した上で対応しなかった点: 一般論的な注意喚起（「点検がおすすめです」等）を完全にゼロにする指示は、POC検証で複数回試しても効果が不完全だった。「④提案」への隔離で実害は抑えられているため、追加対応はせず許容する方針とした
+**実運用データで検証した結果、撤去して`_describe_location()`による位置情報の統計表示のみを残す方針に転換した（2026-08-23）**:
+
+- プロンプトに明示的な数値閾値（例:「速度80km/h以上なら高速道路」）を与えても、AIがそれを無視して雰囲気で判定するハルシネーションが繰り返し確認された。実例: 全バケット最高速度71km/h・平均36km/hの一般道走行を「高速道路のような速度域を中心とした走行」と誤判定
+- 燃費の異常判定でも同様の問題が発生: `_compute_summary()`側の別バグ（通信断ギャップで燃料がゼロ扱いになる）で生じた372km/Lという物理的にありえない値を、AIが「この車の実績としては良好な結果」とそのまま報告した
+- 数値の異常判定を全てコード側の判定済みラベルに寄せる（POCで確立した方針）としても、AIの役割は「判定済み事実を文章にする」だけに縮小し、当初期待した「AIが乗り方を洞察する」価値には見合わないと判断
+- 上位モデル（Claude等）に切り替えれば誤りの頻度は下がると考えられるが、自然言語生成に数値判定を委ねる設計自体の構造的な不安定さは解消しないため、モデル変更では対応しない方針とした
+- 撤去したもの: Bedrock呼び出し・プロンプト組み立て・バケット化・ベースラインpooling・z-scoreラベル化・燃費異常判定・Lambda Layer（boto3/botocoreバンドル、converse API用）・`POST /trip-analysis/narrative`
+- **維持したもの**: `_reverse_geocode()`/`_describe_location()`（AWS Location Service、Here）による開始/終了地点の逆ジオコーディングは統計表示として有用なため継続。`_process_job()`が新規トリップに対して自動で`start_location`/`end_location`を取得し、過去のトリップ用に`POST /trip-analysis/location {device_id, key}`で個別取得できる（旧narrative個別生成APIの構造を流用）。`_is_comm_dropout()`と通信断ギャップの距離/燃料除外（本アーカイブの上の項目「trip_analysisの通信断ギャップで燃費が破綻するケースがある」参照）もAIナレーティブとは独立した価値があるため維持
+- 教訓: 数値の閾値判定・異常判定は、モデルの性能に関わらずコード側で行う方針を徹底する。「時系列パターンの解釈ならAIに向いている」という判断も、実データでは閾値の無視という形で裏切られた
 
 ### ~~TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）~~ **設計変更により対応済み**
 
