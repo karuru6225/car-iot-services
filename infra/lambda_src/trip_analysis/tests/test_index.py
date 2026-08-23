@@ -130,6 +130,24 @@ def test_compute_summary_excludes_comm_dropout_rows_from_coolant_only(trip_analy
     assert summary["coolant_end"] == 87.0  # 通信断行のcoolant_c=0が終端値として拾われない
 
 
+def test_compute_summary_excludes_distance_and_fuel_across_comm_dropout_gap(trip_analysis):
+    """実データで確認したバグの回帰テスト: 通信断行を挟む区間でGPSが大きく移動していても、
+    その区間の距離・燃料は積算しない（燃料側だけゼロ扱いになり燃費が破綻するのを防ぐ）。
+    通信断に無関係な正常区間の積算には影響しないことも合わせて確認する。"""
+    rows = [
+        {"obd_ts": 100, "lat": 35.0000, "lon": 139.0000, "fuel_rate_lph": 1.0, "coolant_c": 80.0, "ecu_voltage": 12.0},
+        {"obd_ts": 110, "lat": 35.0010, "lon": 139.0000, "fuel_rate_lph": 1.0, "coolant_c": 80.0, "ecu_voltage": 12.0},  # 正常区間（積算される）
+        # 通信断（245秒後、GPSは大きく移動しているがfuel_rate_lphは0）
+        {"obd_ts": 355, "lat": 35.0000, "lon": 139.0000, "fuel_rate_lph": 0.0, "coolant_c": 0.0, "ecu_voltage": 0.0},
+        {"obd_ts": 610, "lat": 35.0200, "lon": 139.0200, "fuel_rate_lph": 1.0, "coolant_c": 82.0, "ecu_voltage": 14.0},
+    ]
+    summary = trip_analysis._compute_summary(rows)
+
+    expected_normal_segment_km = trip_analysis._haversine_m(35.0000, 139.0000, 35.0010, 139.0000) / 1000.0
+    assert summary["distance_km"] == pytest.approx(expected_normal_segment_km)  # 通信断を挟む2区間の移動は含まない
+    assert summary["fuel_l"] == pytest.approx((1.0 + 1.0) / 2 * 10 / 3600.0)  # 正常区間(100→110)分だけ
+
+
 def test_is_comm_dropout_requires_both_coolant_and_voltage_zero(trip_analysis):
     assert trip_analysis._is_comm_dropout({"coolant_c": 0.0, "ecu_voltage": 0.0}) is True
     assert trip_analysis._is_comm_dropout({"coolant_c": 0.0, "ecu_voltage": 12.0}) is False
@@ -408,6 +426,22 @@ def test_fuel_economy_car_comparison_bands(trip_analysis):
 def test_fuel_economy_car_comparison_insufficient_baseline(trip_analysis):
     assert "十分ではありません" in trip_analysis._fuel_economy_car_comparison(10.0, {})
     assert "十分ではありません" in trip_analysis._fuel_economy_car_comparison(None, {"fuel_economy_km_l": {"mean": 1, "std": 1}})
+
+
+def test_fuel_economy_car_comparison_flags_extreme_outlier(trip_analysis):
+    # 実データで確認した372km/L相当（baseline mean=10, std=2 に対しz=181）のような
+    # 物理的にありえない値は「良め」ではなく計測異常の疑いとして扱う
+    baseline = {"fuel_economy_km_l": {"mean": 10.0, "std": 2.0, "n": 5}}
+    result = trip_analysis._fuel_economy_car_comparison(372.0, baseline)
+    assert "良め" not in result
+    assert "問題があった可能性" in result
+
+
+def test_fuel_economy_car_comparison_flags_extreme_low_outlier_too(trip_analysis):
+    baseline = {"fuel_economy_km_l": {"mean": 10.0, "std": 2.0, "n": 5}}
+    result = trip_analysis._fuel_economy_car_comparison(0.5, baseline)
+    assert "やや低め" not in result
+    assert "問題があった可能性" in result
 
 
 # ---- _strip_empty_coord_markers ----

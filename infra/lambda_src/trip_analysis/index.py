@@ -594,6 +594,13 @@ def _compute_summary(rows: list[dict]) -> dict:
     distance_m = 0.0
     fuel_l = 0.0
     for prev, cur in pairwise(rows):
+        # 通信断行を挟む区間は距離・燃料どちらも積算しない。通信断の前後は往々にして
+        # 長時間のデータ欠落（DeepSleepからの復帰待ち等）を伴い、GPS座標だけは前後の
+        # 行に残っているため、そこで実際に移動していたとしても燃料側はfuel_rate_lph=0の
+        # 区間として積分され「距離はあるのに燃料がほぼゼロ」という不整合な燃費が生じる
+        # （実データで確認済み、esp32_iot_gateway/CONTEXT.mdの該当TODO参照）
+        if _is_comm_dropout(prev) or _is_comm_dropout(cur):
+            continue
         if prev.get("lat") is not None and cur.get("lat") is not None:
             distance_m += _haversine_m(prev["lat"], prev["lon"], cur["lat"], cur["lon"])
         dt = cur["obd_ts"] - prev["obd_ts"]
@@ -872,6 +879,13 @@ def _bucket_csv(buckets: list[dict], row_baseline: dict) -> str:
     return "\n".join(lines)
 
 
+# |z|がこれ以上ならもはや「良い/悪い」ではなく計測・集計の異常を疑うべき値とみなす。
+# 燃費のような比率指標（距離/燃料）はセンサー欠損等の影響を受けやすく、実データで
+# 372km/Lのような物理的にありえない値が_compute_summary()側の別バグで発生した実例がある。
+# 根本原因の修正（通信断ギャップの除外）だけに頼らず、この判定側でも保険をかけておく
+_FUEL_ECONOMY_OUTLIER_Z = 3.0
+
+
 def _fuel_economy_car_comparison(fuel_economy_km_l: float | None, trip_baseline: dict) -> str:
     """車固有ベースライン（_compute_trip_baseline）と比較した評価文。一般的な目安との比較
     （_fuel_economy_benchmark）だけだと「この車としてはどうか」が抜け落ちるため両方渡す。"""
@@ -879,6 +893,8 @@ def _fuel_economy_car_comparison(fuel_economy_km_l: float | None, trip_baseline:
     if fuel_economy_km_l is None or not fb or not fb.get("std"):
         return "この車の実績と比較できるデータがまだ十分ではありません"
     z = (fuel_economy_km_l - fb["mean"]) / fb["std"]
+    if abs(z) >= _FUEL_ECONOMY_OUTLIER_Z:
+        return "この車の過去の実績から大きく外れた値です。走行距離や燃料消費量の計測・集計に問題があった可能性が高く、参考値として扱ってください"
     if z >= 1:
         return "この車の実績としては良め"
     if z <= -1:
