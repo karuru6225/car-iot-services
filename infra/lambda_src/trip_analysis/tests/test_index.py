@@ -492,14 +492,18 @@ def test_generate_narrative_returns_empty_string_on_geocode_failure(trip_analysi
     assert trip_analysis._generate_narrative("dev1", 100, 100, rows, summary) == ""
 
 
-# ---- _process_job narrative wiring ----
+# ---- _process_job はnarrativeを自動生成しない（Web管理画面からの個別実行のみ） ----
 
 
-def test_process_job_saves_narrative_from_generate_narrative(trip_analysis, monkeypatch):
+def test_process_job_does_not_generate_narrative_automatically(trip_analysis, monkeypatch):
     rows = [_row(1000), _row(1060)]
     monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
     monkeypatch.setattr(trip_analysis.time, "time", lambda: 1060 + trip_analysis.GAP_TIMEOUT_SEC + 1)
-    monkeypatch.setattr(trip_analysis, "_generate_narrative", lambda *a, **kw: "テスト用ナレーティブ")
+
+    def _fail(*a, **kw):
+        raise AssertionError("_process_job should not call _generate_narrative")
+
+    monkeypatch.setattr(trip_analysis, "_generate_narrative", _fail)
 
     trip_analysis._write_job_status(
         "dev1", "job-1", 900,
@@ -511,7 +515,104 @@ def test_process_job_saves_narrative_from_generate_narrative(trip_analysis, monk
     keys = _list_trip_keys("dev1")
     assert len(keys) == 1
     body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=keys[0])["Body"].read())
-    assert body["narrative"] == "テスト用ナレーティブ"
+    assert body["narrative"] == ""
+
+
+# ---- narrativeの個別（再）生成: _load_trips のanalysis_key / _valid_trip_key / _regenerate_trip_narrative / _handle_regenerate_narrative ----
+
+
+def test_load_trips_includes_analysis_key(trip_analysis):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
+    trips = trip_analysis._load_trips("dev1")
+    assert len(trips) == 1
+    assert trips[0]["analysis_key"] == _list_trip_keys("dev1")[0]
+
+
+def test_valid_trip_key_accepts_matching_device_and_pattern(trip_analysis):
+    key = "trip-analysis/dev1/year=2026/month=08/1000000000_1000000600_v01_001.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is True
+
+
+def test_valid_trip_key_rejects_other_device(trip_analysis):
+    key = "trip-analysis/dev2/year=2026/month=08/1000000000_1000000600_v01_001.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is False
+
+
+def test_valid_trip_key_rejects_malformed_filename(trip_analysis):
+    key = "trip-analysis/dev1/year=2026/month=08/not-a-trip-file.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is False
+
+
+def test_regenerate_trip_narrative_overwrites_same_key(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0, "fuel_l": 0.1}, row_count=10)
+    key = _list_trip_keys("dev1")[0]
+
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: [_row(1000), _row(1060)])
+    monkeypatch.setattr(trip_analysis, "_generate_narrative", lambda *a, **kw: "再生成されたナレーティブ")
+
+    result = trip_analysis._regenerate_trip_narrative("dev1", key)
+
+    assert result["narrative"] == "再生成されたナレーティブ"
+    assert _list_trip_keys("dev1") == [key]  # 新しいファイルを作らず同じキーに上書き
+    body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=key)["Body"].read())
+    assert body["narrative"] == "再生成されたナレーティブ"
+
+
+def test_handle_regenerate_narrative_rejects_invalid_device_id(trip_analysis):
+    event = {"body": json.dumps({"device_id": "../etc", "key": "x"})}
+    resp = trip_analysis._handle_regenerate_narrative(event)
+    assert resp["statusCode"] == 400
+
+
+def test_handle_regenerate_narrative_rejects_key_for_other_device(trip_analysis):
+    event = {"body": json.dumps({
+        "device_id": "dev1",
+        "key": "trip-analysis/dev2/year=2026/month=08/1000000000_1000000600_v01_001.json",
+    })}
+    resp = trip_analysis._handle_regenerate_narrative(event)
+    assert resp["statusCode"] == 400
+
+
+def test_handle_regenerate_narrative_returns_404_when_trip_missing(trip_analysis):
+    event = {"body": json.dumps({
+        "device_id": "dev1",
+        "key": "trip-analysis/dev1/year=2026/month=08/1000000000_1000000600_v01_001.json",
+    })}
+    resp = trip_analysis._handle_regenerate_narrative(event)
+    assert resp["statusCode"] == 404
+
+
+def test_handle_regenerate_narrative_returns_updated_trip(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
+    key = _list_trip_keys("dev1")[0]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: [_row(1000)])
+    monkeypatch.setattr(trip_analysis, "_generate_narrative", lambda *a, **kw: "レポート本文")
+
+    event = {"body": json.dumps({"device_id": "dev1", "key": key})}
+    resp = trip_analysis._handle_regenerate_narrative(event)
+
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["narrative"] == "レポート本文"
+    assert body["analysis_key"] == key
+
+
+def test_handler_routes_post_narrative_path_to_regenerate(trip_analysis, monkeypatch):
+    called = {}
+
+    def _fake_handle(event):
+        called["event"] = event
+        return {"statusCode": 200}
+
+    monkeypatch.setattr(trip_analysis, "_handle_regenerate_narrative", _fake_handle)
+    event = {
+        "requestContext": {"http": {"method": "POST"}, "authorizer": {"jwt": {"claims": {"cognito:groups": "admin"}}}},
+        "rawPath": "/trip-analysis/narrative",
+        "body": "{}",
+    }
+    resp = trip_analysis.handler(event, None)
+    assert resp["statusCode"] == 200
+    assert "event" in called
 
 
 # ---- _partition_filters ----

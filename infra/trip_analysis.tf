@@ -111,6 +111,16 @@ resource "aws_apigatewayv2_route" "trip_analysis_post" {
   authorization_type = "JWT"
 }
 
+# 個別トリップのnarrative（再）生成。自動実行はせずWeb管理画面から都度呼び出す
+# （同一Lambda・同一integrationを使い回す、新規APIは作らない）
+resource "aws_apigatewayv2_route" "trip_analysis_narrative" {
+  api_id             = aws_apigatewayv2_api.main.id
+  route_key          = "POST /trip-analysis/narrative"
+  target             = "integrations/${aws_apigatewayv2_integration.trip_analysis.id}"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = "JWT"
+}
+
 resource "aws_lambda_permission" "apigw_trip_analysis" {
   statement_id  = "AllowAPIGWInvoke"
   action        = "lambda:InvokeFunction"

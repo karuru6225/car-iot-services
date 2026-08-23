@@ -199,7 +199,9 @@ def _load_trips(device_id: str, limit: int = 200) -> list[dict]:
                 if not _TRIP_FILENAME_RE.match(key.rsplit("/", 1)[-1]):
                     continue
                 obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
-                trips.append(json.loads(obj["Body"].read()))
+                trip = json.loads(obj["Body"].read())
+                trip["analysis_key"] = key  # narrativeの個別再生成（_handle_regenerate_narrative）が対象を特定するために使う
+                trips.append(trip)
                 if len(trips) >= limit:
                     return trips
     return trips
@@ -386,8 +388,7 @@ def _process_job(job_id: str, device_id: str, start_ts: int, end_ts: int, starte
             if trip_end - trip_start < MIN_TRIP_DURATION_SEC:
                 continue  # ノイズとして破棄
             summary = _compute_summary(trip_rows)
-            narrative = _generate_narrative(device_id, int(trip_start), int(trip_end), trip_rows, summary)
-            _save_trip(device_id, int(trip_start), int(trip_end), summary, row_count=len(trip_rows), narrative=narrative)
+            _save_trip(device_id, int(trip_start), int(trip_end), summary, row_count=len(trip_rows))
             trips_saved += 1
 
         status = {
@@ -422,6 +423,46 @@ def _handle_get(event: dict) -> dict:
         return _resp(200, status)
 
     return _resp(200, {"trips": _load_trips(device_id)})
+
+
+def _valid_trip_key(device_id: str, key: str) -> bool:
+    """narrative個別再生成APIが受け取ったkeyが、指定device_id配下の実在しうるトリップ
+    ファイル名パターンに一致するかを検証する（他device_idのファイルを指定させない・
+    S3キーインジェクション対策）。"""
+    prefix = f"{TRIP_PREFIX}/{device_id}/"
+    return key.startswith(prefix) and bool(_TRIP_FILENAME_RE.match(key.rsplit("/", 1)[-1]))
+
+
+def _regenerate_trip_narrative(device_id: str, key: str) -> dict:
+    """指定トリップのnarrativeを（再）生成し、同じS3キーへ上書き保存する。
+    _process_job()からは自動実行しない（Web管理画面から個別に呼び出す想定）ため、
+    新規・過去問わず任意のトリップに対して何度でも実行できる。"""
+    obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
+    trip = json.loads(obj["Body"].read())
+
+    rows = _query_obd_data(device_id, trip["session_start"], trip["session_end"])
+    trip["narrative"] = _generate_narrative(device_id, trip["session_start"], trip["session_end"], rows, trip)
+
+    s3.put_object(Bucket=S3_BUCKET, Key=key, Body=json.dumps(trip).encode(), ContentType="application/json")
+    trip["analysis_key"] = key
+    return trip
+
+
+def _handle_regenerate_narrative(event: dict) -> dict:
+    """POST /trip-analysis/narrative {device_id, key} — 指定トリップのnarrativeを（再）生成する。"""
+    body = json.loads(event.get("body") or "{}")
+    device_id = body.get("device_id", "")
+    key = body.get("key", "")
+    if not DEVICE_ID_RE.match(device_id):
+        return _err(400, "invalid device_id")
+    if not _valid_trip_key(device_id, key):
+        return _err(400, "invalid key")
+
+    try:
+        trip = _regenerate_trip_narrative(device_id, key)
+    except s3.exceptions.NoSuchKey:
+        return _err(404, "trip not found")
+    return _resp(200, trip)
 
 
 def _run_athena_query(query: str) -> list[dict]:
@@ -1004,6 +1045,9 @@ def handler(event, context):
         return _err(403, "admin only")
 
     method = event["requestContext"]["http"]["method"]
+    path = event.get("rawPath", "")
+    if method == "POST" and path.endswith("/narrative"):
+        return _handle_regenerate_narrative(event)
     if method == "POST":
         return _handle_start(event)
     if method == "GET":
