@@ -355,7 +355,7 @@ def _handle_start(event: dict) -> dict:
 _SELECT_COLS = [
     "obd_ts", "lat", "lon", "fuel_rate_lph",
     "ltft_pct", "stft_pct", "catalyst_temp_c", "boost_kpa", "coolant_c",
-    "rpm", "throttle_pct", "speed_kmh", "timing_deg", "iat_c", "ecu_voltage",
+    "rpm", "throttle_pct", "speed_kmh", "timing_deg", "iat_c", "ecu_voltage", "load_pct",
 ]
 
 
@@ -645,7 +645,9 @@ def _compute_summary(rows: list[dict]) -> dict:
 
 BUCKET_SEC = 30
 # 変動が速く、バケットごとのmax/min/meanを見た方が意味を持つ項目
-FAST_FIELDS = ["rpm", "boost_kpa", "throttle_pct", "speed_kmh", "ltft_pct", "stft_pct", "timing_deg", "iat_c"]
+# load_pctは「速度がほぼ一定なのに負荷率が高い」ような走行パターン（上り坂等）を
+# AIに時系列から直接読み取らせるために追加した（正常/異常のラベル付け対象ではない）
+FAST_FIELDS = ["rpm", "boost_kpa", "throttle_pct", "speed_kmh", "ltft_pct", "stft_pct", "timing_deg", "iat_c", "load_pct"]
 # ゆっくり変化し、バケットごとの平均だけでよい項目（通信断除外フィルタの対象でもある）
 SLOW_FIELDS = ["coolant_c", "ecu_voltage"]
 
@@ -851,7 +853,7 @@ def _fmt(v: float | None, precision: int = 1) -> str:
 # CSVの数値項目のうち、判定済みラベルを併記する項目（FIELD_LABELSと同じ4項目）
 _LABELED_CSV_FIELDS = list(FIELD_LABELS)
 # ラベルなし・生の統計値だけを参考情報として渡す項目
-_UNLABELED_CSV_FIELDS = ["rpm", "throttle_pct", "speed_kmh", "iat_c"]
+_UNLABELED_CSV_FIELDS = ["rpm", "throttle_pct", "speed_kmh", "iat_c", "load_pct"]
 
 
 def _bucket_csv(buckets: list[dict], row_baseline: dict) -> str:
@@ -943,7 +945,7 @@ def _build_narrative_prompt(
     prompt = f"""以下はホンダN-VAN(ターボ車)の1トリップ分のOBD-IIデータです。この車の過去の実績データ
 (車固有のベースライン)も一緒に渡すので、単なる一般論ではなくこの車自身の傾向と比較した分析を
 してください。①一言サマリー（開始地点・終了地点も含める） ②注意すべき数値の指摘 ③車に詳しくない
-人にもわかる平易な説明 ④提案 の4点を含む日本語レポート(300〜350字程度)でお願いします。
+人にもわかる平易な説明 ④提案 ⑤走行の特徴 の5点を含む日本語レポート(400〜500字程度)でお願いします。
 
 **④提案について（重要）**: 提案・アドバイス・「〜がおすすめです」「〜が必要かもしれません」の
 ような文言は**④にのみ**書いてください。①②③の本文中には一切書かないでください。④に書く提案は、
@@ -998,7 +1000,23 @@ def _build_narrative_prompt(
 - `stft_pct_mean`/`stft_pct_level`: 短期燃料補正(%)の区間平均と判定ラベル
 - `boost_kpa_mean`/`boost_kpa_level`: ブースト圧(kPa、負値は負圧)の区間平均と判定ラベル
 - `timing_deg_mean`/`timing_deg_level`: 点火時期(°BTDC)の区間平均と判定ラベル
-- `rpm`/`throttle_pct`/`speed_kmh`/`iat_c`: 判定ラベルなし、各項目に_max/_min/_meanの3列のみ（参考情報）
+- `rpm`/`throttle_pct`/`speed_kmh`/`iat_c`/`load_pct`: 判定ラベルなし、各項目に_max/_min/_meanの
+  3列のみ（参考情報。`speed_kmh`/`load_pct`は⑤走行の特徴の読み取りに使う）
+
+**⑤走行の特徴について**: `speed_kmh`と`load_pct`の時系列の"形"から、このトリップがどんな走り方
+だったかを読み取って記述してください（②のような数値の異常判定ではなく、走行パターンの観察です）。
+- `speed_kmh`が高い状態（目安80km/h以上）のバケットが多く連続し、停止に近い状態
+  （`speed_kmh`がほぼ0）のバケットがほとんど無ければ、高速道路のような速度域を中心に休憩を
+  ほとんど挟まずに走行したと考えられます。逆に低速・停止のバケットが多ければ市街地寄りの
+  走行と考えられます
+- `speed_kmh`がほぼ一定（加速していない）のに`load_pct`が他の区間より明らかに高いバケットが
+  連続していれば、上り坂を継続して走行していた可能性があります。該当する区間があれば
+  座標マーカーで示してください
+- 実際の道路種別（高速道路か一般道か、坂道かどうか）を示す情報そのものは渡していないため、
+  「〜だった」と断定せず「〜のような速度域でした」「〜の可能性があります」という推測の
+  言い回しに留めてください
+- 該当する特徴的な区間が見当たらない場合は、無理に何かを見つけようとせず
+  「特に特徴的な区間は見られませんでした」と正直に書いてください
 
 ```csv
 {csv_text}

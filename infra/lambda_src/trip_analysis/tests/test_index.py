@@ -176,6 +176,19 @@ def test_bucket_rows_groups_by_bucket_sec_and_computes_fast_field_stats(trip_ana
     assert buckets[1]["rpm_max"] == 1500.0
 
 
+def test_bucket_rows_computes_load_pct_stats_for_driving_pattern_narrative(trip_analysis):
+    # load_pctは「速度一定なのに負荷率だけ高い」＝上り坂のような走行パターンをAIに
+    # 読み取らせるために追加した項目
+    rows = [
+        {"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "load_pct": 60.0},
+        {"obd_ts": 1010, "lat": 35.1, "lon": 139.1, "load_pct": 80.0},
+    ]
+    buckets = trip_analysis._bucket_rows(rows, trip_start=1000, bucket_sec=30)
+    assert buckets[0]["load_pct_max"] == 80.0
+    assert buckets[0]["load_pct_min"] == 60.0
+    assert buckets[0]["load_pct_mean"] == pytest.approx(70.0)
+
+
 def test_bucket_rows_excludes_comm_dropout_from_slow_field_mean(trip_analysis):
     rows = [
         {"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "coolant_c": 80.0, "ecu_voltage": 13.0},
@@ -413,6 +426,16 @@ def test_bucket_csv_labels_large_deviation(trip_analysis):
     assert "大きく濃いめ" in csv_text
 
 
+def test_bucket_csv_includes_load_pct_as_unlabeled_column(trip_analysis):
+    buckets = trip_analysis._bucket_rows(
+        [{"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "load_pct": 75.0}], trip_start=1000
+    )
+    csv_text = trip_analysis._bucket_csv(buckets, {})
+    header = csv_text.splitlines()[0]
+    assert "load_pct_max" in header and "load_pct_min" in header and "load_pct_mean" in header
+    assert "load_pct_level" not in header  # 正常/異常のラベル付け対象ではない
+
+
 # ---- _fuel_economy_car_comparison ----
 
 
@@ -471,6 +494,8 @@ def test_build_narrative_prompt_includes_key_sections(trip_analysis):
     assert "自宅" in text
     assert "④提案" in text or "④" in text
     assert "35.0,139.0" in text
+    assert "⑤走行の特徴" in text
+    assert "load_pct" in text
 
 
 # ---- _invoke_bedrock ----
