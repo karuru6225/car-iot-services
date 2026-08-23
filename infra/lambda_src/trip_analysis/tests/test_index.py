@@ -148,14 +148,17 @@ def test_reverse_geocode_returns_home_within_radius(trip_analysis):
 
 
 def test_reverse_geocode_calls_location_service_outside_home_radius(trip_analysis, monkeypatch):
+    # Hereの日本語Labelの実際の形式（実データで確認済み）: "〒{郵便番号} {住所...}"
     captured = {}
 
     def _fake_search(**kwargs):
         captured.update(kwargs)
         return {
             "Results": [
-                {"Place": {"Region": "東京都", "Municipality": "練馬区", "Label": "日本 コンビニA", "Categories": ["PointOfInterestType"]}},
-                {"Place": {"Region": "東京都", "Municipality": "練馬区", "Label": "日本 練馬区", "Categories": []}},
+                {"Place": {
+                    "Region": "東京都", "Municipality": "練馬区",
+                    "Label": "〒179-0071 東京都練馬区旭町1丁目29-14",
+                }},
             ]
         }
 
@@ -163,10 +166,19 @@ def test_reverse_geocode_calls_location_service_outside_home_radius(trip_analysi
     geo = trip_analysis._reverse_geocode(35.5, 139.5)  # 自宅から十分離れている
 
     assert geo["kind"] == "address"
-    assert geo["coarse"] == "東京都練馬区"
-    assert geo["nearby_poi"] == ["コンビニA"]
+    assert geo["coarse"] == "東京都練馬区旭町1丁目29-14"  # 郵便番号は取り除かれる
     assert captured["IndexName"] == "test-place-index"
     assert captured["Position"] == [139.5, 35.5]
+    assert captured["MaxResults"] == 1
+
+
+def test_reverse_geocode_falls_back_to_region_municipality_when_label_missing(trip_analysis, monkeypatch):
+    monkeypatch.setattr(
+        trip_analysis.location_client, "search_place_index_for_position",
+        lambda **kw: {"Results": [{"Place": {"Region": "東京都", "Municipality": "練馬区"}}]},
+    )
+    geo = trip_analysis._reverse_geocode(35.5, 139.5)
+    assert geo["coarse"] == "東京都練馬区"
 
 
 def test_reverse_geocode_returns_none_for_missing_coords(trip_analysis):

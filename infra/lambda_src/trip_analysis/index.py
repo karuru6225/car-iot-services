@@ -622,30 +622,32 @@ def _compute_summary(rows: list[dict]) -> dict:
     }
 
 
+_POSTAL_CODE_PREFIX_RE = re.compile(r"^〒\d{3}-\d{4}\s*")
+
+
 def _reverse_geocode(lat: float | None, lon: float | None) -> dict | None:
     """緯度経度をAWS Location Service（Here）で逆ジオコーディングし、地名文字列に変換する。
     データソースはHere固定（Esriは日本のPOI検索精度が低く実用にならないことを検証済み）。
-    自宅座標から半径HOME_RADIUS_M以内は逆ジオコーディングを呼ばず「自宅」と匿名化する。"""
+    自宅座標から半径HOME_RADIUS_M以内は逆ジオコーディングを呼ばず「自宅」と匿名化する
+    （自宅以外は町名・番地までの詳細表示にしても実害がないため、あえてマスクしない）。"""
     if lat is None or lon is None:
         return None
     if _haversine_m(lat, lon, HOME_LAT, HOME_LON) <= HOME_RADIUS_M:
         return {"kind": "home"}
 
     resp = location_client.search_place_index_for_position(
-        IndexName=PLACE_INDEX_NAME, Position=[lon, lat], MaxResults=5, Language="ja"
+        IndexName=PLACE_INDEX_NAME, Position=[lon, lat], MaxResults=1, Language="ja"
     )
     results = resp.get("Results", [])
     if not results:
         return {"kind": "unknown"}
 
     place = results[0]["Place"]
-    coarse = f"{place.get('Region', '')}{place.get('Municipality', '')}"
-    nearby_poi = [
-        r["Place"]["Label"].split(" ", 1)[-1]
-        for r in results
-        if "PointOfInterestType" in r["Place"].get("Categories", [])
-    ][:3]
-    return {"kind": "address", "coarse": coarse, "nearby_poi": nearby_poi}
+    # Hereの日本語Labelは「〒{郵便番号} {都道府県}{市区町村}{町名}{丁目}{番地}」形式
+    # （実データで確認済み）。郵便番号は表示上不要なため取り除き、それ以外はそのまま使う
+    label = _POSTAL_CODE_PREFIX_RE.sub("", place.get("Label", ""))
+    coarse = label or f"{place.get('Region', '')}{place.get('Municipality', '')}"
+    return {"kind": "address", "coarse": coarse}
 
 
 def _describe_location(lat: float | None, lon: float | None) -> str:
