@@ -70,6 +70,7 @@
 <div class="header-row">
   <div>
     <h1>OBD トリップ分析</h1>
+    <div style="font-size:0.75em; color:#555; margin-top:2px">infra: <span id="infra-version">-</span></div>
     <div style="font-size:0.8em; margin-top:4px"><a href="/admin.html">← 管理コンソールへ</a></div>
   </div>
   <button class="secondary" onclick="logout()">ログアウト</button>
@@ -91,6 +92,16 @@ const COGNITO_CLIENT_ID = '__TMPL_COGNITO_CLIENT_ID__';
 // 再ログインは発生しない。ブックマーク等でこのページへ未ログイン状態で直接来た
 // 場合のみ、ログイン後にadmin.htmlへ着地する（許容する簡略化）
 const WEB_ADMIN_URL     = '__TMPL_WEB_ADMIN_URL__';
+
+// ─── infraバージョン表示 ─────────────────────────────────────────────────────
+// trip-analysis.html本体には焼き込まず、実行時にversion.jsonを取得して表示する
+// （admin.htmlと同じ仕組み。version.json自体はinfra/web.tfでadmin.html用に
+// 生成済みの共有オブジェクトをそのまま流用する）
+
+fetch('version.json')
+  .then(r => r.json())
+  .then(v => { document.getElementById('infra-version').textContent = v.commit; })
+  .catch(() => {});
 
 // GrafanaダッシュボードはこのリポジトリのTerraformでは管理していない（別途手動構築）ため、
 // APIエンドポイント等と違いテンプレート変数化せずここに直接定数として持つ
