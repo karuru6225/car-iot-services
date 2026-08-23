@@ -54,11 +54,7 @@
     .trip-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px 16px; margin-bottom: 12px; }
     .trip-stats div { color: #aac0e0; }
     .trip-stats span { color: #e0e0e0; }
-    .narrative-box {
-      background: #16213e; border: 1px solid #1e2d4a; border-radius: 6px;
-      padding: 10px 12px; white-space: pre-wrap; margin-bottom: 8px;
-    }
-    .narrative-empty { color: #888; font-style: italic; margin-bottom: 8px; }
+    .location-missing { color: #888; font-style: italic; margin-bottom: 8px; }
     .empty { color: #888; text-align: center; padding: 20px; }
     .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 0.85em; }
     .filter-row label { color: #888; display: flex; align-items: center; gap: 6px; }
@@ -370,15 +366,17 @@ function toggleTrip(key) {
   applyFilter();
 }
 
-function renderNarrativeSection(t) {
-  const box = t.narrative
-    ? `<div class="narrative-box">${escapeHtml(t.narrative)}</div>`
-    : `<div class="narrative-empty">まだAI分析されていません</div>`;
-  const label = t.narrative ? 'AI分析を再実行' : 'AI分析を実行';
+function renderLocationSection(t) {
+  if (t.start_location || t.end_location) {
+    return `
+      <div>スタート地点: ${escapeHtml(t.start_location || '-')}</div>
+      <div>ゴール地点: ${escapeHtml(t.end_location || '-')}</div>
+    `;
+  }
   return `
-    ${box}
-    <button onclick="event.stopPropagation(); runNarrative('${activeDeviceId}', '${t.analysis_key}', this)">${label}</button>
-    <span class="msg" id="narrative-msg-${cssId(t.analysis_key)}"></span>
+    <div class="location-missing">位置情報が未取得です</div>
+    <button onclick="event.stopPropagation(); fetchLocation('${activeDeviceId}', '${t.analysis_key}', this)">位置情報を取得</button>
+    <span class="msg" id="location-msg-${cssId(t.analysis_key)}"></span>
   `;
 }
 
@@ -425,11 +423,10 @@ function renderTrips(trips) {
             <div>STFT平均 <span>${fmtNum(t.stft_avg)} %</span></div>
             <div>触媒温度最大 <span>${fmtNum(t.catalyst_temp_max, 0)} °C</span></div>
             <div>ブースト圧最大 <span>${fmtNum(t.boost_kpa_max, 0)} kPa</span></div>
-            <div>点火時期平均 <span>${fmtNum(t.timing_deg_avg)} °BTDC</span></div>
             <div>冷却水温 <span>${fmtNum(t.coolant_start, 0)} → ${fmtNum(t.coolant_end, 0)} °C</span></div>
             <div>サンプル数 <span>${t.row_count ?? '-'}</span></div>
           </div>
-          ${renderNarrativeSection(t)}
+          ${renderLocationSection(t)}
         </div>
       </div>
     `;
@@ -437,13 +434,13 @@ function renderTrips(trips) {
   area.innerHTML = `<div class="trip-list">${items}</div>`;
 }
 
-async function runNarrative(deviceId, key, btnEl) {
-  const msgEl = document.getElementById(`narrative-msg-${cssId(key)}`);
+async function fetchLocation(deviceId, key, btnEl) {
+  const msgEl = document.getElementById(`location-msg-${cssId(key)}`);
   btnEl.disabled = true;
-  msgEl.textContent = 'AI分析を実行しています...';
+  msgEl.textContent = '位置情報を取得しています...';
   msgEl.className   = 'msg';
   try {
-    const res  = await apiFetch('/trip-analysis/narrative', {
+    const res  = await apiFetch('/trip-analysis/location', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ device_id: deviceId, key }),
