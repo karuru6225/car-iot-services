@@ -436,11 +436,22 @@ def _valid_trip_key(device_id: str, key: str) -> bool:
 def _regenerate_trip_narrative(device_id: str, key: str) -> dict:
     """指定トリップのnarrativeを（再）生成し、同じS3キーへ上書き保存する。
     _process_job()からは自動実行しない（Web管理画面から個別に呼び出す想定）ため、
-    新規・過去問わず任意のトリップに対して何度でも実行できる。"""
+    新規・過去問わず任意のトリップに対して何度でも実行できる。
+
+    集計値（distance_km/coolant_start等）も_compute_summary()で計算し直してから
+    保存する。過去に保存されたトリップは、保存当時の_compute_summary()のロジックで
+    計算された値のままになっている（例: _is_comm_dropout()導入前に保存されたトリップは
+    通信断行のcoolant_c=0を拾ったまま）ため、生データを再取得するこの機会に最新ロジックの
+    値へ更新し、ナレーティブに古い集計値由来の不整合（「冷却水温は終始0.0°C」等）を
+    渡さないようにする。"""
     obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
     trip = json.loads(obj["Body"].read())
 
     rows = _query_obd_data(device_id, trip["session_start"], trip["session_end"])
+    summary = _compute_summary(rows)
+    for k, v in summary.items():
+        if v is not None:
+            trip[k] = v
     trip["narrative"] = _generate_narrative(device_id, trip["session_start"], trip["session_end"], rows, trip)
 
     s3.put_object(Bucket=S3_BUCKET, Key=key, Body=json.dumps(trip).encode(), ContentType="application/json")

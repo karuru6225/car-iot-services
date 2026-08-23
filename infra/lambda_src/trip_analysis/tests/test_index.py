@@ -558,6 +558,32 @@ def test_regenerate_trip_narrative_overwrites_same_key(trip_analysis, monkeypatc
     assert body["narrative"] == "再生成されたナレーティブ"
 
 
+def test_regenerate_trip_narrative_recomputes_stale_summary_fields(trip_analysis, monkeypatch):
+    """過去に保存されたトリップは、保存当時の_compute_summary()ロジックによる古い集計値
+    （例: _is_comm_dropout()導入前の通信断由来のcoolant_c=0）を持ちうる。再生成時に
+    生データから集計し直し、古い値を上書きすることを検証する（実データで確認した不具合の回帰）。"""
+    # 保存当時の（今となっては古い・誤った）集計値としてcoolant_start/end=0.0を持つトリップ
+    trip_analysis._save_trip(
+        "dev1", 1000, 1120,
+        {"distance_km": 1.0, "fuel_l": 0.1, "coolant_start": 0.0, "coolant_end": 0.0},
+        row_count=10,
+    )
+    key = _list_trip_keys("dev1")[0]
+
+    fresh_rows = [
+        _row(1000, coolant_c=83.0, ecu_voltage=12.0),
+        _row(1060, coolant_c=0.0, ecu_voltage=0.0),  # 通信断
+        _row(1120, coolant_c=87.0, ecu_voltage=14.0),
+    ]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: fresh_rows)
+    monkeypatch.setattr(trip_analysis, "_generate_narrative", lambda *a, **kw: "ok")
+
+    result = trip_analysis._regenerate_trip_narrative("dev1", key)
+
+    assert result["coolant_start"] == 83.0
+    assert result["coolant_end"] == 87.0
+
+
 def test_handle_regenerate_narrative_rejects_invalid_device_id(trip_analysis):
     event = {"body": json.dumps({"device_id": "../etc", "key": "x"})}
     resp = trip_analysis._handle_regenerate_narrative(event)
