@@ -76,6 +76,11 @@ const COGNITO_CLIENT_ID = '__TMPL_COGNITO_CLIENT_ID__';
 // 場合のみ、ログイン後にadmin.htmlへ着地する（許容する簡略化）
 const WEB_ADMIN_URL     = '__TMPL_WEB_ADMIN_URL__';
 
+// GrafanaダッシュボードはこのリポジトリのTerraformでは管理していない（別途手動構築）ため、
+// APIエンドポイント等と違いテンプレート変数化せずここに直接定数として持つ
+const GRAFANA_BASE_URL       = 'https://grafana.claude-monitoring.karuru.info';
+const GRAFANA_DASHBOARD_PATH = '/d/car-iot-obd/e8bb8a-e4b8a1-obd-ii';
+
 let idToken    = sessionStorage.getItem('id_token') || '';
 let userGroups = JSON.parse(sessionStorage.getItem('user_groups') || '[]');
 
@@ -312,6 +317,24 @@ function fmtNum(v, digits = 1) {
   return v != null ? v.toFixed(digits) : '-';
 }
 
+// トリップ分割の間隔しきい値（infra/trip_analysis.tfのGAP_TIMEOUT_SEC、デフォルト600秒と同じ値）。
+// Grafanaリンクの前後の余裕（この半分）にも使う
+const GAP_TIMEOUT_SEC = 600;
+
+// トリップの開始〜終了時刻・デバイスIDで絞り込んだ状態のGrafanaダッシュボードへのリンクを作る。
+// 前後にGAP_TIMEOUT_SECの半分だけ余裕を持たせ、トリップ開始直前・終了直後の様子も見えるようにする
+function buildGrafanaUrl(deviceId, sessionStart, sessionEnd) {
+  const margin = GAP_TIMEOUT_SEC / 2;
+  const params = new URLSearchParams({
+    orgId:            '1',
+    from:              new Date((sessionStart - margin) * 1000).toISOString(),
+    to:                new Date((sessionEnd + margin) * 1000).toISOString(),
+    timezone:         'browser',
+    'var-obd_devices': deviceId,
+  });
+  return `${GRAFANA_BASE_URL}${GRAFANA_DASHBOARD_PATH}?${params}`;
+}
+
 function renderTrips(trips) {
   const area      = document.getElementById('trips-area');
   const summaryEl = document.getElementById('trip-summary');
@@ -335,11 +358,14 @@ function renderTrips(trips) {
       <td>${fmtNum(t.distance_km)} km</td>
       <td>${fmtNum(t.fuel_l, 2)} L</td>
       <td>${fmtNum(t.fuel_economy_km_l)} km/L</td>
+      <td>${t.session_start != null && t.session_end != null
+        ? `<a href="${buildGrafanaUrl(activeDeviceId, t.session_start, t.session_end)}" target="grafana-trip">Grafana</a>`
+        : '-'}</td>
     </tr>
   `).join('');
   area.innerHTML = `
     <table class="trip-table">
-      <thead><tr><th>開始</th><th>終了</th><th>時間</th><th>距離</th><th>推定消費燃料</th><th>燃費</th></tr></thead>
+      <thead><tr><th>開始</th><th>終了</th><th>時間</th><th>距離</th><th>推定消費燃料</th><th>燃費</th><th>グラフ</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
