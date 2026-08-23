@@ -21,7 +21,6 @@ os.environ["HOME_LAT"] = "35.0"
 os.environ["HOME_LON"] = "139.0"
 os.environ["HOME_RADIUS_M"] = "50"
 os.environ["PLACE_INDEX_NAME"] = "test-place-index"
-os.environ["BEDROCK_MODEL_ID"] = "apac.amazon.nova-pro-v1:0"
 
 _INDEX_PATH = os.path.join(os.path.dirname(__file__), "..", "index.py")
 

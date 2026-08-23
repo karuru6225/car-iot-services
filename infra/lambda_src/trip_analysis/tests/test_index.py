@@ -100,23 +100,6 @@ def test_compute_summary_handles_missing_gps_and_zero_fuel(trip_analysis):
     assert summary["catalyst_temp_max"] is None
 
 
-def test_compute_summary_adds_avg_std_for_baseline_pooling(trip_analysis):
-    rows = [
-        {"obd_ts": 100, "ltft_pct": -4.0, "stft_pct": -1.0, "boost_kpa": 10.0, "timing_deg": 20.0},
-        {"obd_ts": 110, "ltft_pct": -8.0, "stft_pct": 3.0, "boost_kpa": 30.0, "timing_deg": 24.0},
-    ]
-    summary = trip_analysis._compute_summary(rows)
-
-    assert summary["ltft_avg"] == pytest.approx(-6.0)
-    assert summary["ltft_std"] == pytest.approx(2.0)
-    assert summary["stft_avg"] == pytest.approx(1.0)
-    assert summary["stft_std"] == pytest.approx(2.0)
-    assert summary["boost_kpa_avg"] == pytest.approx(20.0)
-    assert summary["boost_kpa_std"] == pytest.approx(10.0)
-    assert summary["timing_deg_avg"] == pytest.approx(22.0)
-    assert summary["timing_deg_std"] == pytest.approx(2.0)
-
-
 def test_compute_summary_excludes_comm_dropout_rows_from_coolant_only(trip_analysis):
     rows = [
         {"obd_ts": 100, "coolant_c": 74.0, "ecu_voltage": 12.0, "rpm": 1500.0},
@@ -153,172 +136,6 @@ def test_is_comm_dropout_requires_both_coolant_and_voltage_zero(trip_analysis):
     assert trip_analysis._is_comm_dropout({"coolant_c": 0.0, "ecu_voltage": 12.0}) is False
     assert trip_analysis._is_comm_dropout({"coolant_c": 74.0, "ecu_voltage": 0.0}) is False
     assert trip_analysis._is_comm_dropout({"coolant_c": None, "ecu_voltage": None}) is False
-
-
-# ---- _bucket_rows ----
-
-
-def test_bucket_rows_groups_by_bucket_sec_and_computes_fast_field_stats(trip_analysis):
-    rows = [
-        {"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "rpm": 1000.0},
-        {"obd_ts": 1010, "lat": 35.2, "lon": 139.2, "rpm": 2000.0},
-        {"obd_ts": 1030, "lat": 35.3, "lon": 139.3, "rpm": 1500.0},  # 次バケット（30秒境界）
-    ]
-    buckets = trip_analysis._bucket_rows(rows, trip_start=1000, bucket_sec=30)
-
-    assert len(buckets) == 2
-    assert buckets[0]["t_sec"] == 0
-    assert buckets[0]["lat"] == 35.1 and buckets[0]["lon"] == 139.1  # バケット内先頭行の代表座標
-    assert buckets[0]["rpm_max"] == 2000.0
-    assert buckets[0]["rpm_min"] == 1000.0
-    assert buckets[0]["rpm_mean"] == pytest.approx(1500.0)
-    assert buckets[1]["t_sec"] == 30
-    assert buckets[1]["rpm_max"] == 1500.0
-
-
-def test_bucket_rows_computes_load_pct_stats_for_driving_pattern_narrative(trip_analysis):
-    # load_pctは「速度一定なのに負荷率だけ高い」＝上り坂のような走行パターンをAIに
-    # 読み取らせるために追加した項目
-    rows = [
-        {"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "load_pct": 60.0},
-        {"obd_ts": 1010, "lat": 35.1, "lon": 139.1, "load_pct": 80.0},
-    ]
-    buckets = trip_analysis._bucket_rows(rows, trip_start=1000, bucket_sec=30)
-    assert buckets[0]["load_pct_max"] == 80.0
-    assert buckets[0]["load_pct_min"] == 60.0
-    assert buckets[0]["load_pct_mean"] == pytest.approx(70.0)
-
-
-def test_bucket_rows_excludes_comm_dropout_from_slow_field_mean(trip_analysis):
-    rows = [
-        {"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "coolant_c": 80.0, "ecu_voltage": 13.0},
-        {"obd_ts": 1010, "lat": 35.1, "lon": 139.1, "coolant_c": 0.0, "ecu_voltage": 0.0},  # 通信断
-    ]
-    buckets = trip_analysis._bucket_rows(rows, trip_start=1000, bucket_sec=30)
-
-    assert buckets[0]["coolant_c_mean"] == 80.0  # 通信断行が平均から除外される
-    assert buckets[0]["ecu_voltage_mean"] == 13.0
-
-
-def test_bucket_rows_missing_field_values_become_none(trip_analysis):
-    rows = [{"obd_ts": 1000, "lat": None, "lon": None}]
-    buckets = trip_analysis._bucket_rows(rows, trip_start=1000, bucket_sec=30)
-
-    assert buckets[0]["lat"] is None
-    assert buckets[0]["rpm_max"] is None
-    assert buckets[0]["rpm_mean"] is None
-
-
-# ---- _weighted_mean_std / ベースライン ----
-
-
-def test_weighted_mean_std_matches_flat_average_when_weights_equal(trip_analysis):
-    mean, std = trip_analysis._weighted_mean_std([(10.0, 1), (20.0, 1), (30.0, 1)])
-    assert mean == pytest.approx(20.0)
-    assert std == pytest.approx((((10 - 20) ** 2 + (20 - 20) ** 2 + (30 - 20) ** 2) / 3) ** 0.5)
-
-
-def test_weighted_mean_std_weights_larger_groups_more(trip_analysis):
-    mean, _ = trip_analysis._weighted_mean_std([(10.0, 9), (20.0, 1)])
-    assert mean == pytest.approx(11.0)
-
-
-def test_weighted_mean_std_returns_none_when_no_weight(trip_analysis):
-    assert trip_analysis._weighted_mean_std([]) == (None, None)
-    assert trip_analysis._weighted_mean_std([(10.0, 0)]) == (None, None)
-
-
-def test_baseline_trips_excludes_ghost_trips_below_min_distance(trip_analysis):
-    trips = [
-        {"distance_km": 0.0, "row_count": 500},  # 幽霊トリップ
-        {"distance_km": 0.3, "row_count": 100},  # 下限未満
-        {"distance_km": 5.0, "row_count": 200},
-    ]
-    result = trip_analysis._baseline_trips(trips, min_distance_km=0.5)
-    assert result == [{"distance_km": 5.0, "row_count": 200}]
-
-
-def test_compute_trip_baseline_weights_by_row_count(trip_analysis):
-    trips = [
-        {"distance_km": 5.0, "row_count": 100, "ltft_avg": -10.0, "stft_avg": -2.0,
-         "boost_kpa_avg": 20.0, "fuel_economy_km_l": 10.0},
-        {"distance_km": 5.0, "row_count": 300, "ltft_avg": -6.0, "stft_avg": 2.0,
-         "boost_kpa_avg": 30.0, "fuel_economy_km_l": 12.0},
-    ]
-    baseline = trip_analysis._compute_trip_baseline(trips)
-
-    expected_mean, expected_std = trip_analysis._weighted_mean_std([(-10.0, 100), (-6.0, 300)])
-    assert baseline["ltft_avg"]["mean"] == pytest.approx(expected_mean)
-    assert baseline["ltft_avg"]["std"] == pytest.approx(expected_std)
-    assert baseline["ltft_avg"]["n"] == 400
-
-
-def test_compute_trip_baseline_excludes_ghost_trips(trip_analysis):
-    trips = [{"distance_km": 0.0, "row_count": 1000, "ltft_avg": -99.0}]
-    baseline = trip_analysis._compute_trip_baseline(trips)
-    assert "ltft_avg" not in baseline
-
-
-def test_compute_row_baseline_pooled_stats_match_flat_calculation_over_raw_rows(trip_analysis):
-    """複数トリップに分けてpooled variance公式で合成した結果が、全トリップの生データを
-    1つにまとめて素朴に計算した場合と一致することを検証する（重要な正しさの保証）。"""
-    group_a = [10.0, 12.0, 14.0, 16.0]
-    group_b = [30.0, 30.0, 34.0, 34.0, 40.0]
-    all_vals = group_a + group_b
-
-    def mean_std(vals):
-        m = sum(vals) / len(vals)
-        return m, (sum((v - m) ** 2 for v in vals) / len(vals)) ** 0.5
-
-    mean_a, std_a = mean_std(group_a)
-    mean_b, std_b = mean_std(group_b)
-    expected_mean, expected_std = mean_std(all_vals)
-
-    trips = [
-        {"distance_km": 5.0, "row_count": len(group_a), "ltft_avg": mean_a, "ltft_std": std_a,
-         "stft_avg": 0.0, "stft_std": 0.0, "boost_kpa_avg": 0.0, "boost_kpa_std": 0.0,
-         "timing_deg_avg": 0.0, "timing_deg_std": 0.0},
-        {"distance_km": 5.0, "row_count": len(group_b), "ltft_avg": mean_b, "ltft_std": std_b,
-         "stft_avg": 0.0, "stft_std": 0.0, "boost_kpa_avg": 0.0, "boost_kpa_std": 0.0,
-         "timing_deg_avg": 0.0, "timing_deg_std": 0.0},
-    ]
-
-    baseline = trip_analysis._compute_row_baseline(trips)
-
-    assert baseline["ltft_pct"]["mean"] == pytest.approx(expected_mean)
-    assert baseline["ltft_pct"]["std"] == pytest.approx(expected_std)
-    assert baseline["ltft_pct"]["n"] == len(all_vals)
-
-
-def test_compute_row_baseline_excludes_ghost_trips(trip_analysis):
-    trips = [{"distance_km": 0.0, "row_count": 1000, "ltft_avg": -99.0, "ltft_std": 1.0}]
-    baseline = trip_analysis._compute_row_baseline(trips)
-    assert "ltft_pct" not in baseline
-
-
-# ---- _label_for_zscore / _fuel_economy_benchmark ----
-
-
-def test_label_for_zscore_large_and_slight_high(trip_analysis):
-    assert trip_analysis._label_for_zscore("boost_kpa", 2.5) == "大きく高め"
-    assert trip_analysis._label_for_zscore("boost_kpa", 1.2) == "やや高め"
-
-
-def test_label_for_zscore_large_and_slight_low(trip_analysis):
-    assert trip_analysis._label_for_zscore("ltft_pct", -2.1) == "大きく濃いめ"
-    assert trip_analysis._label_for_zscore("ltft_pct", -1.1) == "やや濃いめ"
-
-
-def test_label_for_zscore_normal_range_and_none(trip_analysis):
-    assert trip_analysis._label_for_zscore("timing_deg", 0.5) == "通常どおり"
-    assert trip_analysis._label_for_zscore("timing_deg", None) == "通常どおり"
-
-
-def test_fuel_economy_benchmark_below_within_above_range(trip_analysis):
-    assert "下回っています" in trip_analysis._fuel_economy_benchmark(10.0)
-    assert "範囲内です" in trip_analysis._fuel_economy_benchmark(17.0)
-    assert "上回っています" in trip_analysis._fuel_economy_benchmark(25.0)
-    assert trip_analysis._fuel_economy_benchmark(None) == ""
 
 
 # ---- _reverse_geocode / _describe_location ----
@@ -371,333 +188,6 @@ def test_describe_location_formats_each_kind(trip_analysis, monkeypatch):
 
     monkeypatch.setattr(trip_analysis, "_reverse_geocode", lambda lat, lon: None)
     assert trip_analysis._describe_location(None, None) == "位置情報が記録されていません"
-
-
-# ---- _clean_field_endpoints ----
-
-
-def test_clean_field_endpoints_excludes_comm_dropout(trip_analysis):
-    rows = [
-        {"obd_ts": 100, "coolant_c": 74.0, "ecu_voltage": 12.0},
-        {"obd_ts": 110, "coolant_c": 87.0, "ecu_voltage": 14.2},
-        {"obd_ts": 120, "coolant_c": 0.0, "ecu_voltage": 0.0},  # 通信断
-    ]
-    start, end = trip_analysis._clean_field_endpoints(rows, "ecu_voltage")
-    assert start == 12.0
-    assert end == 14.2
-
-
-def test_clean_field_endpoints_returns_none_when_all_missing(trip_analysis):
-    rows = [{"obd_ts": 100, "ecu_voltage": None}]
-    assert trip_analysis._clean_field_endpoints(rows, "ecu_voltage") == (None, None)
-
-
-# ---- _bucket_csv ----
-
-
-def test_bucket_csv_includes_header_and_labels_deviating_bucket(trip_analysis):
-    buckets = [
-        {"t_sec": 0, "lat": 35.1, "lon": 139.1,
-         "ltft_pct_mean": -6.0, "stft_pct_mean": 0.0, "boost_kpa_mean": 20.0, "timing_deg_mean": 22.0,
-         "rpm_max": 2000.0, "rpm_min": 1000.0, "rpm_mean": 1500.0,
-         "throttle_pct_max": None, "throttle_pct_min": None, "throttle_pct_mean": None,
-         "speed_kmh_max": None, "speed_kmh_min": None, "speed_kmh_mean": None,
-         "iat_c_max": None, "iat_c_min": None, "iat_c_mean": None},
-    ]
-    row_baseline = {"ltft_pct": {"mean": -6.0, "std": 1.0, "n": 100}}
-    csv_text = trip_analysis._bucket_csv(buckets, row_baseline)
-
-    lines = csv_text.splitlines()
-    assert lines[0].startswith("lat,lon,ltft_pct_mean,ltft_pct_level")
-    assert "通常どおり" in lines[1]  # z=0なので
-
-
-def test_bucket_csv_labels_large_deviation(trip_analysis):
-    buckets = [{
-        "t_sec": 0, "lat": None, "lon": None,
-        "ltft_pct_mean": -12.0, "stft_pct_mean": None, "boost_kpa_mean": None, "timing_deg_mean": None,
-        "rpm_max": None, "rpm_min": None, "rpm_mean": None,
-        "throttle_pct_max": None, "throttle_pct_min": None, "throttle_pct_mean": None,
-        "speed_kmh_max": None, "speed_kmh_min": None, "speed_kmh_mean": None,
-        "iat_c_max": None, "iat_c_min": None, "iat_c_mean": None,
-    }]
-    row_baseline = {"ltft_pct": {"mean": -6.0, "std": 1.0, "n": 100}}  # z = (-12-(-6))/1 = -6
-    csv_text = trip_analysis._bucket_csv(buckets, row_baseline)
-    assert "大きく濃いめ" in csv_text
-
-
-def test_bucket_csv_includes_load_pct_as_unlabeled_column(trip_analysis):
-    buckets = trip_analysis._bucket_rows(
-        [{"obd_ts": 1000, "lat": 35.1, "lon": 139.1, "load_pct": 75.0}], trip_start=1000
-    )
-    csv_text = trip_analysis._bucket_csv(buckets, {})
-    header = csv_text.splitlines()[0]
-    assert "load_pct_max" in header and "load_pct_min" in header and "load_pct_mean" in header
-    assert "load_pct_level" not in header  # 正常/異常のラベル付け対象ではない
-
-
-# ---- _fuel_economy_car_comparison ----
-
-
-def test_fuel_economy_car_comparison_bands(trip_analysis):
-    baseline = {"fuel_economy_km_l": {"mean": 10.0, "std": 2.0, "n": 5}}
-    assert trip_analysis._fuel_economy_car_comparison(13.0, baseline) == "この車の実績としては良め"
-    assert trip_analysis._fuel_economy_car_comparison(7.0, baseline) == "この車の実績としてはやや低め"
-    assert trip_analysis._fuel_economy_car_comparison(10.5, baseline) == "この車の実績としては普段どおり"
-
-
-def test_fuel_economy_car_comparison_insufficient_baseline(trip_analysis):
-    assert "十分ではありません" in trip_analysis._fuel_economy_car_comparison(10.0, {})
-    assert "十分ではありません" in trip_analysis._fuel_economy_car_comparison(None, {"fuel_economy_km_l": {"mean": 1, "std": 1}})
-
-
-def test_fuel_economy_car_comparison_flags_extreme_outlier(trip_analysis):
-    # 実データで確認した372km/L相当（baseline mean=10, std=2 に対しz=181）のような
-    # 物理的にありえない値は「良め」ではなく計測異常の疑いとして扱う
-    baseline = {"fuel_economy_km_l": {"mean": 10.0, "std": 2.0, "n": 5}}
-    result = trip_analysis._fuel_economy_car_comparison(372.0, baseline)
-    assert "良め" not in result
-    assert "問題があった可能性" in result
-
-
-def test_fuel_economy_car_comparison_flags_extreme_low_outlier_too(trip_analysis):
-    baseline = {"fuel_economy_km_l": {"mean": 10.0, "std": 2.0, "n": 5}}
-    result = trip_analysis._fuel_economy_car_comparison(0.5, baseline)
-    assert "やや低め" not in result
-    assert "問題があった可能性" in result
-
-
-# ---- _strip_empty_coord_markers ----
-
-
-def test_strip_empty_coord_markers_removes_empty_marker_only(trip_analysis):
-    text = "走行は良好でした{lat:,lon:}。特に{lat:35.1,lon:139.1}付近で薄めでした。"
-    result = trip_analysis._strip_empty_coord_markers(text)
-    assert "{lat:,lon:}" not in result
-    assert "{lat:35.1,lon:139.1}" in result
-
-
-# ---- _build_narrative_prompt ----
-
-
-def test_build_narrative_prompt_includes_key_sections(trip_analysis):
-    summary = {"distance_km": 5.91, "fuel_l": 0.65, "fuel_economy_km_l": 9.03,
-               "coolant_start": 74.0, "coolant_end": 87.0}
-    messages = trip_analysis._build_narrative_prompt(
-        summary, "自宅付近", "自宅",
-        {"coolant_c": (74.0, 87.0), "ecu_voltage": (12.05, 14.28)},
-        {"fuel_economy_km_l": {"mean": 9.8, "std": 1.0, "n": 5}},
-        "lat,lon\n35.0,139.0",
-    )
-    text = messages[0]["content"][0]["text"]
-    assert "9.03" in text
-    assert "自宅" in text
-    assert "④提案" in text or "④" in text
-    assert "35.0,139.0" in text
-    assert "⑤走行の特徴" in text
-    assert "load_pct" in text
-
-
-# ---- _invoke_bedrock ----
-
-
-def test_invoke_bedrock_extracts_text_from_converse_response(trip_analysis, monkeypatch):
-    def _fake_converse(modelId, messages):
-        assert modelId == "apac.amazon.nova-pro-v1:0"
-        return {"output": {"message": {"content": [{"text": "レポート本文"}]}}}
-
-    monkeypatch.setattr(trip_analysis.bedrock_client, "converse", _fake_converse)
-    assert trip_analysis._invoke_bedrock([{"role": "user", "content": [{"text": "x"}]}]) == "レポート本文"
-
-
-# ---- _generate_narrative ----
-
-
-def test_generate_narrative_returns_bedrock_text_on_success(trip_analysis, monkeypatch):
-    rows = [
-        {"obd_ts": 100, "lat": 35.0, "lon": 139.0, "ltft_pct": -6.0, "stft_pct": 0.0,
-         "boost_kpa": 20.0, "timing_deg": 22.0, "coolant_c": 74.0, "ecu_voltage": 12.0,
-         "rpm": 1500.0, "throttle_pct": 20.0, "speed_kmh": 30.0, "iat_c": 25.0},
-    ]
-    summary = trip_analysis._compute_summary(rows)
-    monkeypatch.setattr(trip_analysis, "_load_trips", lambda device_id: [])
-    monkeypatch.setattr(trip_analysis, "_invoke_bedrock", lambda messages: "生成されたレポート")
-
-    result = trip_analysis._generate_narrative("dev1", 100, 100, rows, summary)
-    assert result == "生成されたレポート"
-
-
-def test_generate_narrative_returns_empty_string_on_bedrock_failure(trip_analysis, monkeypatch):
-    rows = [{"obd_ts": 100, "lat": 35.0, "lon": 139.0}]
-    summary = trip_analysis._compute_summary(rows)
-    monkeypatch.setattr(trip_analysis, "_load_trips", lambda device_id: [])
-
-    def _raise(messages):
-        raise RuntimeError("bedrock boom")
-
-    monkeypatch.setattr(trip_analysis, "_invoke_bedrock", _raise)
-    assert trip_analysis._generate_narrative("dev1", 100, 100, rows, summary) == ""
-
-
-def test_generate_narrative_returns_empty_string_on_geocode_failure(trip_analysis, monkeypatch):
-    rows = [{"obd_ts": 100, "lat": 35.0, "lon": 139.0}]
-    summary = trip_analysis._compute_summary(rows)
-    monkeypatch.setattr(trip_analysis, "_load_trips", lambda device_id: [])
-
-    def _raise(lat, lon):
-        raise RuntimeError("location service boom")
-
-    monkeypatch.setattr(trip_analysis, "_describe_location", _raise)
-    assert trip_analysis._generate_narrative("dev1", 100, 100, rows, summary) == ""
-
-
-# ---- _process_job はnarrativeを自動生成しない（Web管理画面からの個別実行のみ） ----
-
-
-def test_process_job_does_not_generate_narrative_automatically(trip_analysis, monkeypatch):
-    rows = [_row(1000), _row(1060)]
-    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
-    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1060 + trip_analysis.GAP_TIMEOUT_SEC + 1)
-
-    def _fail(*a, **kw):
-        raise AssertionError("_process_job should not call _generate_narrative")
-
-    monkeypatch.setattr(trip_analysis, "_generate_narrative", _fail)
-
-    trip_analysis._write_job_status(
-        "dev1", "job-1", 900,
-        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
-         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
-    )
-    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
-
-    keys = _list_trip_keys("dev1")
-    assert len(keys) == 1
-    body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=keys[0])["Body"].read())
-    assert body["narrative"] == ""
-
-
-# ---- narrativeの個別（再）生成: _load_trips のanalysis_key / _valid_trip_key / _regenerate_trip_narrative / _handle_regenerate_narrative ----
-
-
-def test_load_trips_includes_analysis_key(trip_analysis):
-    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
-    trips = trip_analysis._load_trips("dev1")
-    assert len(trips) == 1
-    assert trips[0]["analysis_key"] == _list_trip_keys("dev1")[0]
-
-
-def test_valid_trip_key_accepts_matching_device_and_pattern(trip_analysis):
-    key = "trip-analysis/dev1/year=2026/month=08/1000000000_1000000600_v01_001.json"
-    assert trip_analysis._valid_trip_key("dev1", key) is True
-
-
-def test_valid_trip_key_rejects_other_device(trip_analysis):
-    key = "trip-analysis/dev2/year=2026/month=08/1000000000_1000000600_v01_001.json"
-    assert trip_analysis._valid_trip_key("dev1", key) is False
-
-
-def test_valid_trip_key_rejects_malformed_filename(trip_analysis):
-    key = "trip-analysis/dev1/year=2026/month=08/not-a-trip-file.json"
-    assert trip_analysis._valid_trip_key("dev1", key) is False
-
-
-def test_regenerate_trip_narrative_overwrites_same_key(trip_analysis, monkeypatch):
-    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0, "fuel_l": 0.1}, row_count=10)
-    key = _list_trip_keys("dev1")[0]
-
-    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: [_row(1000), _row(1060)])
-    monkeypatch.setattr(trip_analysis, "_generate_narrative", lambda *a, **kw: "再生成されたナレーティブ")
-
-    result = trip_analysis._regenerate_trip_narrative("dev1", key)
-
-    assert result["narrative"] == "再生成されたナレーティブ"
-    assert _list_trip_keys("dev1") == [key]  # 新しいファイルを作らず同じキーに上書き
-    body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=key)["Body"].read())
-    assert body["narrative"] == "再生成されたナレーティブ"
-
-
-def test_regenerate_trip_narrative_recomputes_stale_summary_fields(trip_analysis, monkeypatch):
-    """過去に保存されたトリップは、保存当時の_compute_summary()ロジックによる古い集計値
-    （例: _is_comm_dropout()導入前の通信断由来のcoolant_c=0）を持ちうる。再生成時に
-    生データから集計し直し、古い値を上書きすることを検証する（実データで確認した不具合の回帰）。"""
-    # 保存当時の（今となっては古い・誤った）集計値としてcoolant_start/end=0.0を持つトリップ
-    trip_analysis._save_trip(
-        "dev1", 1000, 1120,
-        {"distance_km": 1.0, "fuel_l": 0.1, "coolant_start": 0.0, "coolant_end": 0.0},
-        row_count=10,
-    )
-    key = _list_trip_keys("dev1")[0]
-
-    fresh_rows = [
-        _row(1000, coolant_c=83.0, ecu_voltage=12.0),
-        _row(1060, coolant_c=0.0, ecu_voltage=0.0),  # 通信断
-        _row(1120, coolant_c=87.0, ecu_voltage=14.0),
-    ]
-    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: fresh_rows)
-    monkeypatch.setattr(trip_analysis, "_generate_narrative", lambda *a, **kw: "ok")
-
-    result = trip_analysis._regenerate_trip_narrative("dev1", key)
-
-    assert result["coolant_start"] == 83.0
-    assert result["coolant_end"] == 87.0
-
-
-def test_handle_regenerate_narrative_rejects_invalid_device_id(trip_analysis):
-    event = {"body": json.dumps({"device_id": "../etc", "key": "x"})}
-    resp = trip_analysis._handle_regenerate_narrative(event)
-    assert resp["statusCode"] == 400
-
-
-def test_handle_regenerate_narrative_rejects_key_for_other_device(trip_analysis):
-    event = {"body": json.dumps({
-        "device_id": "dev1",
-        "key": "trip-analysis/dev2/year=2026/month=08/1000000000_1000000600_v01_001.json",
-    })}
-    resp = trip_analysis._handle_regenerate_narrative(event)
-    assert resp["statusCode"] == 400
-
-
-def test_handle_regenerate_narrative_returns_404_when_trip_missing(trip_analysis):
-    event = {"body": json.dumps({
-        "device_id": "dev1",
-        "key": "trip-analysis/dev1/year=2026/month=08/1000000000_1000000600_v01_001.json",
-    })}
-    resp = trip_analysis._handle_regenerate_narrative(event)
-    assert resp["statusCode"] == 404
-
-
-def test_handle_regenerate_narrative_returns_updated_trip(trip_analysis, monkeypatch):
-    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
-    key = _list_trip_keys("dev1")[0]
-    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: [_row(1000)])
-    monkeypatch.setattr(trip_analysis, "_generate_narrative", lambda *a, **kw: "レポート本文")
-
-    event = {"body": json.dumps({"device_id": "dev1", "key": key})}
-    resp = trip_analysis._handle_regenerate_narrative(event)
-
-    assert resp["statusCode"] == 200
-    body = json.loads(resp["body"])
-    assert body["narrative"] == "レポート本文"
-    assert body["analysis_key"] == key
-
-
-def test_handler_routes_post_narrative_path_to_regenerate(trip_analysis, monkeypatch):
-    called = {}
-
-    def _fake_handle(event):
-        called["event"] = event
-        return {"statusCode": 200}
-
-    monkeypatch.setattr(trip_analysis, "_handle_regenerate_narrative", _fake_handle)
-    event = {
-        "requestContext": {"http": {"method": "POST"}, "authorizer": {"jwt": {"claims": {"cognito:groups": "admin"}}}},
-        "rawPath": "/trip-analysis/narrative",
-        "body": "{}",
-    }
-    resp = trip_analysis.handler(event, None)
-    assert resp["statusCode"] == 200
-    assert "event" in called
 
 
 # ---- _partition_filters ----
@@ -916,7 +406,19 @@ def test_save_trip_content_has_expected_fields(trip_analysis):
     assert item["row_count"] == 50
     assert item["distance_km"] == 1.5
     assert "fuel_economy_km_l" not in item  # Noneのキーは書き込まない
-    assert item["narrative"] == ""
+    assert item["start_location"] == ""
+    assert item["end_location"] == ""
+
+
+def test_save_trip_stores_given_start_and_end_location(trip_analysis):
+    trip_analysis._save_trip(
+        "dev1", 1700000000, 1700001800, {}, row_count=10,
+        start_location="自宅", end_location="東京都練馬区付近",
+    )
+    key = _list_trip_keys("dev1")[0]
+    item = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=key)["Body"].read())
+    assert item["start_location"] == "自宅"
+    assert item["end_location"] == "東京都練馬区付近"
 
 
 def test_save_trip_key_is_partitioned_by_session_end_year_month(trip_analysis):
@@ -1076,6 +578,86 @@ def test_load_trips_ignores_other_devices(trip_analysis):
     assert len(trips) == 1
 
 
+def test_load_trips_includes_analysis_key(trip_analysis):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
+    trips = trip_analysis._load_trips("dev1")
+    assert len(trips) == 1
+    assert trips[0]["analysis_key"] == _list_trip_keys("dev1")[0]
+
+
+# ---- 位置情報の個別取得: _valid_trip_key / _fill_trip_location / _handle_fill_location ----
+
+
+def test_valid_trip_key_accepts_matching_device_and_pattern(trip_analysis):
+    key = "trip-analysis/dev1/year=2026/month=08/1000000000_1000000600_v01_001.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is True
+
+
+def test_valid_trip_key_rejects_other_device(trip_analysis):
+    key = "trip-analysis/dev2/year=2026/month=08/1000000000_1000000600_v01_001.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is False
+
+
+def test_valid_trip_key_rejects_malformed_filename(trip_analysis):
+    key = "trip-analysis/dev1/year=2026/month=08/not-a-trip-file.json"
+    assert trip_analysis._valid_trip_key("dev1", key) is False
+
+
+def test_fill_trip_location_overwrites_same_key(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
+    key = _list_trip_keys("dev1")[0]
+
+    rows = [{"obd_ts": 1000, "lat": 35.5, "lon": 139.5}, {"obd_ts": 1060, "lat": 35.6, "lon": 139.6}]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
+    monkeypatch.setattr(trip_analysis, "_describe_location", lambda lat, lon: f"{lat},{lon}付近")
+
+    result = trip_analysis._fill_trip_location("dev1", key)
+
+    assert result["start_location"] == "35.5,139.5付近"
+    assert result["end_location"] == "35.6,139.6付近"
+    assert _list_trip_keys("dev1") == [key]  # 新しいファイルを作らず同じキーに上書き
+    body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=key)["Body"].read())
+    assert body["start_location"] == "35.5,139.5付近"
+
+
+def test_handle_fill_location_rejects_invalid_device_id(trip_analysis):
+    event = {"body": json.dumps({"device_id": "../etc", "key": "x"})}
+    resp = trip_analysis._handle_fill_location(event)
+    assert resp["statusCode"] == 400
+
+
+def test_handle_fill_location_rejects_key_for_other_device(trip_analysis):
+    event = {"body": json.dumps({
+        "device_id": "dev1",
+        "key": "trip-analysis/dev2/year=2026/month=08/1000000000_1000000600_v01_001.json",
+    })}
+    resp = trip_analysis._handle_fill_location(event)
+    assert resp["statusCode"] == 400
+
+
+def test_handle_fill_location_returns_404_when_trip_missing(trip_analysis):
+    event = {"body": json.dumps({
+        "device_id": "dev1",
+        "key": "trip-analysis/dev1/year=2026/month=08/1000000000_1000000600_v01_001.json",
+    })}
+    resp = trip_analysis._handle_fill_location(event)
+    assert resp["statusCode"] == 404
+
+
+def test_handle_fill_location_returns_updated_trip(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1000, 1060, {"distance_km": 1.0}, row_count=10)
+    key = _list_trip_keys("dev1")[0]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: [{"obd_ts": 1000, "lat": 35.0, "lon": 139.0}])
+
+    event = {"body": json.dumps({"device_id": "dev1", "key": key})}
+    resp = trip_analysis._handle_fill_location(event)
+
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["start_location"] == "自宅"  # lat/lonがHOME_LAT/HOME_LONと一致
+    assert body["analysis_key"] == key
+
+
 # ---- _handle_start ----
 
 
@@ -1196,6 +778,25 @@ def test_process_job_saves_settled_trips_and_marks_succeeded(trip_analysis, monk
     assert status["trips_saved"] == 2
     assert status["range"] == {"start_ts": 1000, "end_ts": 3000}  # 既存フィールドを保持
     assert len(_list_trip_keys("dev1")) == 2
+
+
+def test_process_job_fills_start_and_end_location_automatically(trip_analysis, monkeypatch):
+    # _row()のlat/lonはconftest.pyのHOME_LAT/HOME_LONと一致するため「自宅」判定になる
+    rows = [_row(1000), _row(1060)]
+    monkeypatch.setattr(trip_analysis, "_query_obd_data", lambda device_id, start_ts, end_ts: rows)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1060 + trip_analysis.GAP_TIMEOUT_SEC + 1)
+
+    trip_analysis._write_job_status(
+        "dev1", "job-1", 900,
+        {"job_id": "job-1", "device_id": "dev1", "status": "RUNNING", "started_at": 900,
+         "range": {"start_ts": 1000, "end_ts": 3000}, "trips_saved": 0, "has_more": False, "error": None},
+    )
+    trip_analysis._process_job("job-1", "dev1", 1000, 3000, 900)
+
+    keys = _list_trip_keys("dev1")
+    body = json.loads(_s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=keys[0])["Body"].read())
+    assert body["start_location"] == "自宅"
+    assert body["end_location"] == "自宅"
 
 
 def test_process_job_holds_back_unsettled_last_trip(trip_analysis, monkeypatch):
@@ -1349,6 +950,24 @@ def test_handler_routes_self_invoke_to_process_job(trip_analysis, monkeypatch):
     trip_analysis.handler(event, None)
 
     assert called == {"job_id": "job-1", "device_id": "dev1", "start_ts": 1000, "end_ts": 2000, "started_at": 900}
+
+
+def test_handler_routes_post_location_path_to_fill_location(trip_analysis, monkeypatch):
+    called = {}
+
+    def _fake_handle(event):
+        called["event"] = event
+        return {"statusCode": 200}
+
+    monkeypatch.setattr(trip_analysis, "_handle_fill_location", _fake_handle)
+    event = {
+        "requestContext": {"http": {"method": "POST"}, "authorizer": {"jwt": {"claims": {"cognito:groups": "admin"}}}},
+        "rawPath": "/trip-analysis/location",
+        "body": "{}",
+    }
+    resp = trip_analysis.handler(event, None)
+    assert resp["statusCode"] == 200
+    assert "event" in called
 
 
 def test_handler_routes_post_to_handle_start(trip_analysis, monkeypatch):
