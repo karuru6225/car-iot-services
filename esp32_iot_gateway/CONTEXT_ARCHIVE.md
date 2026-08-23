@@ -4,8 +4,14 @@
 
 ### ~~TODO: OBDトリップのAIナレーティブ生成~~ **実装済み**
 
-`experiments/trip-analysis-ai-poc/`（gitignore対象）でのプロンプト設計検証（DESIGN_LOG.md）に基づき、`infra/lambda_src/trip_analysis/index.py`の`_process_job()`にBedrock連携を実装した。
+`experiments/trip-analysis-ai-poc/`（gitignore対象）でのプロンプト設計検証（DESIGN_LOG.md）に基づき、`infra/lambda_src/trip_analysis/index.py`にBedrock連携を実装した。
 
+- **自動実行ではなく、Web管理画面から特定のトリップを指定して手動実行する方式**
+  （`POST /trip-analysis/narrative {device_id, key}` → `_handle_regenerate_narrative()` →
+  `_regenerate_trip_narrative()`）。当初は`_process_job()`に直接組み込んでいたが、
+  「新規トリップにしか生成されない・過去のトリップに遡って生成できない」という制約が
+  あったため、個別指定・何度でも再実行可能な方式に変更した。`_load_trips()`が返す
+  各トリップに`analysis_key`（S3キー）を付与し、Web側が対象を特定できるようにしている
 - `_bucket_rows()`/`_bucket_csv()`: 30秒バケットの時系列（`FAST_FIELDS`のmax/min/mean、`SLOW_FIELDS`のmean）
 - `_compute_trip_baseline()`/`_compute_row_baseline()`: 過去トリップの`row_count`重みつき統計。行単位のz-score母集団は、POCのように過去の生データを毎回読み直すのではなく、`_compute_summary()`に追加保存した各トリップのavg/std/row_countをpooled variance公式で合成して復元する設計に変更（Athenaへの追加クエリを避けるため）
 - `_label_for_zscore()`/`FIELD_LABELS`: z-scoreを自然言語ラベル（「やや薄め」等）に変換
@@ -13,7 +19,8 @@
 - `_is_comm_dropout()`: 通信断（coolant_c/ecu_voltage同時ゼロ）の集計除外
 - `_build_narrative_prompt()`/`_invoke_bedrock()`: POCで確定した最終プロンプト構成（①サマリー②数値指摘③平易な説明④提案）でBedrock Nova Pro（`apac.amazon.nova-pro-v1:0`、converse API）を呼び出す
 - Lambdaランタイム同梱のbotocoreがconverse APIに対応していない場合があるため、固定バージョンのboto3/botocoreをLambda Layerとしてバンドル（`infra/lambda_src/trip_analysis/layer/`、pip installは手動一回限りの手順）
-- `_generate_narrative()`は失敗時に空文字へフォールバックし、ナレーティブ生成の失敗がトリップ集計自体の保存を妨げないようにした
+- `_generate_narrative()`は失敗時に空文字へフォールバックする（`_regenerate_trip_narrative()`はそれをそのまま`narrative`へ書き込むため、生成失敗時は空文字で上書きされる）
+- Web管理画面（`web/trip-analysis.html`）のトリップ一覧はテーブルからアコーディオンに変更し、展開すると詳細統計とナレーティブ・「AI分析を実行」ボタンが表示される
 - 残課題として認識した上で対応しなかった点: 一般論的な注意喚起（「点検がおすすめです」等）を完全にゼロにする指示は、POC検証で複数回試しても効果が不完全だった。「④提案」への隔離で実害は抑えられているため、追加対応はせず許容する方針とした
 
 ### ~~TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）~~ **設計変更により対応済み**

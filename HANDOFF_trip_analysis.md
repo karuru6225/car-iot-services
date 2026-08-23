@@ -9,10 +9,16 @@
 
 **実装済み・`main`にマージ済み・実運用中**（PR #35、他に燃料列/期間フィルタ追加のPRあり）。
 
-- バックエンド: `infra/lambda_src/trip_analysis/index.py`（Lambda 1本、テスト99件）
+- バックエンド: `infra/lambda_src/trip_analysis/index.py`（Lambda 1本、テスト109件）
 - インフラ: `infra/trip_analysis.tf`（Lambda・API Gateway・IAM）
 - Web管理画面: `web/trip-analysis.html`
-- **AIナレーティブ生成（`narrative`フィールド）も実装済み**。`_process_job()`からBedrock（Nova Pro、converse API）を呼び出し、位置情報（AWS Location Service・Here）・車固有ベースライン・z-scoreラベルを組み込んだレポートを生成する。詳細は`esp32_iot_gateway/CONTEXT_ARCHIVE.md`の該当TODOアーカイブ、実行可能な試作コード一式（本実装の元ネタ）は`experiments/trip-analysis-ai-poc/`（gitignore対象）を参照。
+- **AIナレーティブ生成（`narrative`フィールド）も実装済み**。ただし`_process_job()`からの自動実行ではなく、
+  Web管理画面のトリップ一覧（アコーディオン展開）から**特定のトリップを指定して手動実行**する方式
+  （`POST /trip-analysis/narrative {device_id, key}`）。新規・過去のトリップを問わず任意のトリップに
+  対して実行・再実行できる。Bedrock（Nova Pro、converse API）・位置情報（AWS Location Service・Here）・
+  車固有ベースライン・z-scoreラベルを組み込んだレポートを生成する。詳細は
+  `esp32_iot_gateway/CONTEXT_ARCHIVE.md`の該当TODOアーカイブ、実行可能な試作コード一式（本実装の元ネタ）は
+  `experiments/trip-analysis-ai-poc/`（gitignore対象）を参照。
 
 ---
 
@@ -50,7 +56,13 @@
     `timeout=600`秒まで自由に使う。
   - レスポンス: `{job_id, status, range, trips_saved, has_more, error}`
 - `GET /trip-analysis?device_id=&job_id=` → `_handle_get()` でジョブ状態をポーリング用に返す
-- `GET /trip-analysis?device_id=` → `_handle_get()` でトリップ一覧を返す（`job_id`省略時）
+- `GET /trip-analysis?device_id=` → `_handle_get()` でトリップ一覧を返す（`job_id`省略時）。
+  各トリップには`_load_trips()`が付与する`analysis_key`（S3キー）が含まれ、下記narrative APIが
+  対象トリップを特定するのに使う
+- `POST /trip-analysis/narrative {device_id, key}` → `_handle_regenerate_narrative()`。
+  指定した1トリップのAIナレーティブを(再)生成し、同じS3キーへ上書き保存して更新後のトリップJSONを返す。
+  `_process_job()`からは呼ばれない（自動実行しない）ため、`handler()`は`event["rawPath"]`が
+  `/narrative`で終わるかで`_handle_start()`と区別してルーティングする
 - 自己呼び出しイベント（`event.get("trip_analysis_job")`が真）の場合は`_process_job()`を
   直接呼び、admin権限チェック・HTTPルーティングをスキップする（内部呼び出しのため）
 
@@ -136,16 +148,23 @@ trip-analysis-jobs/{device_id}/{started_at:010d}_{job_id}.json
   `deriveObdDeviceId()`でOBD側のBLE名（`car-iot-{MAC上位6桁}`）を機械的に導出し、
   Thingごとに1タブを構築する。この変換ロジックは
   `esp32_iot_gateway/src/device/ble_scan.cpp:44`の`"car-iot-%.6s"`フォーマットに対応
-- 各タブ: 「分析開始」ボタン（`POST /trip-analysis`→2秒間隔ポーリング）＋トリップ一覧
-  テーブル（開始/終了/時間/距離/推定消費燃料/燃費）＋期間フィルタ（開始日〜終了日、
-  クライアント側絞り込み）＋絞り込み後の合計走行距離・合計推定消費燃料表示
+- 各タブ: 「分析開始」ボタン（`POST /trip-analysis`→2秒間隔ポーリング）＋期間フィルタ
+  （開始日〜終了日、クライアント側絞り込み）＋絞り込み後の合計走行距離・合計推定消費燃料表示
+- **トリップ一覧はアコーディオン形式**（`.trip-item`/`.trip-header`/`.trip-detail`）。
+  ヘッダー行に開始/終了/時間/距離/燃費/Grafanaリンク、クリックで展開すると詳細統計
+  （LTFT/STFT平均・触媒温度最大・ブースト圧最大・点火時期平均・冷却水温・サンプル数）と
+  AIナレーティブ、「AI分析を実行」ボタンが出る。開閉状態は`expandedKeys`（`analysis_key`の`Set`）
+  で保持し、フィルタ再適用（`applyFilter()`）をまたいでも維持される
+- 「AI分析を実行」ボタンは`POST /trip-analysis/narrative {device_id, key}`を呼び、
+  レスポンスの更新後トリップJSONで`currentTrips`内の該当要素を差し替えて再描画する
+  （ページ全体の再取得はしない）
 - `admin.html`のヘッダーに導線リンクあり
 
 ---
 
 ## 5. テスト（`infra/lambda_src/trip_analysis/tests/`）
 
-t-wada式TDD（Red→Green→Refactor）で全関数を実装、**99テスト**（moto + pytest + Docker）。
+t-wada式TDD（Red→Green→Refactor）で全関数を実装、**109テスト**（moto + pytest + Docker）。
 
 ```bash
 cd infra/lambda_src
@@ -169,14 +188,30 @@ docker compose -f docker-compose.test.yml run --build --rm test pytest trip_anal
 `trip_analysis`側の集計（`_compute_summary()`は現状`absolute_load_pct`自体を扱っていない）は
 未対応のまま。
 
-### 6.2 AIナレーティブ生成 **実装済み**
+**関連して2026-08-23、実運用データの調査で新たなバグを発見した**: 通信断に隣接する
+時間ギャップ（BLE/CAN再接続待ちのDeepSleep由来と推定）の間、`_compute_summary()`の
+距離・燃料の台形積分がその区間の燃料消費をゼロ扱いにしてしまい、ギャップ中に実移動が
+あったトリップでは燃費が物理的にありえない値になる（実例: 距離2.03km・燃料0.005L・
+燃費372km/L）。ほぼ全トリップで潜在的に発生しているが、通常はギャップ中ほぼ停車のため
+実害が小さく気づかれていなかった。詳細・修正方針は`esp32_iot_gateway/CONTEXT.md`の
+「trip_analysisの通信断ギャップで燃費が破綻するケースがある」TODO参照（**未修正、報告のみ**）。
 
-`_process_job()`にBedrock呼び出しを組み込み済み（`_generate_narrative()`）。POCの設計方針は
-ほぼそのまま踏襲したが、**1点だけ意図的に変更した**: POCの`compute_baseline.py`等は
-バケット時系列のz-score母集団を過去トリップの生OBD行データを毎回読み直して計算していたが、
-本実装ではAthenaへの追加クエリを避けるため、`_compute_summary()`に保存した各トリップの
-avg/std/row_countを`_compute_row_baseline()`でpooled variance公式により合成する方式にした
-（過去の生データを取り直さずに数学的に同一の母集団統計を復元する）。
+### 6.2 AIナレーティブ生成 **実装済み（ただし自動実行ではなく個別トリップ指定の手動実行）**
+
+当初`_process_job()`にBedrock呼び出しを直接組み込んでいたが、「新規トリップにしか
+生成されない」「過去のトリップに遡って生成できない」という制約をユーザーから指摘され、
+**`_process_job()`からは削除し、Web管理画面から特定のトリップを指定して呼び出す
+`POST /trip-analysis/narrative {device_id, key}`（`_handle_regenerate_narrative()`→
+`_regenerate_trip_narrative()`）に設計変更した**。これにより新規・過去問わず任意のトリップに
+対して何度でも実行・再実行できる。`_generate_narrative()`自体（バケット化・ベースライン計算・
+位置情報・Bedrock呼び出し）は変更なくそのまま流用している。
+
+POCの設計方針はほぼそのまま踏襲したが、**1点だけ意図的に変更した**: POCの
+`compute_baseline.py`等はバケット時系列のz-score母集団を過去トリップの生OBD行データを
+毎回読み直して計算していたが、本実装ではAthenaへの追加クエリを避けるため、
+`_compute_summary()`に保存した各トリップのavg/std/row_countを`_compute_row_baseline()`で
+pooled variance公式により合成する方式にした（過去の生データを取り直さずに数学的に
+同一の母集団統計を復元する）。
 実装の詳細は`esp32_iot_gateway/CONTEXT_ARCHIVE.md`の該当TODOアーカイブを参照。
 
 ### 6.3 OBDのdevice_id名前空間について
