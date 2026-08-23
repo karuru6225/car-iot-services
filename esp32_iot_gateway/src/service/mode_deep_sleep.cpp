@@ -101,6 +101,7 @@ void DeepSleepModeHandler::run()
   // このサイクルのBLEデータが未送信のまま次サイクルまで1周分遅延してしまう
   queue.flush();
   queue.save();
+  delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断（このflush()がサイクル最後のpublishのため必須）
   lte.disconnect();
   lte.radioOff();
 #endif
