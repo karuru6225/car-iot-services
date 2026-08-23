@@ -75,7 +75,6 @@ void DeepSleepModeHandler::run()
   updateChargingState();
   shadowPublishConfig();
   shadowPollDelta();
-  delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
 #ifndef DEBUG_SKIP_NETWORK
   // このサイクルのBLEスキャン結果を同サイクル内でflush()できるよう、非同期スキャンの完了を待って収集する。
   // NimBLEスタック異常時に無限待機しないようSCAN_TIME+マージンで打ち切り、強制停止する
@@ -101,6 +100,7 @@ void DeepSleepModeHandler::run()
   // このサイクルのBLEデータが未送信のまま次サイクルまで1周分遅延してしまう
   queue.flush();
   queue.save();
+  delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断（このflush()がサイクル最後のpublishのため必須）
   lte.disconnect();
   lte.radioOff();
 #endif
