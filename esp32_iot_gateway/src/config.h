@@ -15,9 +15,9 @@
 // リリース時はここを更新してからタグを打つ（タグはCI発火とGitHub Release表示用、
 // ここの値と一致しないとfirmware-release.ymlが検証エラーで停止する。RELEASE.md参照）
 #if BOARD_VERSION == 1
-#define FIRMWARE_VERSION_BASE "1.24.0" // FIRMWARE_VERSION_V1
+#define FIRMWARE_VERSION_BASE "1.24.1" // FIRMWARE_VERSION_V1
 #elif BOARD_VERSION == 2
-#define FIRMWARE_VERSION_BASE "2.2.0" // FIRMWARE_VERSION_V2
+#define FIRMWARE_VERSION_BASE "2.2.1" // FIRMWARE_VERSION_V2
 #else
 #error "BOARD_VERSION must be 1 or 2"
 #endif
