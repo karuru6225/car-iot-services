@@ -95,8 +95,17 @@ void setup()
   logger.printf("\n=== esp32_iot_gateway %s 起動 (wakeup=%d) ===\n",
                 FIRMWARE_VERSION, (int)g_wakeupCause);
 
+  // NVSにデフォルトモードが設定されていればそれを使う（Shadowのdefault_modeから設定、
+  // config.cpp参照）。未設定ならこれまで通りprodはDEEP_SLEEP・developはCONTINUOUSにフォールバック
+  if (auto defaultMode = getDefaultMode())
+  {
+    modeCtx.setMode(*defaultMode);
+  }
 #ifdef DEBUG_MODE
-  modeCtx.setMode(OperationMode::CONTINUOUS);
+  else
+  {
+    modeCtx.setMode(OperationMode::CONTINUOUS);
+  }
 #endif
 
   // CANとBLEはOLED/ADS/INA228/LTEより前に初期化する。LIGHT_SLEEPの短周期ピーク中は

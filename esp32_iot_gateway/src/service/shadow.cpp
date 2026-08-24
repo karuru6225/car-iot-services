@@ -25,6 +25,22 @@ struct OverrideModeEntry
 const OverrideModeEntry kOverrideModes[] = {
     {"timed_continuous", OperationMode::TIMED_CONTINUOUS},
 };
+
+// default_mode で受け付ける文字列 ⇔ モードの対応表（起動時デフォルトモード、NVS保存）。
+// TIMED_CONTINUOUSは継続期限(continuous_until_time)が別途必要な一時モードのため対象外
+const OverrideModeEntry kDefaultModes[] = {
+    {"deep_sleep", OperationMode::DEEP_SLEEP},
+    {"continuous", OperationMode::CONTINUOUS},
+    {"light_sleep", OperationMode::LIGHT_SLEEP},
+};
+
+const char *defaultModeName(OperationMode m)
+{
+  for (const auto &entry : kDefaultModes)
+    if (entry.mode == m)
+      return entry.name;
+  return nullptr;
+}
 } // namespace
 
 std::optional<OperationMode> getShadowOverrideMode()
@@ -54,8 +70,14 @@ void shadowPublishConfig(bool clearDesired)
   std::optional<time_t> untilTimeReport =
       (modeCtx.mode() == OperationMode::TIMED_CONTINUOUS) ? s_continuousUntilTime : std::nullopt;
 
+  // NVSに設定済みのデフォルトモードをreportedに含める（未設定ならnull）
+  const char *defaultModeReport = nullptr;
+  if (auto defaultMode = getDefaultMode())
+    defaultModeReport = defaultModeName(*defaultMode);
+
   char payload[256];
-  int len = buildConfigPayload(payload, sizeof(payload), clearDesired, s_overrideNextModeReport, untilTimeReport);
+  int len = buildConfigPayload(payload, sizeof(payload), clearDesired, s_overrideNextModeReport,
+                               untilTimeReport, defaultModeReport);
   s_overrideNextModeReport = nullptr; // ACK 送信後にリセット（通常時は null）
 
   if (mqtt.publish(topic, (const uint8_t *)payload, (size_t)len))
@@ -150,6 +172,21 @@ bool shadowPollDelta(uint32_t timeoutMs)
     s_continuousUntilTime = requested > maxUntil ? maxUntil : requested;
     logger.printf("[SHADOW] continuous_until_time → %ld\n", (long)*s_continuousUntilTime);
     changed = true;
+  }
+
+  if (state["default_mode"].is<const char *>())
+  {
+    const char *req = state["default_mode"].as<const char *>();
+    for (const auto &entry : kDefaultModes)
+    {
+      if (strcmp(req, entry.name) == 0)
+      {
+        setDefaultMode(entry.mode);
+        logger.printf("[SHADOW] default_mode → %s\n", entry.name);
+        changed = true;
+        break;
+      }
+    }
   }
 
   if (state["override_next_mode"].is<const char *>())

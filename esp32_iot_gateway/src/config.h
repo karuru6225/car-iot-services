@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <optional>
 
 // デバッグ用: 有効にするとLTE/MQTT等のネットワーク処理を丸ごとスキップする。
 // main.cpp単体のソース内#defineだと他の翻訳単位（service/mode_*.cpp等）に伝播しないため、
@@ -111,6 +112,11 @@ void setCharging(bool v);
 // デバッグログ有効フラグ（NVS, デフォルト: false）
 bool getDebugLogEnabled();
 void setDebugLogEnabled(bool enabled);
+
+// 起動時のデフォルト動作モード（NVS, Shadowのdefault_modeから設定）。未設定ならnullopt。
+// 未設定時はこれまで通り、prodはDEEP_SLEEP・developはCONTINUOUS（DEBUG_MODE）にフォールバックする
+std::optional<OperationMode> getDefaultMode();
+void setDefaultMode(OperationMode m);
 
 // メニュー操作で消去するデータを一括クリア（"device" ネームスペースは保持）
 void clearMenuData();
