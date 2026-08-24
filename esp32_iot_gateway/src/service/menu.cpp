@@ -8,6 +8,7 @@
 #include "../device/ads.h"
 #include "../device/ina228.h"
 #include "../device/can.h"
+#include "../logger.h"
 #include "../domain/ble_targets.h"
 #include "../domain/sensor_factory.h"
 #include "../config.h"
@@ -771,10 +772,31 @@ static MenuState tickTcmAtfRunning(ButtonEvent)
 {
   canInit();
   oledShowMessage("ATF@0x1E", "querying...");
+  logger.println("[MENU] ATF@0x1E: 開始");
 
   s_tcmAtfSendOk = canSendObdRequestUds(0x2201, TCM_ECU_ADDR);
-  if (s_tcmAtfSendOk)
-    s_tcmAtfRecvResult = canReceiveObdResponse(s_tcmAtfData, &s_tcmAtfDlc, 100, sizeof(s_tcmAtfData), &s_tcmAtfNrc);
+  if (!s_tcmAtfSendOk)
+  {
+    logger.println("[MENU] ATF@0x1E: 送信失敗");
+    return MenuState::TCM_ATF_RESULT;
+  }
+
+  s_tcmAtfRecvResult = canReceiveObdResponse(s_tcmAtfData, &s_tcmAtfDlc, 100, sizeof(s_tcmAtfData), &s_tcmAtfNrc);
+  if (s_tcmAtfRecvResult == ObdRecvResult::NegativeResponse)
+  {
+    logger.printf("[MENU] ATF@0x1E: 否定応答 NRC=0x%02X\n", s_tcmAtfNrc);
+  }
+  else if (s_tcmAtfRecvResult == ObdRecvResult::Ok)
+  {
+    char hex[3 * sizeof(s_tcmAtfData) + 1] = {0};
+    for (uint8_t b = 0; b < s_tcmAtfDlc && b < sizeof(s_tcmAtfData); b++)
+      snprintf(hex + b * 3, 4, "%02X ", s_tcmAtfData[b]);
+    logger.printf("[MENU] ATF@0x1E: 正常応答 len=%u data=%s\n", s_tcmAtfDlc, hex);
+  }
+  else
+  {
+    logger.println("[MENU] ATF@0x1E: 応答なし");
+  }
   return MenuState::TCM_ATF_RESULT;
 }
 
