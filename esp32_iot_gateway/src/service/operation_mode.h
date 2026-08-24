@@ -33,7 +33,7 @@ public:
 
 private:
   OperationModeContext &_ctx;
-  static const int kModeCount = 3; // OperationMode の要素数（config.h 参照）
+  static const int kModeCount = 4; // OperationMode の要素数（config.h 参照）
   IOperationModeHandler *_handlers[kModeCount] = {};
 };
 

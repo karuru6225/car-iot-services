@@ -6,7 +6,7 @@
 
 
 int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *overrideNextMode,
-                       std::optional<time_t> continuousUntilTime)
+                       std::optional<time_t> continuousUntilTime, const char *defaultMode)
 {
   // override_next_mode: "timed_continuous" または null（通常時）
   char overrideStr[32];
@@ -22,6 +22,13 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *ov
   else
     strcpy(untilStr, "null");
 
+  // default_mode: NVSに設定済みのデフォルトモード名（"light_sleep"等）または null（未設定時）
+  char defaultModeStr[32];
+  if (defaultMode)
+    snprintf(defaultModeStr, sizeof(defaultModeStr), "\"%s\"", defaultMode);
+  else
+    strcpy(defaultModeStr, "null");
+
   if (clearDesired)
     return snprintf(buf, size,
                     "{\"state\":{"
@@ -34,13 +41,14 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *ov
                     "\"charging\":%s,"
                     "\"override_next_mode\":%s,"
                     "\"continuous_until_time\":%s,"
+                    "\"default_mode\":%s,"
                     "\"fw_version\":\"" FIRMWARE_VERSION "\""
                     "},\"desired\":null}}",
                     getAhOffset(),
                     getChgStartV(), getChgStopV(), getChgMinDiffV(),
                     getDebugLogEnabled() ? "true" : "false",
                     isCharging() ? "true" : "false",
-                    overrideStr, untilStr);
+                    overrideStr, untilStr, defaultModeStr);
   return snprintf(buf, size,
                   "{\"state\":{\"reported\":{"
                   "\"ah_offset\":%d,"
@@ -51,13 +59,14 @@ int buildConfigPayload(char *buf, size_t size, bool clearDesired, const char *ov
                   "\"charging\":%s,"
                   "\"override_next_mode\":%s,"
                   "\"continuous_until_time\":%s,"
+                  "\"default_mode\":%s,"
                   "\"fw_version\":\"" FIRMWARE_VERSION "\""
                   "}}}",
                   getAhOffset(),
                   getChgStartV(), getChgStopV(), getChgMinDiffV(),
                   getDebugLogEnabled() ? "true" : "false",
                   isCharging() ? "true" : "false",
-                  overrideStr, untilStr);
+                  overrideStr, untilStr, defaultModeStr);
 }
 
 

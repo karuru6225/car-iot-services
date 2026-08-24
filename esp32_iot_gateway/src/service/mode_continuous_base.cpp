@@ -15,12 +15,12 @@
 #include <Arduino.h>
 #include <time.h>
 
-// BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）
+// BLE 切断 → 昇格元モードに戻す（BLE 接続で昇格した場合のみ）
 void ContinuousModeHandlerBase::beforeRun()
 {
   if (_ctx.bleUpgradedToContinuous() && !blePeripheral.isConnected())
   {
-    _ctx.setMode(OperationMode::DEEP_SLEEP);
+    _ctx.setMode(_ctx.promotedFromMode());
     _ctx.setBleUpgradedToContinuous(false);
   }
 }
@@ -35,11 +35,11 @@ void ContinuousModeHandlerBase::handleMenuButton()
 const char *ContinuousModeHandlerBase::nextModeLabel() const
 {
   if (selfMode() == OperationMode::TIMED_CONTINUOUS && time(nullptr) >= _ctx.continuousUntilEpoch())
-    return "DEEP_SLEEP"; // TIMED_CONTINUOUSの期限到達で次回DEEP_SLEEPへ戻る
+    return "DEEP_SLEEP"; // TIMED_CONTINUOUSの期限到達で次回DEEP_SLEEPへ戻る（BLE/CAN昇格とは無関係の別経路）
   if (_ctx.userForcedSleep())
-    return "DEEP_SLEEP"; // BTN1長押しでBLE接続中に強制スリープ選択済み
+    return operationModeName(_ctx.promotedFromMode()); // BTN1長押しでBLE接続中に強制スリープ選択済み
   if (_ctx.bleUpgradedToContinuous() && !blePeripheral.isConnected())
-    return "DEEP_SLEEP"; // BLEで昇格したがBLEが切れているため次回で自動的に戻る
+    return operationModeName(_ctx.promotedFromMode()); // BLEで昇格したがBLEが切れているため次回で自動的に戻る
   return "CONTINUOUS";
 }
 
@@ -48,11 +48,12 @@ void ContinuousModeHandlerBase::onTick()
   OBDReading r = obdPoll();
   blePeripheral.notifyObd(r);
 
-  // CAN応答で昇格した場合、応答が途絶えたら（IGN OFF相当）DEEP_SLEEPへ戻す
+  // CAN応答で昇格した場合、応答が途絶えたら（IGN OFF相当）昇格元モードへ戻す
+  // （昇格元がDEEP_SLEEPでもLIGHT_SLEEPでも条件は同じ）
   if (_ctx.canUpgradedToContinuous() && !r.valid)
   {
-    logger.println("[MAIN] CAN応答途絶 → DEEP_SLEEPへ切り替え");
-    _ctx.setMode(OperationMode::DEEP_SLEEP);
+    logger.printf("[MAIN] CAN応答途絶 → %sへ切り替え\n", operationModeName(_ctx.promotedFromMode()));
+    _ctx.setMode(_ctx.promotedFromMode());
     _ctx.setCanUpgradedToContinuous(false);
   }
 }
@@ -88,9 +89,9 @@ void ContinuousModeHandlerBase::continuousLoopCore()
       }
       else if (_ctx.mode() == selfMode())
       {
-        logger.println("[MAIN] BTN1 長押し → DEEP_SLEEP モードへ切り替え");
+        logger.printf("[MAIN] BTN1 長押し → %sモードへ切り替え\n", operationModeName(_ctx.promotedFromMode()));
         oledPrint("Switching sleep...");
-        _ctx.setMode(OperationMode::DEEP_SLEEP);
+        _ctx.setMode(_ctx.promotedFromMode());
         _ctx.setBleUpgradedToContinuous(false);
         // BLE接続中の手動切り替えは、loop()側の自動昇格に即座に上書きされてしまうため
         // (BLE接続 && DEEP_SLEEP の条件が真になる)、切断されるまでは尊重する
@@ -117,8 +118,8 @@ void ContinuousModeHandlerBase::continuousLoopCore()
       // beforeRun()の次回呼び出し（最大5分後）を待たず1秒ティックで即座に検知する
       if (_ctx.bleUpgradedToContinuous() && !blePeripheral.isConnected())
       {
-        logger.println("[MAIN] BLE切断検出 → DEEP_SLEEPへ切り替え");
-        _ctx.setMode(OperationMode::DEEP_SLEEP);
+        logger.printf("[MAIN] BLE切断検出 → %sへ切り替え\n", operationModeName(_ctx.promotedFromMode()));
+        _ctx.setMode(_ctx.promotedFromMode());
         _ctx.setBleUpgradedToContinuous(false);
       }
 

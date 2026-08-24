@@ -29,6 +29,7 @@ IOT_ENDPOINT = os.environ["IOT_ENDPOINT"]
 iot_data = boto3.client("iot-data", endpoint_url=IOT_ENDPOINT)
 
 ALLOWED_OVERRIDE_MODES = {"timed_continuous"}
+ALLOWED_DEFAULT_MODES = {"deep_sleep", "continuous", "light_sleep"}
 
 # キー名 → 期待する型（tuple の場合はいずれかに一致すればよい）
 SCHEMA = {
@@ -40,6 +41,7 @@ SCHEMA = {
     "charging": bool,
     "override_next_mode": (str, type(None)),
     "continuous_until_time": (int, type(None)),
+    "default_mode": (str, type(None)),
     "fw_version": str,
 }
 
@@ -76,6 +78,10 @@ def handler(event, context):
 
         if key == "override_next_mode" and value not in ALLOWED_OVERRIDE_MODES:
             print(f"[GUARD] invalid override_next_mode device_id={device_id} value={value!r}")
+            corrections[key] = None
+
+        if key == "default_mode" and value not in ALLOWED_DEFAULT_MODES:
+            print(f"[GUARD] invalid default_mode device_id={device_id} value={value!r}")
             corrections[key] = None
 
     if not corrections:
