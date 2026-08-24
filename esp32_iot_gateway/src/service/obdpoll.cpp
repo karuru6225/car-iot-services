@@ -233,3 +233,13 @@ OBDReading obdPoll()
   finalizeAndLog(r);
   return r;
 }
+
+bool obdCheckCanAlive()
+{
+  uint8_t pid = 0x0C;
+  uint8_t data[8];
+  uint8_t dlc;
+  if (!canSendObdRequestMulti(&pid, 1))
+    return false;
+  return canReceiveObdResponse(data, &dlc, 50, sizeof(data)) == ObdRecvResult::Ok;
+}

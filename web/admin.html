@@ -219,6 +219,7 @@ function deviceCard(d) {
     <div class="kv"><div class="k">Ah オフセット</div><div class="v">${s.ah_offset != null ? s.ah_offset : '-'}</div></div>
     <div class="kv"><div class="k">デバッグログ</div><div class="v">${s.debug_log != null ? (s.debug_log ? 'on' : 'off') : '-'}</div></div>
     <div class="kv"><div class="k">Continuous期限</div><div class="v">${s.continuous_until_time != null ? new Date(s.continuous_until_time * 1000).toLocaleString() : '-'}</div></div>
+    <div class="kv"><div class="k">デフォルトモード</div><div class="v">${s.default_mode || '-'}</div></div>
   </div>
 
   <!-- Shadow 編集 -->
@@ -259,6 +260,15 @@ function deviceCard(d) {
         <div class="form-group">
           <label>継続時間（分、timed_continuous時のみ有効。今から何分後まで継続するか）</label>
           <input type="number" step="1" min="1" max="1440" id="sv-duration-${id}" value="30">
+        </div>
+        <div class="form-group">
+          <label>default_mode（起動時のデフォルトモード。未設定なら従来通りprod=deep_sleep/dev=continuous）</label>
+          <select id="sv-default-mode-${id}">
+            <option value=""             ${!s.default_mode                       ? 'selected' : ''}>(未設定)</option>
+            <option value="deep_sleep"   ${s.default_mode === 'deep_sleep'       ? 'selected' : ''}>deep_sleep</option>
+            <option value="continuous"   ${s.default_mode === 'continuous'       ? 'selected' : ''}>continuous</option>
+            <option value="light_sleep"  ${s.default_mode === 'light_sleep'      ? 'selected' : ''}>light_sleep</option>
+          </select>
         </div>
         <div class="form-group">
           <label>charging</label>
@@ -306,6 +316,7 @@ function toggleSection(id, btn) {
 
 async function saveShadow(deviceId) {
   const overrideMode = document.getElementById(`sv-override-${deviceId}`).value || null;
+  const defaultMode  = document.getElementById(`sv-default-mode-${deviceId}`).value || null;
   const body = {
     chg_start_v:      parseFloat(document.getElementById(`sv-start-${deviceId}`).value),
     chg_stop_v:       parseFloat(document.getElementById(`sv-stop-${deviceId}`).value),
@@ -314,6 +325,7 @@ async function saveShadow(deviceId) {
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',
     charging:         document.getElementById(`sv-charging-${deviceId}`).value === 'true',
     override_next_mode: overrideMode,
+    default_mode:      defaultMode,
   };
   if (overrideMode === 'timed_continuous') {
     const minutes = parseInt(document.getElementById(`sv-duration-${deviceId}`).value, 10);

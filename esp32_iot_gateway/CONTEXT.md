@@ -746,3 +746,31 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 **影響範囲（重要）**: この問題により`logStorageWrite()`は事実上ずっと機能しておらず、SPIFFS上のデバッグログファイルへの永続化が全て失敗していた可能性がある。シリアルモニタ接続時は`[E]`ログで気づけるが、実運用中（車載・モニタなし）は完全に不可視。**過去にSPIFFS上のログファイルを根拠にした調査結果があれば信頼できない**（他のTODOでは幸い`pio device monitor`でのシリアル直接確認を使っており、この問題の影響は受けていない）。
 
 **対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
+
+### TODO: LIGHT_SLEEP モードの追加（実装済み・実機未検証）
+
+既存の `OperationMode`（`DEEP_SLEEP` / `CONTINUOUS` / `TIMED_CONTINUOUS`）に加え、CAN応答・BLE接続の有無でCONTINUOUSへの昇格を判定する新モード `LIGHT_SLEEP` を追加した。目的はエンジン始動・スマホ接続をESP32が素早く把握すること。DEEP_SLEEPは変更せず、LIGHT_SLEEPはメニューから手動選択する別モードとして追加した（`Continuous`の隣に`Light Sleep`項目）。
+
+**方式（当初案からの変更点）**: 検討段階ではESP32の light sleep API（`esp_light_sleep_start()`）でCPU/RAMを保持したまま10秒間隔ポーリングする案だったが、以下2点で不採用にした:
+
+- ESP-IDFのautomatic light sleep（`esp_pm_configure()`）はこのプロジェクトの `framework = arduino` では機能しない（[arduino-esp32#2240](https://github.com/espressif/arduino-esp32/issues/2240): プリビルド版コアで`CONFIG_FREERTOS_USE_TICKLESS_IDLE`が無効）
+- 手動 `esp_light_sleep_start()` はBLE(NimBLE)稼働中の安全性が文献だけでは確証を持てず、実機ソークテストなしに信頼できない
+
+代わりに、**既にDEEP_SLEEPで実績のある「`esp_deep_sleep_start()`で完全リブート」パターンをそのまま流用し、間隔だけ20秒に短縮する**方式を採用した。LTE・OLED・ADS1115・INA228の初期化はスキップし、CANとBLEだけ初期化して応答/接続を確認する。
+
+**実装**:
+
+- `main.cpp`の`setup()`冒頭（OLED/ADS/INA228/LTEより前）でCAN/BLEを初期化し、`lightSleepShortWakeGate()`（`service/mode_light_sleep.cpp`）を呼ぶ。RTC_DATA_ATTR変数（`s_lightSleepPeeking`/`s_lightSleepBoundaryWake`、deep sleepを跨いで保持）でピーク状態を管理し、検知なし・5分境界未到達ならその場で`esp_deep_sleep_start()`して戻らない（＝それ以降の初期化を毎回スキップ）
+- 検知ロジック（BLE接続 or CAN応答）は`DeepSleepModeHandler::beforeRun()`と共通化し、`mode_common.cpp`の`detectContinuousPromotionTrigger()`にまとめた。CAN生存確認は`obdPoll()`の29PID+DID調査ではなく、PID 0x0C単発の軽量版`obdCheckCanAlive()`を使う
+- CONTINUOUSへの昇格元（DEEP_SLEEP or LIGHT_SLEEP）を`OperationModeContext::promotedFromMode()`で記録し、復帰先（BLE切断・CAN無応答どちらも）を昇格元へ汎用化した。復帰条件はDEEP_SLEEP起源・LIGHT_SLEEP起源とも同じ「1回無応答/切断で即復帰」
+- GPIO hold（v2基板の自己保持回路・充電中のリレー制御ピン）＋起床設定＋`esp_deep_sleep_start()`は`mode_common.cpp`の`enterDeepSleepFor()`に共通化し、`DeepSleepModeHandler::run()`と両方から使う
+
+**実機未検証の項目**: 実際にエンジン始動・BLE接続からの昇格レイテンシ、5分境界での通常サイクルへの復帰、v2基板でのGPIO hold動作、CAN/BLEの20秒間隔リブートに対するハードウェア耐性（MCP2562FDトランシーバー・AO3401A電源スイッチの頻繁な電源断入）。
+
+### TODO: LIGHT_SLEEP昇格時、5分境界を待たずにフル送信が走ってしまう問題（未着手・回避策あり）
+
+LIGHT_SLEEPからCONTINUOUSへ昇格した直後（`lightSleepShortWakeGate()`が検知してフォールスルーした回）は、5分境界を待たずにLTE接続・`measure()`/`publishBattery()`・`shadowPublishConfig()`・OTAチェック等のフル送信が走ってしまう（`secsToNextBoundary()`による境界揃えが効くのはそれ以降のCONTINUOUSサイクルから）。DEEP_SLEEPは5分に1回しか昇格判定をしないため、この「境界からズレる」問題自体がこれまで表面化していなかった。
+
+**回避策（未実装）**: 境界外での昇格時はLTE接続・shadow同期・OTAチェックを伴うフル送信を行わず、ADS1115/INA228/OLED（CAN/BLEは`lightSleepShortWakeGate()`の時点で初期化済み）だけ用意して、`ContinuousModeHandlerBase::onTick()`相当（`obdPoll()` → `blePeripheral.notifyObd()`）とBLE notify（`blePeripheral.notify()`）だけのループにいきなり入る。LTEを一切使わないため、境界に達するまでは「境界を待たない送信」問題自体が発生しない。境界に達した時点で初めてLTE接続・フル送信の通常サイクルに入る。
+
+実装には`ContinuousModeHandlerBase`/`main.cpp`のsetup()フロー周りの構造変更が必要（LTE接続をCONTINUOUS突入と切り離し、境界到達まで遅延させる仕組みが要る）。

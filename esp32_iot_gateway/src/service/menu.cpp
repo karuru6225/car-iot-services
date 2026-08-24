@@ -35,6 +35,7 @@ enum class MenuState
   RESTART,
   BLE_PHONE,
   DONE_CONTINUOUS,
+  DONE_LIGHT_SLEEP,
   DID_SCAN_RUNNING,   // Mode22 DIDスキャン: 全域(0x0000-0xFFFF)総当たり実行中（ブロッキング、BTN1長押しで中断）
   DID_SCAN_RESULT,    // ヒットしたDID一覧
   DID_VALUES_RUNNING, // kDidCandidates[]の実値読み取り実行中（ブロッキング、9件のみで即完了）
@@ -111,7 +112,8 @@ static const MenuItem ITEMS[] = {
     {"Sensor View",  "/",             MenuState::SENSOR,          {}},
     {"System",       "/",             MenuState::MENU_NAV,        {}},
     {"OBD",          "/",             MenuState::MENU_NAV,        {}},
-    {"Continuous",   "/",             MenuState::DONE_CONTINUOUS, {}},
+    {"Continuous",   "/",             MenuState::DONE_CONTINUOUS,  {}},
+    {"Light Sleep",  "/",             MenuState::DONE_LIGHT_SLEEP, {}},
     {"Restart",      "/",             MenuState::RESTART,         {}},
     // path="/BLE Settings"
     {"Register",     "/BLE Settings", MenuState::BLE_SCAN,        {}},
@@ -852,12 +854,19 @@ OperationMode enterMenuMode()
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;
+    case MenuState::DONE_LIGHT_SLEEP:   break;
     }
 
     if (next == MenuState::DONE_CONTINUOUS)
     {
       oledClear();
       return OperationMode::CONTINUOUS;
+    }
+
+    if (next == MenuState::DONE_LIGHT_SLEEP)
+    {
+      oledClear();
+      return OperationMode::LIGHT_SLEEP;
     }
 
     if (next != state)
