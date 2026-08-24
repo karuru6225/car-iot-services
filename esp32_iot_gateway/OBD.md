@@ -1019,6 +1019,56 @@ Hondaの診断PID設計思想としての裏付け）:
 
 `ATF near 0x22xx`（`0x2200-0x22FF`）は`0x2000-0x2FFF`に包含済みのためスキャン不要。
 
+**NRC33系6件のセキュリティアクセス（SID 0x27）公開情報調査（2026-08-24）**: NRC33系6件
+（`0x2682`/`0xE402`/`0xE40E`/`0xE813`/`0xE81F`/`0xE829`）はUDSのSecurityAccess（Service 0x27、
+Seed-Key方式）を通さないと読めない。DIDスキャンの時と同程度の広さでシード→キー変換アルゴリズム
+自体の公開情報を調査したところ、**計算式そのものは見つかった**（下記）が、実際に使う係数値は
+未取得という状態。
+
+**Honda用アルゴリズムの計算式が公開されている（[jglim/UnlockECU](https://github.com/jglim/UnlockECU)
+の`HondaAlgo1.cs`）**:
+
+```csharp
+// Level 1, used for firmware flashing
+// Keys are embedded as a 12-byte ascii block in the *.rwd.gz firmware files
+key = (seed * k1_mul);
+if (k2_mod != 0) key %= k2_mod;
+key ^= (k0_xor + seed);
+key &= 0xFFFF;
+```
+
+16bit演算で `key = ((seed × k1) mod k2) XOR (k0 + seed)`。ただし2つ制約がある:
+
+1. コメントの通り**これは"Level 1"＝ファームウェア書き込み用**のアルゴリズム。係数`k0`/`k1`/`k2`
+   は車種・ECUごとに異なり、**その車のファームウェアファイル（`.rwd.gz`）自体に埋め込まれている**
+   （抽出には[rwd-xray](https://github.com/jpancotti/rwd-xray)というツールを使う想定、
+   `HondaReflashTool`にキー生成の詳細が文書化されているとコメントにあり）。今回のNRC33系6件は
+   診断読み取り用のDIDで、Honda ECUの一般的な設計だと書き込み用とは別のセキュリティレベル
+   （Level 3等）を要求している可能性が高い。実際どのレベルを要求しているかは、`didScanRun()`が
+   受け取ったNRC33応答の中身（要求レベル番号）を確認すれば分かる。
+2. リポジトリ内を検索した限り、**`HondaAlgo1`以外のHonda用アルゴリズム（Level2以降）は
+   実装されていない**。
+
+その他の収穫:
+
+- **Honda Insight/CR-Z のMCM（モーター制御ユニット、ハイブリッド系）で実際にリバースエンジニアリング
+  された実例がある**（[insightcentral.net「CAN Hacking Cryptographic Conundrums」](https://www.insightcentral.net/threads/can-hacking-cryptographic-conundrums.127315/)）。
+  HDS（純正診断機）とのCAN通信をキャプチャして解析した結果、**2バイトのマスターキーとチャレンジ
+  （シード）をXORする単純な方式**だったという記述が検索結果の要約に見つかった（記事本文はペイ
+  ウォールで直接確認できず、要約止まり）。ただしこれはハイブリッド用MCMであり、`HondaAlgo1`とも
+  一致しない別の実装の可能性がある。
+- [bouletmarc/HondaReflashTool](https://github.com/bouletmarc/HondaReflashTool)（`HondaAlgo1`の
+  キー生成が文書化されているとされる。詳細未確認）
+- [aeaphichart/HondaECU-1](https://github.com/aeaphichart/HondaECU-1)（K-lineプロトコルのバイク
+  向けツールでUDSではなく対象外）
+- N-VAN/N-BOXでの言及（日本語コミュニティ含む）は無し
+
+**結論**: 計算式の型（乗算・剰余・XORの組み合わせ）は判明したが、①係数がN-VAN固有で未取得、
+②今回必要なセキュリティレベルがLevel1と同じ保証がない、という2つのギャップが残る。次の一手は
+`didScanRun()`のNRC33応答から要求レベル番号を確認すること。係数の取得にはN-VANのファームウェア
+ファイル(.rwd.gz)の入手＋`rwd-xray`での解析が必要になりそうで、そこまでやる価値があるかは
+別途判断（今回のプロジェクトスコープでは優先度低）。
+
 ---
 
 ## リスクと対処
