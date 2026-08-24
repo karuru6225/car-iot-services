@@ -39,6 +39,8 @@ enum class MenuState
   DID_SCAN_RESULT,    // ヒットしたDID一覧
   DID_VALUES_RUNNING, // kDidCandidates[]の実値読み取り実行中（ブロッキング、9件のみで即完了）
   DID_VALUES_RESULT,  // 読み取ったDID実値一覧
+  ECU_SCAN_RUNNING,   // ECUアドレススキャン実行中（機能アドレッシングでブロードキャスト、300ms程度で即完了）
+  ECU_SCAN_RESULT,    // 応答したECUアドレス一覧
 };
 
 // ---- 一時メッセージ表示 ----
@@ -124,6 +126,7 @@ static const MenuItem ITEMS[] = {
     // path="/OBD"
     {"DID Scan",     "/OBD",          MenuState::DID_SCAN_RUNNING,  {}},
     {"DID Values",   "/OBD",          MenuState::DID_VALUES_RUNNING, {}},
+    {"ECU Scan",     "/OBD",          MenuState::ECU_SCAN_RUNNING,   {}},
 
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
@@ -153,6 +156,13 @@ static DidScanResult s_didScanResult;
 static int s_didScanResultCursor = 0;
 static DidValueResult s_didValueResult;
 static int s_didValueResultCursor = 0;
+
+// ---- ECUアドレススキャン状態（OBD.md「ATF温度が一度も取得できない」問題の切り分け） ----
+
+static const int MAX_ECU_SCAN_RESULTS = 8;
+static uint8_t s_ecuScanAddrs[MAX_ECU_SCAN_RESULTS];
+static int s_ecuScanCount = 0;
+static int s_ecuScanResultCursor = 0;
 
 // ---- tick 関数 ----
 
@@ -694,6 +704,51 @@ static MenuState tickDidValuesResult(ButtonEvent ev)
   return MenuState::DID_VALUES_RESULT;
 }
 
+// ---- ECUアドレススキャン（機能アドレッシングでUDS DiagnosticSessionControlをブロードキャストし、
+// 応答するECUアドレスを収集する。OBD.md「ATF温度が一度も取得できない」問題の切り分け用） ----
+
+static MenuState tickEcuScanRunning(ButtonEvent)
+{
+  canInit();
+  oledShowMessage("ECU Scan", "broadcasting...");
+  s_ecuScanCount = canScanEcuAddresses(s_ecuScanAddrs, MAX_ECU_SCAN_RESULTS);
+  s_ecuScanResultCursor = 0;
+  return MenuState::ECU_SCAN_RESULT;
+}
+
+static MenuState tickEcuScanResult(ButtonEvent ev)
+{
+  if (s_ecuScanCount == 0)
+  {
+    oledShowMessage("No response", "BTN1 long: back");
+    if (ev == ButtonEvent::BTN1_LONG) { canDeinit(); return MenuState::MENU_NAV; }
+    return MenuState::ECU_SCAN_RESULT;
+  }
+
+  char items[MAX_ECU_SCAN_RESULTS][20];
+  const char *ptrs[MAX_ECU_SCAN_RESULTS];
+  for (int i = 0; i < s_ecuScanCount; i++)
+  {
+    snprintf(items[i], sizeof(items[i]), "ECU 0x%02X", s_ecuScanAddrs[i]);
+    ptrs[i] = items[i];
+  }
+  char title[20];
+  snprintf(title, sizeof(title), "ECUs (%d)", s_ecuScanCount);
+  oledShowMenu(title, ptrs, s_ecuScanCount, s_ecuScanResultCursor);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_ecuScanResultCursor = (s_ecuScanResultCursor + 1) % s_ecuScanCount;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    s_ecuScanResultCursor = 0;
+    canDeinit();
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::ECU_SCAN_RESULT;
+}
+
 // ---- エントリポイント ----
 
 OperationMode enterMenuMode()
@@ -729,6 +784,8 @@ OperationMode enterMenuMode()
     case MenuState::DID_SCAN_RESULT:    next = tickDidScanResult(ev);    break;
     case MenuState::DID_VALUES_RUNNING: next = tickDidValuesRunning(ev); break;
     case MenuState::DID_VALUES_RESULT:  next = tickDidValuesResult(ev);  break;
+    case MenuState::ECU_SCAN_RUNNING:   next = tickEcuScanRunning(ev);   break;
+    case MenuState::ECU_SCAN_RESULT:    next = tickEcuScanResult(ev);    break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;

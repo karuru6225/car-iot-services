@@ -40,3 +40,11 @@ ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeou
 
 // TWAIコントローラの状態・エラーカウンタ（TEC/REC等）をログ出力する（診断用）
 void canLogStatus(const char *tag);
+
+// 機能アドレッシング(0x18DB33F1)でUDS DiagnosticSessionControl(10 01)をブロードキャストし、
+// windowMs間に届いた応答ECUアドレス（応答ID 0x18DAF1xxの下位バイト）を重複なく収集する。
+// canSendObdRequestUds()はエンジンECU(0x0E)固定のため、それ以外にOBD-IIポート経由で
+// UDSサービスに応答するECU（トランスミッション制御ユニット等）が存在するかを調べる調査用
+// （OBD.md「ATF温度が一度も取得できない」問題の切り分け参照）。
+// ecuAddrsOutにはmaxCount件まで書き込み、実際に見つかった件数を返す（0=応答なし）。
+uint8_t canScanEcuAddresses(uint8_t *ecuAddrsOut, uint8_t maxCount, uint32_t windowMs = 300);

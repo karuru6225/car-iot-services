@@ -200,6 +200,55 @@ static bool isObdResponseFrame(const twai_message_t &rx)
   return is29bit || is11bit;
 }
 
+uint8_t canScanEcuAddresses(uint8_t *ecuAddrsOut, uint8_t maxCount, uint32_t windowMs)
+{
+  if (!s_ready || maxCount == 0)
+    return 0;
+
+  recoverIfBusOff();
+
+  twai_message_t tx = {};
+  tx.identifier = CAN_REQ_ID; // 機能アドレッシング（0x18DB33F1、ブロードキャスト）
+  tx.extd = 1;
+  tx.data_length_code = 8;
+  tx.data[0] = 0x02; // PCI: Single Frame, length = SID(1) + subfunction(1)
+  tx.data[1] = 0x10; // DiagnosticSessionControl
+  tx.data[2] = 0x01; // defaultSession
+  // 残り（data[3..7]）は0x00パディング
+
+  if (!transmitObdRequest(tx, "canScanEcuAddresses"))
+    return 0;
+
+  uint8_t count = 0;
+  twai_message_t rx = {};
+  unsigned long deadline = millis() + windowMs;
+  while ((int32_t)(millis() - deadline) < 0)
+  {
+    if (twai_receive(&rx, pdMS_TO_TICKS(10)) != ESP_OK)
+      continue;
+    if (!rx.extd || !isObdResponseFrame(rx))
+      continue; // 11bitフォールバックはECUアドレス抽出の対象外（29bit応答のみ扱う）
+
+    uint8_t ecuAddr = (uint8_t)(rx.identifier & 0xFF);
+    bool dup = false;
+    for (uint8_t i = 0; i < count; i++)
+    {
+      if (ecuAddrsOut[i] == ecuAddr)
+      {
+        dup = true;
+        break;
+      }
+    }
+    if (!dup && count < maxCount)
+    {
+      ecuAddrsOut[count++] = ecuAddr;
+      logger.printf("[CAN] ECUスキャン: アドレス0x%02X から応答 id=0x%08X data[0..2]=%02X %02X %02X\n",
+                    ecuAddr, (unsigned)rx.identifier, rx.data[0], rx.data[1], rx.data[2]);
+    }
+  }
+  return count;
+}
+
 // First Frame受信直後にFlow Controlを送信する（既定はCTS, BS=0, STmin=0固定）。
 // 宛先IDは受信したFFの応答元ID（0x18DAF1xx）の下位バイト＝ECUアドレスから組む。
 // flowStatus=ISO_TP_FS_OVERFLOWを渡すとECUに即座の送信打ち切りを要求できる
