@@ -1164,6 +1164,48 @@ key &= 0xFFFF;
 
 ---
 
+## CAN Proxyモード（実装済み・実車確認は未実施）
+
+PCからOBD-IIバスへ任意のCANフレームを直接送受信できる調査用モードを追加した（2026-08-25）。
+ISO-TP/UDSのフレーミングを一切介さない生CANパススルーで、NRC33系DIDのセキュリティアクセス総当たり
+や、既存メニューが対応していない任意プロトコルの試行を、ファーム再書き込みなしでPC側スクリプトから
+行えるようにする狙い。
+
+**プロトコル選定**: CAN業界で事実上標準のslcan(LAWICEL)ASCIIプロトコル（SavvyCAN・python-can等が
+そのまま使える）も検討したが、実装の複雑さ（ASCIIパース）と「任意のバイナリを飛ばしたい」という
+要件を踏まえ、自作の固定長バイナリフレーミングを採用した。
+
+```text
+PC→ESP32（送信要求）: 0x55 <FLAGS:1B> <ID:4B LE> <DLC:1B> <DATA:0-8B>
+ESP32→PC（受信転送）: 0xAA <FLAGS:1B> <ID:4B LE> <DLC:1B> <DATA:0-8B>
+FLAGS bit0: 1=29bit拡張ID / 0=11bit標準ID
+```
+
+USB シリアル（115200bps、`logger`と共用）を使う。OLEDメニュー「OBD > CAN Proxy」から入る
+（`service/menu.cpp`）。BTN1長押しで終了しメニューに戻る。
+
+| # | 対象ファイル | 変更内容 |
+|---|------------|---------|
+| 1 | `device/can.h/.cpp` | `canRawTransmit()`/`canRawReceive()`追加。ISO-TPフレーミングなしで任意ID/データを送受信する生API |
+| 2 | `service/can_proxy.h/.cpp` 新規 | `canProxyRun()`。PC→ESP32のバイト列を状態機械でパースしCANへ送信、CAN受信を都度PCへ転送するブロッキングループ |
+| 3 | `service/menu.cpp` | 「OBD > CAN Proxy」メニュー追加 |
+
+**設計判断:**
+
+- プロキシ実行中はUSBシリアルをバイナリプロトコル専用にする必要があるため、`canRawTransmit()`/
+  `canRawReceive()`・`canProxyRun()`のいずれも`logger`（通常のデバッグprint）を一切呼ばない。
+  既存の`canSendObdRequestUds()`等が使う`transmitObdRequest()`（送信失敗ログ）や
+  `recoverIfBusOff()`（バスオフ復帰ログ）も意図的に経由していない
+- 上記の帰結として、**プロキシモード中はバスオフからの自動復帰を行わない**。復帰が必要な場合は
+  BTN1長押しでモードを抜け、他のOBD機能を1回使えば通常通り復帰する
+- チェックサム等の誤り検出は付けていない（USB直結・信頼性の高い区間のため簡易さを優先）。同期は
+  `0x55`/`0xAA`のスキャンのみに依存するため、理論上は偶然の一致でフレームがずれる可能性はあるが、
+  実害が出た場合はチェックサム追加を検討する
+
+**実車確認は未実施**。
+
+---
+
 ## リスクと対処
 
 | リスク | 対処 |

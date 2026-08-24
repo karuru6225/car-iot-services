@@ -401,3 +401,33 @@ ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeou
     logger.printf("[CAN] canReceiveObdResponse: タイムアウト（未一致%u件受信、一致なし）\n", unmatchedCount);
   return ObdRecvResult::Timeout;
 }
+
+bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc)
+{
+  if (!s_ready || dlc > 8)
+    return false;
+
+  twai_message_t tx = {};
+  tx.identifier = id;
+  tx.extd = extd ? 1 : 0;
+  tx.data_length_code = dlc;
+  memcpy(tx.data, data, dlc);
+
+  return twai_transmit(&tx, pdMS_TO_TICKS(10)) == ESP_OK;
+}
+
+bool canRawReceive(uint32_t *id, bool *extd, uint8_t *data, uint8_t *dlc, uint32_t timeoutMs)
+{
+  if (!s_ready)
+    return false;
+
+  twai_message_t rx = {};
+  if (twai_receive(&rx, pdMS_TO_TICKS(timeoutMs)) != ESP_OK)
+    return false;
+
+  *id = rx.identifier;
+  *extd = rx.extd;
+  *dlc = rx.data_length_code;
+  memcpy(data, rx.data, rx.data_length_code);
+  return true;
+}

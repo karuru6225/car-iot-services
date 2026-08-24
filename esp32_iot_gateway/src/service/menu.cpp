@@ -14,6 +14,7 @@
 #include "../config.h"
 #include "../board_pins.h"
 #include "diddscan.h"
+#include "can_proxy.h"
 #include <Arduino.h>
 
 // ---- 状態定義 ----
@@ -45,6 +46,7 @@ enum class MenuState
   ECU_SCAN_RESULT,    // 応答したECUアドレス一覧
   TCM_ATF_RUNNING,    // ECU 0x1E(TCM候補)への物理アドレッシングでDID 0x2201(ATF)を単発問い合わせ中
   TCM_ATF_RESULT,     // 上記の結果（正常応答/NRC/無応答）
+  CAN_PROXY_RUNNING,  // PCとのUSBシリアル経由の生CANパススルー実行中（BTN1長押しで終了するまでブロッキング）
 };
 
 // ---- 一時メッセージ表示 ----
@@ -133,6 +135,7 @@ static const MenuItem ITEMS[] = {
     {"DID Values",   "/OBD",          MenuState::DID_VALUES_RUNNING, {}},
     {"ECU Scan",     "/OBD",          MenuState::ECU_SCAN_RUNNING,   {}},
     {"ATF@0x1E",     "/OBD",          MenuState::TCM_ATF_RUNNING,    {}},
+    {"CAN Proxy",    "/OBD",          MenuState::CAN_PROXY_RUNNING,  {}},
 
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
@@ -834,6 +837,24 @@ static MenuState tickTcmAtfResult(ButtonEvent ev)
   return MenuState::TCM_ATF_RESULT;
 }
 
+// ---- CAN Proxyモード（PCとのUSBシリアル経由の生CANパススルー、OBD.md「CAN Proxyモード」参照） ----
+// canProxyRun()実行中はUSBシリアルをバイナリプロトコル専用にする必要があるため、
+// logger（通常のデバッグprint）は一切呼ばない。OLED表示のみで状態を示す。
+
+static bool canProxyShouldExit()
+{
+  return button.read() == ButtonEvent::BTN1_LONG;
+}
+
+static MenuState tickCanProxyRunning(ButtonEvent)
+{
+  canInit();
+  oledShowMessage("CAN Proxy", "BTN1 long: exit");
+  canProxyRun(canProxyShouldExit);
+  canDeinit();
+  return MenuState::MENU_NAV;
+}
+
 // ---- エントリポイント ----
 
 OperationMode enterMenuMode()
@@ -873,6 +894,7 @@ OperationMode enterMenuMode()
     case MenuState::ECU_SCAN_RESULT:    next = tickEcuScanResult(ev);    break;
     case MenuState::TCM_ATF_RUNNING:    next = tickTcmAtfRunning(ev);    break;
     case MenuState::TCM_ATF_RESULT:     next = tickTcmAtfResult(ev);     break;
+    case MenuState::CAN_PROXY_RUNNING:  next = tickCanProxyRunning(ev);  break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;

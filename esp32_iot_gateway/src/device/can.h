@@ -50,3 +50,16 @@ void canLogStatus(const char *tag);
 // （OBD.md「ATF温度が一度も取得できない」問題の切り分け参照）。
 // ecuAddrsOutにはmaxCount件まで書き込み、実際に見つかった件数を返す（0=応答なし）。
 uint8_t canScanEcuAddresses(uint8_t *ecuAddrsOut, uint8_t maxCount, uint32_t windowMs = 300);
+
+// ---- CAN Proxyモード用: 生フレームの送受信（ISO-TP/UDSのフレーミングを一切介さない） ----
+// service/can_proxy.cpp専用。USBシリアルをCAN Proxyのバイナリプロトコル専用にするため、
+// この2関数はログ出力・バスオフ自動復帰を一切行わない（recoverIfBusOff()も呼ばない）。
+// バスオフ復帰が必要な場合はプロキシモードを抜けて他のOBD機能を使えば通常通り復帰する。
+// canInit()済み前提（OBD.md「CAN Proxyモード」参照）。
+
+// 任意のCANフレームを1件送信する。dlcは0〜8、それ以外はfalse
+bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc);
+
+// timeoutMs以内に受信したCANフレームを1件返す（IDのフィルタなし、全フレーム対象）。
+// 受信できなければfalseを返し、引数は変更しない
+bool canRawReceive(uint32_t *id, bool *extd, uint8_t *data, uint8_t *dlc, uint32_t timeoutMs);
