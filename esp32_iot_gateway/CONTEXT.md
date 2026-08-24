@@ -766,3 +766,11 @@ REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UA
 - GPIO hold（v2基板の自己保持回路・充電中のリレー制御ピン）＋起床設定＋`esp_deep_sleep_start()`は`mode_common.cpp`の`enterDeepSleepFor()`に共通化し、`DeepSleepModeHandler::run()`と両方から使う
 
 **実機未検証の項目**: 実際にエンジン始動・BLE接続からの昇格レイテンシ、5分境界での通常サイクルへの復帰、v2基板でのGPIO hold動作、CAN/BLEの20秒間隔リブートに対するハードウェア耐性（MCP2562FDトランシーバー・AO3401A電源スイッチの頻繁な電源断入）。
+
+### TODO: LIGHT_SLEEP昇格時、5分境界を待たずにフル送信が走ってしまう問題（未着手・回避策あり）
+
+LIGHT_SLEEPからCONTINUOUSへ昇格した直後（`lightSleepShortWakeGate()`が検知してフォールスルーした回）は、5分境界を待たずにLTE接続・`measure()`/`publishBattery()`・`shadowPublishConfig()`・OTAチェック等のフル送信が走ってしまう（`secsToNextBoundary()`による境界揃えが効くのはそれ以降のCONTINUOUSサイクルから）。DEEP_SLEEPは5分に1回しか昇格判定をしないため、この「境界からズレる」問題自体がこれまで表面化していなかった。
+
+**回避策（未実装）**: 境界外での昇格時はLTE接続・shadow同期・OTAチェックを伴うフル送信を行わず、ADS1115/INA228/OLED（CAN/BLEは`lightSleepShortWakeGate()`の時点で初期化済み）だけ用意して、`ContinuousModeHandlerBase::onTick()`相当（`obdPoll()` → `blePeripheral.notifyObd()`）とBLE notify（`blePeripheral.notify()`）だけのループにいきなり入る。LTEを一切使わないため、境界に達するまでは「境界を待たない送信」問題自体が発生しない。境界に達した時点で初めてLTE接続・フル送信の通常サイクルに入る。
+
+実装には`ContinuousModeHandlerBase`/`main.cpp`のsetup()フロー周りの構造変更が必要（LTE接続をCONTINUOUS突入と切り離し、境界到達まで遅延させる仕組みが要る）。

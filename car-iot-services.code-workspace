@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "esp32_iot_gateway"
+		}
+	],
+	"settings": {
+		"terminal.integrated.env.windows": {
+			"PSExecutionPolicyPreference": "RemoteSigned"
+		}
+	}
+}
