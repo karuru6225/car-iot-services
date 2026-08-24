@@ -197,17 +197,28 @@ OBDReading obdPoll()
   {
     logger.println("[OBD] ATF(0x2201): 送信失敗");
   }
-  else if (canReceiveObdResponse(data, &dlc, 50, sizeof(data)) != ObdRecvResult::Ok)
-  {
-    logger.println("[OBD] ATF(0x2201): 応答なし");
-  }
-  else if (!obdDecodeAtfTemp(data, dlc, r))
-  {
-    logger.println("[OBD] ATF(0x2201): デコード失敗");
-  }
   else
   {
-    r.atfTempValid = true;
+    uint8_t nrc = 0;
+    ObdRecvResult atfResult = canReceiveObdResponse(data, &dlc, 50, sizeof(data), &nrc);
+    if (atfResult == ObdRecvResult::NegativeResponse)
+    {
+      // NRC 0x31 = requestOutOfRange（DID非サポート）。単なるタイムアウトと区別して残す
+      // （OBD.md「DID 0x2201が実車で一度も成功していない問題」参照）
+      logger.printf("[OBD] ATF(0x2201): 否定応答 NRC=0x%02X\n", nrc);
+    }
+    else if (atfResult != ObdRecvResult::Ok)
+    {
+      logger.println("[OBD] ATF(0x2201): 応答なし");
+    }
+    else if (!obdDecodeAtfTemp(data, dlc, r))
+    {
+      logger.println("[OBD] ATF(0x2201): デコード失敗");
+    }
+    else
+    {
+      r.atfTempValid = true;
+    }
   }
 
   // 燃料残量・油温DID調査用（OBD.md「DID Values 実測記録」参照）。走行中もCONTINUOUSモードの

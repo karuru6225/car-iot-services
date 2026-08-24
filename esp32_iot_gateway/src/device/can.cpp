@@ -10,7 +10,6 @@ static const uint8_t CAN_TX_PIN = boardPins().gu00Pin;  // GPIO4: MCP2562FD TXD 
 static const uint8_t CAN_EN_PIN = boardPins().gu0EnPin; // GPIO6: AO3401A ゲート（HIGH=電源ON）
 
 static const uint32_t CAN_REQ_ID = 0x18DB33F1;    // 29-bit functional addressing
-static const uint32_t CAN_UDS_REQ_ID = 0x18DA0EF1; // 29-bit physical addressing（対象ECU=0x0E固定、Mode22用）
 static const uint32_t CAN_RESP_MASK = 0x18DAF100; // 応答IDの上位24bit（下位8bit=ECUアドレス）
 static const uint32_t CAN_TESTER_ADDR = 0xF1;      // 自分（テスター）のアドレス
 static const uint32_t CAN_FC_ID_BASE = 0x18DA0000; // FC宛先 = BASE | (ECUアドレス<<8) | CAN_TESTER_ADDR
@@ -172,7 +171,7 @@ bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count)
   return transmitObdRequest(tx, "canSendObdRequestMulti");
 }
 
-bool canSendObdRequestUds(uint16_t did)
+bool canSendObdRequestUds(uint16_t did, uint8_t ecuAddr)
 {
   if (!s_ready)
     return false;
@@ -180,7 +179,9 @@ bool canSendObdRequestUds(uint16_t did)
   recoverIfBusOff();
 
   twai_message_t tx = {};
-  tx.identifier = CAN_UDS_REQ_ID; // 物理アドレッシング（Mode01の機能アドレッシングとは異なる）
+  // 物理アドレッシング（0x18DA<ecuAddr><tester>、sendFlowControl()のFC ID組み立てと同じ式）。
+  // Mode01の機能アドレッシングとは異なる
+  tx.identifier = CAN_FC_ID_BASE | ((uint32_t)ecuAddr << 8) | CAN_TESTER_ADDR;
   tx.extd = 1;
   tx.data_length_code = 8;
   tx.data[0] = 0x03; // PCI: Single Frame, length = SID(1) + DID(2)

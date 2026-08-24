@@ -42,6 +42,8 @@ enum class MenuState
   DID_VALUES_RESULT,  // 読み取ったDID実値一覧
   ECU_SCAN_RUNNING,   // ECUアドレススキャン実行中（機能アドレッシングでブロードキャスト、300ms程度で即完了）
   ECU_SCAN_RESULT,    // 応答したECUアドレス一覧
+  TCM_ATF_RUNNING,    // ECU 0x1E(TCM候補)への物理アドレッシングでDID 0x2201(ATF)を単発問い合わせ中
+  TCM_ATF_RESULT,     // 上記の結果（正常応答/NRC/無応答）
 };
 
 // ---- 一時メッセージ表示 ----
@@ -129,6 +131,7 @@ static const MenuItem ITEMS[] = {
     {"DID Scan",     "/OBD",          MenuState::DID_SCAN_RUNNING,  {}},
     {"DID Values",   "/OBD",          MenuState::DID_VALUES_RUNNING, {}},
     {"ECU Scan",     "/OBD",          MenuState::ECU_SCAN_RUNNING,   {}},
+    {"ATF@0x1E",     "/OBD",          MenuState::TCM_ATF_RUNNING,    {}},
 
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
@@ -165,6 +168,17 @@ static const int MAX_ECU_SCAN_RESULTS = 8;
 static uint8_t s_ecuScanAddrs[MAX_ECU_SCAN_RESULTS];
 static int s_ecuScanCount = 0;
 static int s_ecuScanResultCursor = 0;
+
+// ---- ECU 0x1E(TCM候補)へのATF(0x2201)単発問い合わせ状態 ----
+// （OBD.md「DID 0x2201が実車で一度も成功していない問題」の切り分け。canSendObdRequestUds()を
+// 宛先パラメータ化したことで、エンジンECU(0x0E)固定だった問い合わせを任意ECUへ向けられるようになった）
+
+static const uint8_t TCM_ECU_ADDR = 0x1E;
+static ObdRecvResult s_tcmAtfRecvResult = ObdRecvResult::Error;
+static uint8_t s_tcmAtfNrc = 0;
+static uint8_t s_tcmAtfData[8];
+static uint8_t s_tcmAtfDlc = 0;
+static bool s_tcmAtfSendOk = false;
 
 // ---- tick 関数 ----
 
@@ -751,6 +765,53 @@ static MenuState tickEcuScanResult(ButtonEvent ev)
   return MenuState::ECU_SCAN_RESULT;
 }
 
+// ---- ECU 0x1E(TCM候補)へのATF(0x2201)単発問い合わせ ----
+
+static MenuState tickTcmAtfRunning(ButtonEvent)
+{
+  canInit();
+  oledShowMessage("ATF@0x1E", "querying...");
+
+  s_tcmAtfSendOk = canSendObdRequestUds(0x2201, TCM_ECU_ADDR);
+  if (s_tcmAtfSendOk)
+    s_tcmAtfRecvResult = canReceiveObdResponse(s_tcmAtfData, &s_tcmAtfDlc, 100, sizeof(s_tcmAtfData), &s_tcmAtfNrc);
+  return MenuState::TCM_ATF_RESULT;
+}
+
+static MenuState tickTcmAtfResult(ButtonEvent ev)
+{
+  char line1[20];
+  char line2[20] = "BTN1 long: back";
+
+  if (!s_tcmAtfSendOk)
+  {
+    snprintf(line1, sizeof(line1), "send failed");
+  }
+  else if (s_tcmAtfRecvResult == ObdRecvResult::NegativeResponse)
+  {
+    snprintf(line1, sizeof(line1), "NRC 0x%02X", s_tcmAtfNrc);
+  }
+  else if (s_tcmAtfRecvResult == ObdRecvResult::Ok)
+  {
+    char hex[2 * sizeof(s_tcmAtfData) + 1] = {0};
+    for (uint8_t b = 0; b < s_tcmAtfDlc && b < sizeof(s_tcmAtfData); b++)
+      snprintf(hex + b * 2, 3, "%02X", s_tcmAtfData[b]);
+    snprintf(line1, sizeof(line1), "OK %s", hex);
+  }
+  else
+  {
+    snprintf(line1, sizeof(line1), "no response");
+  }
+  oledShowMessage(line1, line2);
+
+  if (ev == ButtonEvent::BTN1_LONG)
+  {
+    canDeinit();
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::TCM_ATF_RESULT;
+}
+
 // ---- エントリポイント ----
 
 OperationMode enterMenuMode()
@@ -788,6 +849,8 @@ OperationMode enterMenuMode()
     case MenuState::DID_VALUES_RESULT:  next = tickDidValuesResult(ev);  break;
     case MenuState::ECU_SCAN_RUNNING:   next = tickEcuScanRunning(ev);   break;
     case MenuState::ECU_SCAN_RESULT:    next = tickEcuScanResult(ev);    break;
+    case MenuState::TCM_ATF_RUNNING:    next = tickTcmAtfRunning(ev);    break;
+    case MenuState::TCM_ATF_RESULT:     next = tickTcmAtfResult(ev);     break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;
