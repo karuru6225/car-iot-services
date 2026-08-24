@@ -17,10 +17,12 @@ void canDeinit();
 // 「ISO-TPマルチフレーム対応・多PID要求」参照。物理アドレッシングは未対応）。
 bool canSendObdRequestMulti(const uint8_t *pids, uint8_t count);
 
-// Mode 22 (UDS ReadDataByIdentifier) でDIDを1件要求する。物理アドレッシング固定
-// （0x18DA0EF1、対象ECU=0x0E=エンジンECU）。Mode01の機能アドレッシングとは異なる
-// （経緯はOBD.md「Mode 22 実機テスト候補」参照）。
-bool canSendObdRequestUds(uint16_t did);
+// Mode 22 (UDS ReadDataByIdentifier) でDIDを1件要求する。物理アドレッシング
+// （0x18DA<ecuAddr>F1）。ecuAddrの既定値0x0Eはエンジンユニット。Mode01の機能アドレッシングとは
+// 異なる（経緯はOBD.md「Mode 22 実機テスト候補」参照）。
+// ecuAddr: 対象ECUアドレス（既定0x0E=エンジンECU。0x1E=TCM候補等、canScanEcuAddresses()の
+// 結果を渡す想定。OBD.md「DID 0x2201が実車で一度も成功していない問題」参照）。
+bool canSendObdRequestUds(uint16_t did, uint8_t ecuAddr = 0x0E);
 
 enum class ObdRecvResult : uint8_t
 {
