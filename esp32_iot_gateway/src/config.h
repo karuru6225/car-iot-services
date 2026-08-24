@@ -30,12 +30,20 @@ enum class OperationMode
   DEEP_SLEEP,
   CONTINUOUS,       // measure/publish + OBD-II(CAN)ポーリングを1秒間隔で実行
   TIMED_CONTINUOUS, // Shadow override_next_mode から指定。指定分数が経過するまで CONTINUOUS を繰り返し、期限到達で自動 DEEP_SLEEP
+  LIGHT_SLEEP,      // DEEP_SLEEPの短周期版。LTE/OLED/ADS/INA228を初期化せずCAN/BLEのみ20〜30秒間隔でチェックし、
+                     // 検知したらCONTINUOUSへ、5分境界に到達したら通常のDEEP_SLEEP起床と同じフルサイクルを行う
 };
 
 // DeepSleep
 static const uint32_t SLEEP_INTERVAL_SEC = 300;
 // DeepSleep突入前にBLE接続を待つ最低時間（スマホ側の接続リトライと合わせる。OBD.md参照）
 static const uint32_t BLE_WAKE_WINDOW_SEC = 15;
+
+// LightSleep（DEEP_SLEEPの短周期版）
+static const uint32_t LIGHT_SLEEP_PEEK_INTERVAL_SEC = 20; // CAN/BLEを確認する間隔
+// BLE接続を待つ時間。BLE_WAKE_WINDOW_SEC(15秒)は5分サイクル向けの値なので、
+// 20〜30秒サイクルのLIGHT_SLEEPでそのまま使うと稼働率(duty比)が大きくなりすぎるため短縮する
+static const uint32_t LIGHT_SLEEP_BLE_WAIT_SEC = 5;
 
 // BLE
 static const uint16_t SWITCHBOT_COMPANY_ID = 0x0969;

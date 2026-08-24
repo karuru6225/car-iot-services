@@ -3,9 +3,7 @@
 
 OperationModeContext modeCtx;
 
-namespace
-{
-const char *modeName(OperationMode m)
+const char *operationModeName(OperationMode m)
 {
   switch (m)
   {
@@ -15,16 +13,17 @@ const char *modeName(OperationMode m)
     return "CONTINUOUS";
   case OperationMode::TIMED_CONTINUOUS:
     return "TIMED_CONTINUOUS";
+  case OperationMode::LIGHT_SLEEP:
+    return "LIGHT_SLEEP";
   }
   return "?";
 }
-} // namespace
 
 void OperationModeContext::setMode(OperationMode m)
 {
   if (m == _mode)
     return;
-  logger.printf("[MODE_CTX] mode: %s -> %s\n", modeName(_mode), modeName(m));
+  logger.printf("[MODE_CTX] mode: %s -> %s\n", operationModeName(_mode), operationModeName(m));
   _mode = m;
 }
 
@@ -42,6 +41,14 @@ void OperationModeContext::setCanUpgradedToContinuous(bool v)
     return;
   logger.printf("[MODE_CTX] canUpgradedToContinuous: %d -> %d\n", _canUpgradedToContinuous, v);
   _canUpgradedToContinuous = v;
+}
+
+void OperationModeContext::setPromotedFromMode(OperationMode m)
+{
+  if (m == _promotedFromMode)
+    return;
+  logger.printf("[MODE_CTX] promotedFromMode: %s -> %s\n", operationModeName(_promotedFromMode), operationModeName(m));
+  _promotedFromMode = m;
 }
 
 void OperationModeContext::setUserForcedSleep(bool v)
