@@ -660,10 +660,64 @@ BTN0でヒット送り、BTN1長押しで戻る）。9件のみで数百ms程度
 
 **未実施（実車確認が必要）:**
 
-- DID `0x2201`（ATF油温）の実車応答確認（コード上は実装済みだが実測値との突き合わせ未実施）
 - `kDidCandidates[]`9件のうち`0xE602`(RPM)/`0xE600`(ECU電圧mV、2026-08-24確定)/残り7件(フラグ/ID系)は
   すべて意味が判明済み。燃料残量・油温は見つかっておらず、必要ならNRC33系6件（セキュリティアクセス
   要）または別ECUへのアクセスを検討する段階
+
+### DID `0x2201`（ATF油温）が実車で一度も成功していない問題（2026-08-24）
+
+**実測結果**: 収集済み全ログファイルで`[OBD] ATF(0x2201)`の応答内訳を集計すると、**応答なし495件・
+送信失敗102件・成功（valid=1）0件**。一度も成功していない。「実装済み・実車未テスト」という
+従来の記載は正確だが、実態は「テストした結果、全部失敗している」。
+
+**原因の仮説**: `canSendObdRequestUds()`（`device/can.cpp`）は常に固定アドレス`0x18DA0EF1`
+（**対象ECU=`0x0E`固定＝エンジンECU**）で送信している。DIDスキャン（`didScanRun()`）も同じ関数を
+使っているため、**これまでの全域スキャン（9候補DID＋NRC33系6件）もエンジンECU（`0x0E`）しか
+探索していない**。ATF（正確にはCVTフルード）温度はエンジンECUではなくトランスミッション制御
+ユニットが持つデータの可能性が高く、もしそうならエンジンECUにいくら`0x2201`を聞いても
+「そもそも持っていないので応答なし」になるのは当然という説明がつく。
+
+**ECUアドレススキャン機能を追加（`canScanEcuAddresses()`、`device/can.h/.cpp`）**: 機能アドレッシング
+（`0x18DB33F1`）でUDS `DiagnosticSessionControl(10 01)`をブロードキャストし、応答してきた
+ECUアドレス（応答ID`0x18DAF1xx`の下位バイト）を収集する。OLEDメニュー「OBD > ECU Scan」から
+実行できる（実車確認は未実施）。
+
+**HondaReflashTool（[bouletmarc/HondaReflashTool](https://github.com/bouletmarc/HondaReflashTool)）
+にECUアドレス⇔モジュールの対応表を発見**: `GForm_PlatformSelect.cs`にコメントアウトされた形で
+残っていた（北米/欧州向けHonda車の一般的なマッピングで、N-VAN固有の裏付けではない点に注意）:
+
+```csharp
+if (headers2[0] == 0x0b) AdditionnalCanInfos = " (Shift by wire)";                      //->54008-XXX-XXXX files
+if (headers2[0] == 0x0e) AdditionnalCanInfos = " (CVT Transmission (maybe?))";          //->
+if (headers2[0] == 0x10) AdditionnalCanInfos = " (ECM with Manual Transmission)";       //->37805-XXX-XXXX files
+if (headers2[0] == 0x11) AdditionnalCanInfos = " (ECM with Automatics Transmission)";   //->37805-XXX-XXXX files
+if (headers2[0] == 0x1e) AdditionnalCanInfos = " (TCM - Transmission Control Module)";  //->28101-XXX-XXXX files
+if (headers2[0] == 0x28) AdditionnalCanInfos = " (VSA Module)";                         //->57114-XXX-XXXX files
+if (headers2[0] == 0x2b) AdditionnalCanInfos = " (Electric Brake Booster Module)";      //->39494-XXX-XXXX files
+if (headers2[0] == 0x30) AdditionnalCanInfos = " (Electric Power Sterring Module)";     //->39990-XXX-XXXX files
+if (headers2[0] == 0x3a) AdditionnalCanInfos = " (Unknown Module)";                     //->39390-XXX-XXXX files
+if (headers2[0] == 0x53) AdditionnalCanInfos = " (SRS Module)";                         //->77959-XXX-XXXX files
+if (headers2[0] == 0x60) AdditionnalCanInfos = " (Odometer Module)";                    //->78109-XXX-XXXX files
+if (headers2[0] == 0x61) AdditionnalCanInfos = " (HUD Module)";                         //->78209-XXX-XXXX files
+if (headers2[0] == 0xb0) AdditionnalCanInfos = " (FWD Radar Module)";                   //->36802-XXX-XXXX files
+if (headers2[0] == 0xb5) AdditionnalCanInfos = " (FWD Camera Module)";                  //->36161-XXX-XXXX files
+if (headers2[0] == 0xef) AdditionnalCanInfos = " (Gateway Module)";                     //->38897-XXX-XXXX files
+```
+
+**`0x1E` = TCM（Transmission Control Module、部品番号`28101-XXX-XXXX`）**が有力候補。同リポジトリの
+`ECUS_KEYS.txt`（4749行、ROM ID×フラッシュ書き込み用パラメータの一覧）にも部品番号プレフィックス
+`28101`が実在しており、2つの独立した情報源が一致した。
+
+一方で`0x0E`には「CVT Transmission (**maybe?**)」という注記があり、これまでの前提（`0x0E`＝
+エンジンECU、実測でrpm/throttle等のMode01エンジンデータが正常取得できている）と食い違う。
+確信度は低い（"maybe?"付き）注記のため、エンジン+CVTが統合ECU（PCM）になっている可能性、または
+単なる開発者コメントの誤りの可能性、両方が考えられ、現時点では判断保留。
+
+**次のアクション**: まず実車で「OBD > ECU Scan」を実行し、`0x0E`以外のECU（特に`0x1E`）が
+応答するか確認する。UDSサービスは機能アドレッシングに応答しないECU実装も多いため（「プロトコル
+確認事項」節参照）、`0x1E`が見つからなくても即座に「存在しない」とは判断できない。次点として
+`canSendObdRequestUds()`を宛先パラメータ化し、`0x1E`宛に物理アドレッシングで直接`0x2201`や
+DIDスキャンを試す改修が候補（実車でのECUスキャン結果を見てから着手）。
 
 ### DID Values 実測記録（進行中）
 
