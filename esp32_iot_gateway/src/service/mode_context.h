@@ -18,6 +18,11 @@ public:
   bool canUpgradedToContinuous() const { return _canUpgradedToContinuous; }
   void setCanUpgradedToContinuous(bool v);
 
+  // CONTINUOUSへ昇格した際の昇格元（DEEP_SLEEP or LIGHT_SLEEP）。
+  // BLE/CANいずれで昇格した場合も、復帰時はこのモードへ戻す
+  OperationMode promotedFromMode() const { return _promotedFromMode; }
+  void setPromotedFromMode(OperationMode m);
+
   bool userForcedSleep() const { return _userForcedSleep; }
   void setUserForcedSleep(bool v);
 
@@ -37,9 +42,13 @@ private:
   bool _blePending = false;
   bool _bleUpgradedToContinuous = false;
   bool _canUpgradedToContinuous = false;
+  OperationMode _promotedFromMode = OperationMode::DEEP_SLEEP;
   bool _userForcedSleep = false;
   time_t _continuousUntilEpoch = 0;
 };
 
 // アプリケーション全体で共有する唯一のインスタンス
 extern OperationModeContext modeCtx;
+
+// OperationModeのログ・表示用文字列
+const char *operationModeName(OperationMode m);

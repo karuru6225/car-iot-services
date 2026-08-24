@@ -99,6 +99,24 @@ def test_handler_nulls_disallowed_override_mode(shadow_guard, monkeypatch):
     assert calls == [("dev1", {"state": {"reported": {"override_next_mode": None}}})]
 
 
+def test_handler_accepts_allowed_default_mode(shadow_guard, monkeypatch):
+    calls = _capture_updates(monkeypatch, shadow_guard)
+    event = {"device_id": "dev1", "reported": {"default_mode": "light_sleep"}}
+
+    shadow_guard.handler(event, None)
+
+    assert calls == []
+
+
+def test_handler_nulls_disallowed_default_mode(shadow_guard, monkeypatch):
+    calls = _capture_updates(monkeypatch, shadow_guard)
+    event = {"device_id": "dev1", "reported": {"default_mode": "not_allowed"}}
+
+    shadow_guard.handler(event, None)
+
+    assert calls == [("dev1", {"state": {"reported": {"default_mode": None}}})]
+
+
 def test_handler_accepts_continuous_until_time_as_int(shadow_guard, monkeypatch):
     calls = _capture_updates(monkeypatch, shadow_guard)
     event = {"device_id": "dev1", "reported": {"continuous_until_time": 1700000000}}

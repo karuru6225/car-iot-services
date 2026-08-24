@@ -11,12 +11,18 @@
 //   TIMED_CONTINUOUS    : Shadow override_next_mode="timed_continuous"+continuous_duration_min から指定。
 //                         指定分数が経過するまで CONTINUOUS サイクルを繰り返し、期限到達で自動 DEEP_SLEEP
 //                         （BTN1 長押しでも即座に DEEP_SLEEP に切り替え可能）
+//   LIGHT_SLEEP         : DEEP_SLEEPの短周期版（メニューから手動選択）。LTE/OLED/ADS/INA228を初期化せず
+//                         CAN/BLEのみ20〜30秒間隔で確認し、検知したらCONTINUOUSへ昇格、5分境界に到達したら
+//                         通常のDEEP_SLEEP起床と同じフルサイクルを行う。setup()冒頭の lightSleepShortWakeGate()
+//                         （service/mode_light_sleep.cpp）がこの短周期ピークを制御する
 //
 // 動作モードごとの処理は src/service/mode_*.{h,cpp} のハンドラクラスに実装されている。
 // main.cpp は起動シーケンスと loop() の骨格のみを持つ。
 //
-// CAN(GU0)は起動直後に canInit() し、モードに関わらず常時起動しておく。
-// 停止するのは DeepSleepModeHandler::run() での canDeinit() のみ。
+// CAN(GU0)とBLEはsetup()冒頭（OLED/ADS/INA228/LTEより前）で初期化する。LIGHT_SLEEPの短周期
+// ピーク中はここまでしか実行されず、lightSleepShortWakeGate()が検知なしのままdeep sleepへ
+// 戻すため、それ以降の初期化（OLED等）は行われない。CANの停止はDeepSleepModeHandler::run()と
+// LIGHT_SLEEPの各サイクル終了時（LightSleepModeHandler::run()・lightSleepShortWakeGate()）のみ。
 //
 // デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
 
@@ -54,6 +60,7 @@
 #include "service/mode_deep_sleep.h"
 #include "service/mode_continuous.h"
 #include "service/mode_timed_continuous.h"
+#include "service/mode_light_sleep.h"
 
 #ifdef USE_MSGPACK
 static MsgPackTelemetryEncoder g_encoder;
@@ -70,6 +77,11 @@ void setup()
 {
   g_wakeupCause = esp_sleep_get_wakeup_cause();
   gpio_hold_dis((gpio_num_t)boardPins().chgOnPin);
+  // LIGHT_SLEEPの短周期ピークはOLED/ADS/INA228初期化より前に(検知なしのまま)deep sleepへ
+  // 戻ることがあるため、hold解除直後にここでOUTPUT化・値の再アサートまで済ませておく
+  // （末尾のrelay0/1/2Pinと違いchgOnPinはenterDeepSleepFor()でholdされるため必須）
+  pinMode(boardPins().chgOnPin, OUTPUT);
+  digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
 
 #if BOARD_VERSION == 2
   // 自己保持回路: C1の遅延時間内にHIGHを再アサートしないと電源が落ちるため最優先で行う
@@ -83,17 +95,38 @@ void setup()
   logger.printf("\n=== esp32_iot_gateway %s 起動 (wakeup=%d) ===\n",
                 FIRMWARE_VERSION, (int)g_wakeupCause);
 
+  // NVSにデフォルトモードが設定されていればそれを使う（Shadowのdefault_modeから設定、
+  // config.cpp参照）。未設定ならこれまで通りprodはDEEP_SLEEP・developはCONTINUOUSにフォールバック
+  if (auto defaultMode = getDefaultMode())
+  {
+    modeCtx.setMode(*defaultMode);
+  }
 #ifdef DEBUG_MODE
-  modeCtx.setMode(OperationMode::CONTINUOUS);
+  else
+  {
+    modeCtx.setMode(OperationMode::CONTINUOUS);
+  }
 #endif
+
+  // CANとBLEはOLED/ADS/INA228/LTEより前に初期化する。LIGHT_SLEEPの短周期ピーク中は
+  // lightSleepShortWakeGate()が検知なしのままここでdeep sleepへ戻すため、それ以降の
+  // 初期化（OLED等）を毎回スキップできる
+  if (!canInit()) // CAN通信は起動直後から常時試みる。停止するのはDeepSleep突入時・LIGHT_SLEEPの各サイクル終了時のみ
+    logger.println("[MAIN] CAN 初期化失敗");
+#ifndef DEBUG_SKIP_NETWORK
+  bleScanner.setup();
+  bleTargets.load();
+  blePeripheral.setup();
+  blePeripheral.startAdvertising();
+#endif
+
+  lightSleepShortWakeGate(); // LIGHT_SLEEPの短周期ピーク中はここで検知なしのままdeep sleepへ戻り、戻らないことがある
 
   oledInit();
   if (!adsInit())
     logger.println("[MAIN] ADS1115 初期化失敗");
   if (!ina228.init())
     logger.println("[MAIN] INA228 初期化失敗");
-  if (!canInit()) // CAN通信は起動直後から常時試みる。停止するのはDeepSleep突入時のみ（DeepSleepModeHandler::run()参照）
-    logger.println("[MAIN] CAN 初期化失敗");
   oledPrint("FW: " FIRMWARE_VERSION);
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
   {
@@ -101,13 +134,6 @@ void setup()
     playMelody(bootStart);
   }
   button.begin();
-
-#ifndef DEBUG_SKIP_NETWORK
-  bleScanner.setup();
-  bleTargets.load();
-  blePeripheral.setup();
-  blePeripheral.startAdvertising();
-#endif
 
   // BTN0 を押しながら起動でメニューモードへ（LTE 未起動のままオフライン動作）
   delay(1300);
@@ -164,23 +190,22 @@ void setup()
   checkAndHandleJob();
 #endif
 
-  logger.printf("[MAIN] 起動完了 mode=%s\n",
-                modeCtx.mode() == OperationMode::CONTINUOUS ? "CONTINUOUS" : "DEEP_SLEEP");
+  logger.printf("[MAIN] 起動完了 mode=%s\n", operationModeName(modeCtx.mode()));
 
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
     playMelody(boot);
   pinMode(boardPins().relay0Pin, OUTPUT);
   pinMode(boardPins().relay1Pin, OUTPUT);
   pinMode(boardPins().relay2Pin, OUTPUT);
-  pinMode(boardPins().chgOnPin, OUTPUT);
   digitalWrite(boardPins().relay0Pin, LOW);
   digitalWrite(boardPins().relay1Pin, LOW);
   digitalWrite(boardPins().relay2Pin, LOW);
-  digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
+  // chgOnPinのOUTPUT化・値の再アサートはsetup()冒頭（gpio_hold_dis直後）で済ませてある
 
   modeManager.registerMode(OperationMode::DEEP_SLEEP, &deepSleepMode);
   modeManager.registerMode(OperationMode::CONTINUOUS, &continuousMode);
   modeManager.registerMode(OperationMode::TIMED_CONTINUOUS, &timedContinuousMode);
+  modeManager.registerMode(OperationMode::LIGHT_SLEEP, &lightSleepMode);
 }
 
 void loop()

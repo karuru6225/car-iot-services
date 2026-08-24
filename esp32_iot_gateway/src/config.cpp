@@ -13,6 +13,7 @@ static constexpr char NVS_BOARD_VERSION[] = "board_version";
 static constexpr char NVS_CERT_CRC[] = "cert_crc";
 static constexpr char NVS_JOB_ID[] = "job_id";
 static constexpr char NVS_DEBUG_LOG[] = "debug_log";
+static constexpr char NVS_DEFAULT_MODE[] = "default_mode";
 
 const char *getDeviceId()
 {
@@ -168,6 +169,29 @@ void setDebugLogEnabled(bool enabled)
     return;
   nvs_set_u8(nvs, NVS_DEBUG_LOG, enabled ? 1 : 0);
 
+  nvs_commit(nvs);
+  nvs_close(nvs);
+}
+
+std::optional<OperationMode> getDefaultMode()
+{
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NS_DEVICE, NVS_READONLY, &nvs) != ESP_OK)
+    return std::nullopt;
+  uint8_t val = 0;
+  bool ok = nvs_get_u8(nvs, NVS_DEFAULT_MODE, &val) == ESP_OK;
+  nvs_close(nvs);
+  if (!ok || val > (uint8_t)OperationMode::LIGHT_SLEEP)
+    return std::nullopt;
+  return (OperationMode)val;
+}
+
+void setDefaultMode(OperationMode m)
+{
+  nvs_handle_t nvs;
+  if (nvs_open(NVS_NS_DEVICE, NVS_READWRITE, &nvs) != ESP_OK)
+    return;
+  nvs_set_u8(nvs, NVS_DEFAULT_MODE, (uint8_t)m);
   nvs_commit(nvs);
   nvs_close(nvs);
 }
