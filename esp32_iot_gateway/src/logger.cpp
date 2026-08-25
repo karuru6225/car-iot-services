@@ -9,19 +9,30 @@ void Logger::init()
   Serial.begin(115200);
 }
 
+void Logger::setMuted(bool muted)
+{
+  muted_ = muted;
+}
+
 void Logger::print(const char *msg)
 {
+  if (muted_)
+    return;
   Serial.print(msg);
 }
 
 void Logger::println(const char *msg)
 {
+  if (muted_)
+    return;
   Serial.println(msg);
   logStorageWrite(msg);
 }
 
 void Logger::printf(const char *fmt, ...)
 {
+  if (muted_)
+    return;
   char buf[512];
   va_list args;
   va_start(args, fmt);

@@ -5,14 +5,11 @@
 // Honda N-VAN の OBD-II（Mode 01、29bit 拡張アドレッシング）と通信する。
 // 詳細は CAN_REFERENCE.md / OBD.md 参照。
 
-// CAN 起動（電源 ON → TWAI 500kbps NORMAL 起動）。既に起動済みなら即 true を返す（冪等）。
-// quiet=trueならlogger出力を一切行わない（CAN Proxyモードがslcanの'O'コマンドから呼ぶ用。
-// USBシリアルをSLCANプロトコル専用にする必要があるため。service/can_proxy.cpp参照）
-bool canInit(bool quiet = false);
+// CAN 起動（電源 ON → TWAI 500kbps NORMAL 起動）。既に起動済みなら即 true を返す（冪等）
+bool canInit();
 
-// CAN 停止（TWAI 停止 → 電源 OFF）。未起動でも安全に呼べる。
-// quiet=trueの用途はcanInit()と同じ（CAN Proxyモードの'C'コマンドから呼ぶ用）
-void canDeinit(bool quiet = false);
+// CAN 停止（TWAI 停止 → 電源 OFF）。未起動でも安全に呼べる
+void canDeinit();
 
 // Mode 01 で複数PIDをまとめて1フレーム(Single Frame)で要求する。count は1〜6
 // （PCIバイトの長さ制約: Mode1バイト+PID数がSF7バイト以内に収まる上限）。
@@ -60,8 +57,9 @@ uint8_t canScanEcuAddresses(uint8_t *ecuAddrsOut, uint8_t maxCount, uint32_t win
 // バスオフ復帰が必要な場合はプロキシモードを抜けて他のOBD機能を使えば通常通り復帰する。
 // canInit()済み前提（OBD.md「CAN Proxyモード」参照）。
 
-// 任意のCANフレームを1件送信する。dlcは0〜8、それ以外はfalse。
-// rtr=trueならRTRフレーム（データなし、dlcは要求フレーム長の意味のみ）として送信する
+// 任意のCANフレームを1件送信する。dlcは0〜8、idが標準11bit(0x7FF)/拡張29bit(0x1FFFFFFF)の
+// 範囲を超える場合はfalse。rtr=trueならRTRフレーム（データなし、dlcは要求フレーム長の意味のみ）
+// として送信する
 bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc, bool rtr = false);
 
 // timeoutMs以内に受信したCANフレームを1件返す（IDのフィルタなし、全フレーム対象）。

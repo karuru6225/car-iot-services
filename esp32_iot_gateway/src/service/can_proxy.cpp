@@ -1,5 +1,7 @@
 #include "can_proxy.h"
 #include "../device/can.h"
+#include "../device/oled.h"
+#include "../logger.h"
 #include <Arduino.h>
 #include <string.h>
 
@@ -17,6 +19,11 @@ const size_t CMD_BUF_MAX = 32;
 // PC側の切断・クラッシュ等で中途半端なバイト列が残ると、再接続後の正常なコマンドの
 // 先頭に紛れ込んで誤解釈されるため、一定時間バイトが来なければ残骸として捨てる
 const uint32_t CMD_IDLE_TIMEOUT_MS = 200;
+
+// 1周期あたりに処理するシリアルバイト数の上限。無制限に読み切ると、PC側がコマンドを
+// 連投してきた場合にCAN受信の転送（canRawReceive）が後回しになり続け、TWAIの受信キューが
+// 溢れてフレームが無警告で失われる恐れがあるため、一定量ごとにCAN受信チェックへ戻す
+const size_t SERIAL_DRAIN_MAX_BYTES = 64;
 
 bool s_working = false;    // 'O'で真、'C'で偽。CAN受信のPCへの転送もこれで制御する
 bool s_timestamp = false;  // 'Z1'で真。受信通知の末尾に4桁hexタイムスタンプを付与する
@@ -124,20 +131,23 @@ void handleCommand(const char *buf, size_t len)
 
   switch (buf[0])
   {
-  case 'O': // CANを開く（USBシリアルをSLCAN専用にするためquiet=trueでlogger出力を抑止）
-    if (canInit(true))
+  case 'O': // CANを開く
+    if (canInit())
     {
       s_working = true;
       Serial.write(ACK);
     }
     else
     {
+      // logger.setMuted(true)中はシリアルに理由を出せないため、せめてOLEDに残す
+      // （PC側にはNACKしか返らず、コマンド不正かハード故障か区別できない対策）
+      oledShowMessage("CAN Proxy", "CAN init failed");
       Serial.write(NACK);
     }
     break;
 
   case 'C': // CANを閉じる（既に閉じていても安全に呼べる）
-    canDeinit(true);
+    canDeinit();
     s_working = false;
     Serial.write(ACK);
     break;
@@ -204,27 +214,44 @@ void canProxyRun(bool (*shouldExit)())
   s_timestamp = false;
   s_cmdLen = 0;
 
+  // USBシリアルをSLCANプロトコル専用にするため、この関数の実行中はlogger出力を一括で
+  // 抑止する（BLEコールバック等、can.cpp以外から呼ばれるlogger出力も含めて止める必要が
+  // あるため、canInit()/canDeinit()個別のquiet引数ではなくLogger自体をミュートする）
+  logger.setMuted(true);
+
   while (!shouldExit())
   {
-    // CAN → PC（'O'済みの間だけ、受信した全フレームを通知する）
+    // CAN → PC（'O'済みの間だけ、受信した全フレームを通知する）。
+    // timeoutMsを0（即時ポーリング）ではなく数msブロックする形にすることで、CAN・シリアル
+    // どちらも無通信の待機中にFreeRTOSへ制御を返す機会を作る（yieldなしのビジーループが続くと
+    // ESP32のTask Watchdog Timerがアイドルタスク飢餓を検知してパニックリセットしうるため）
     if (s_working)
     {
       uint32_t rxId;
       bool rxExtd, rxRtr;
       uint8_t rxData[8];
       uint8_t rxDlc;
-      if (canRawReceive(&rxId, &rxExtd, &rxRtr, rxData, &rxDlc, 0))
+      if (canRawReceive(&rxId, &rxExtd, &rxRtr, rxData, &rxDlc, 2))
         notifyFrame(rxId, rxExtd, rxRtr, rxData, rxDlc);
+    }
+    else
+    {
+      // 'O'前（CAN未オープン）はcanRawReceive()を呼ばないため、代わりにここでyieldする
+      delay(1);
     }
 
     // 未完成コマンドが一定時間放置されたら残骸として破棄する（切断・クラッシュ対策）
     if (s_cmdLen > 0 && millis() - s_lastByteMs > CMD_IDLE_TIMEOUT_MS)
       s_cmdLen = 0;
 
-    // PC → CAN（'\r'区切りでコマンド行を組み立てて都度処理する）
-    while (Serial.available() > 0)
+    // PC → CAN（'\r'区切りでコマンド行を組み立てて都度処理する）。
+    // 1周期あたりの処理バイト数に上限を設け、PC側がコマンドを連投してきても
+    // CAN受信の転送（上のcanRawReceive）が後回しになり続けないようにする
+    size_t drained = 0;
+    while (Serial.available() > 0 && drained < SERIAL_DRAIN_MAX_BYTES)
     {
       char c = (char)Serial.read();
+      drained++;
       if (c == '\r')
       {
         handleCommand(s_cmdBuf, s_cmdLen);
@@ -250,7 +277,9 @@ void canProxyRun(bool (*shouldExit)())
 
   if (s_working)
   {
-    canDeinit(true); // 'C'を送らずBTN1長押しで抜けた場合の後始末。ここもquiet=trueを維持する
+    canDeinit();
     s_working = false;
   }
+
+  logger.setMuted(false); // ここまででシリアルをSLCAN専用にする必要がある区間は終わり
 }

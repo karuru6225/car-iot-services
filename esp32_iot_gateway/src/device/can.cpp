@@ -52,13 +52,12 @@ void canLogStatus(const char *tag)
                 sts.rx_missed_count, sts.rx_overrun_count, sts.arb_lost_count, sts.bus_error_count);
 }
 
-bool canInit(bool quiet)
+bool canInit()
 {
   if (s_ready)
     return true;
 
-  if (!quiet)
-    logger.printf("[CAN] canInit: 開始 TX=GPIO%u RX=GPIO%u EN=GPIO%u\n", CAN_TX_PIN, CAN_RX_PIN, CAN_EN_PIN);
+  logger.printf("[CAN] canInit: 開始 TX=GPIO%u RX=GPIO%u EN=GPIO%u\n", CAN_TX_PIN, CAN_RX_PIN, CAN_EN_PIN);
 
   pinMode(CAN_EN_PIN, OUTPUT);
   digitalWrite(CAN_EN_PIN, HIGH);
@@ -72,16 +71,14 @@ bool canInit(bool quiet)
   esp_err_t err = twai_driver_install(&gConfig, &tConfig, &fConfig);
   if (err != ESP_OK)
   {
-    if (!quiet)
-      logger.printf("[CAN] canInit: twai_driver_install 失敗 (%s)\n", esp_err_to_name(err));
+    logger.printf("[CAN] canInit: twai_driver_install 失敗 (%s)\n", esp_err_to_name(err));
     digitalWrite(CAN_EN_PIN, LOW);
     return false;
   }
   err = twai_start();
   if (err != ESP_OK)
   {
-    if (!quiet)
-      logger.printf("[CAN] canInit: twai_start 失敗 (%s)\n", esp_err_to_name(err));
+    logger.printf("[CAN] canInit: twai_start 失敗 (%s)\n", esp_err_to_name(err));
     twai_driver_uninstall();
     digitalWrite(CAN_EN_PIN, LOW);
     return false;
@@ -89,25 +86,20 @@ bool canInit(bool quiet)
 
   s_ready = true;
   s_failCount = 0;
-  if (!quiet)
-  {
-    logger.println("[CAN] canInit: 起動完了（500kbps NORMAL）");
-    canLogStatus("canInit直後");
-  }
+  logger.println("[CAN] canInit: 起動完了（500kbps NORMAL）");
+  canLogStatus("canInit直後");
   return true;
 }
 
-void canDeinit(bool quiet)
+void canDeinit()
 {
   if (s_ready)
   {
-    if (!quiet)
-      canLogStatus("canDeinit直前");
+    canLogStatus("canDeinit直前");
     twai_stop();
     twai_driver_uninstall();
     s_ready = false;
-    if (!quiet)
-      logger.println("[CAN] canDeinit: 停止");
+    logger.println("[CAN] canDeinit: 停止");
   }
   pinMode(CAN_EN_PIN, OUTPUT);
   digitalWrite(CAN_EN_PIN, LOW);
@@ -413,6 +405,8 @@ ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeou
 bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc, bool rtr)
 {
   if (!s_ready || dlc > 8)
+    return false;
+  if (id > (extd ? 0x1FFFFFFFu : 0x7FFu)) // 拡張29bit/標準11bitの範囲を超えるIDは弾く
     return false;
 
   twai_message_t tx = {};

@@ -1230,7 +1230,32 @@ USBシリアル（`logger`と共用、ボーレートは起動時`logger.init()`
   コマンドの先頭バイトとして紛れ込み、そのコマンドが丸ごとNACKされる実害があった
 - 標準/拡張フレーム送信コマンド（`t`/`T`/`r`/`R`）でIDの範囲チェックを追加（2026-08-25）。
   標準11bit(`0x7FF`以下)・拡張29bit(`0x1FFFFFFF`以下)を超えるIDはフォーマット不正として
-  NACKする（従来は桁数分パースできればそのままTWAIドライバに渡していた）
+  NACKする（従来は桁数分パースできればそのままTWAIドライバに渡していた）。同じチェックを
+  device層の`canRawTransmit()`自体にも追加し、将来別の呼び出し元が増えても範囲外IDが
+  そのまま`twai_transmit()`に渡らないようにした
+
+**`/code-review`スキルによるレビュー（2026-08-25）で6件の指摘を受け、優先度の高い5件に対応**:
+
+1. **BLEコールバックがSLCANストリームに混入する問題**: `canInit()`/`canDeinit()`個別の
+   `quiet`引数では、`main.cpp`が起動時に開始する`blePeripheral`のコールバック
+   （`onConnect`/`onDisconnect`/ペアリング関連、`device/ble_peripheral.cpp`）がNimBLEの
+   ホストタスク上で非同期に`logger`を呼ぶルートを塞げていなかった。CAN Proxy中にスマホアプリが
+   接続/切断すると、そのログテキストがSLCANストリームに混入し得た。対策として`Logger`クラスに
+   `setMuted(bool)`を追加し（`logger.h/.cpp`）、`canProxyRun()`の実行中は`logger`自体を
+   ミュートする設計に変更。`canInit()`/`canDeinit()`の`quiet`引数は撤去し、元の常時ログ版に戻した
+   （どこから呼ばれても一括で抑止できるほうが、個別関数に`quiet`を持たせるより堅牢なため）
+2. **`canProxyRun()`のループにyieldが無くWatchdog Timerのリスク**: `canRawReceive()`の
+   タイムアウトを`0`（即時ポーリング）から`2`msに変更し、CAN未オープン時（`'O'`前）は
+   代わりに`delay(1)`を入れることで、待機中も必ずFreeRTOSへ制御を返すようにした
+3. **PC側のコマンド連投でCAN受信の転送が後回しになる問題**: シリアル読み取りループに
+   `SERIAL_DRAIN_MAX_BYTES`（64バイト）の上限を設け、一定量ごとにCAN受信チェックへ戻すようにした
+4. **`'O'`失敗時に原因情報が一切残らない問題**: `logger`はミュート中のためシリアルには出せない
+   が、OLEDに`"CAN init failed"`を表示するようにした（`oledShowMessage()`、`oled.h`を新規include）
+5. （上記のID範囲チェック）
+
+**対応しなかった1件**: `canDeinit()`の呼び出しが`menu.cpp`（非ミュート）・`can_proxy.cpp`内部
+（ミュート中）・起動時`main.cpp`の3箇所に分散していて後始末の責任が曖昧という指摘。現状は
+`canDeinit()`が`s_ready`ガードで冪等なため実害はなく、優先度を下げて見送った。
 
 **実車確認は未実施**。
 
