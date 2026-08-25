@@ -87,6 +87,8 @@ bool handleSendFrame(const char *buf, size_t len, bool extd, bool rtr)
   uint32_t id;
   if (!parseHex(buf, pos, idDigits, id))
     return false;
+  if (id > (extd ? 0x1FFFFFFFu : 0x7FFu)) // 拡張29bit/標準11bitの範囲を超えるIDは弾く
+    return false;
   pos += idDigits;
 
   uint32_t dlc32;
@@ -227,6 +229,10 @@ void canProxyRun(bool (*shouldExit)())
       {
         handleCommand(s_cmdBuf, s_cmdLen);
         s_cmdLen = 0;
+      }
+      else if (c == '\n')
+      {
+        // CRLF対応: 単体の'\n'や'\r'直後の'\n'は無視する（バッファにも積まない）
       }
       else if (s_cmdLen < CMD_BUF_MAX)
       {
