@@ -402,7 +402,7 @@ ObdRecvResult canReceiveObdResponse(uint8_t *data, uint8_t *dlc, uint32_t timeou
   return ObdRecvResult::Timeout;
 }
 
-bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc)
+bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc, bool rtr)
 {
   if (!s_ready || dlc > 8)
     return false;
@@ -410,13 +410,15 @@ bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc)
   twai_message_t tx = {};
   tx.identifier = id;
   tx.extd = extd ? 1 : 0;
+  tx.rtr = rtr ? 1 : 0;
   tx.data_length_code = dlc;
-  memcpy(tx.data, data, dlc);
+  if (!rtr)
+    memcpy(tx.data, data, dlc);
 
   return twai_transmit(&tx, pdMS_TO_TICKS(10)) == ESP_OK;
 }
 
-bool canRawReceive(uint32_t *id, bool *extd, uint8_t *data, uint8_t *dlc, uint32_t timeoutMs)
+bool canRawReceive(uint32_t *id, bool *extd, bool *rtr, uint8_t *data, uint8_t *dlc, uint32_t timeoutMs)
 {
   if (!s_ready)
     return false;
@@ -427,7 +429,9 @@ bool canRawReceive(uint32_t *id, bool *extd, uint8_t *data, uint8_t *dlc, uint32
 
   *id = rx.identifier;
   *extd = rx.extd;
+  *rtr = rx.rtr;
   *dlc = rx.data_length_code;
-  memcpy(data, rx.data, rx.data_length_code);
+  if (!rx.rtr)
+    memcpy(data, rx.data, rx.data_length_code);
   return true;
 }

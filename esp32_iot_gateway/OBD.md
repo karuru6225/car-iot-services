@@ -1171,39 +1171,51 @@ ISO-TP/UDSのフレーミングを一切介さない生CANパススルーで、N
 や、既存メニューが対応していない任意プロトコルの試行を、ファーム再書き込みなしでPC側スクリプトから
 行えるようにする狙い。
 
-**プロトコル選定**: CAN業界で事実上標準のslcan(LAWICEL)ASCIIプロトコル（SavvyCAN・python-can等が
-そのまま使える）も検討したが、実装の複雑さ（ASCIIパース）と「任意のバイナリを飛ばしたい」という
-要件を踏まえ、自作の固定長バイナリフレーミングを採用した。
+**プロトコル選定の経緯**: 当初は自作の固定長バイナリフレーミング（`0x55`/`0xAA`同期バイト＋
+XORチェックサム）を実装したが、slcan(LAWICEL)プロトコルの実装（[mintynet/esp32-slcan](https://github.com/mintynet/esp32-slcan)、
+ESP32-S3+TWAIで動作確認済み・109★・2026-02時点で活動中）を調査したところ、ASCII hex文字列に
+乗せれば「バイト値がプロトコル制御文字（同期バイト・区切り文字）と偶然一致する」問題が
+**構造的に起きなくなる**ことに気づいた（hex文字は`0-9`/`A-F`＝`0x30-0x39`/`0x41-0x46`の範囲に
+収まるため、それ以外の値を区切り文字に選べば衝突しようがない）。バイナリ+チェックサムより
+本質的に安全なうえ、SavvyCAN・python-can(slcanインターフェース)・Linux slcand等の既存ツールが
+そのまま接続できる副産物もあるため、自作バイナリプロトコルを廃止しSLCAN互換に置き換えた
+（2026-08-25。コードは流用せず[公式仕様書](http://www.can232.com/docs/canusb_manual.pdf)を見て
+独自実装）。
 
 ```text
-PC→ESP32（送信要求）: 0x55 <FLAGS:1B> <ID:4B LE> <DLC:1B> <DATA:0-8B> <CHECKSUM:1B>
-ESP32→PC（受信転送）: 0xAA <FLAGS:1B> <ID:4B LE> <DLC:1B> <DATA:0-8B> <CHECKSUM:1B>
-FLAGS bit0: 1=29bit拡張ID / 0=11bit標準ID
-CHECKSUM: FLAGS/ID/DLC/DATA全バイトのXOR
+PC→ESP32: O\r                              CANを開く（canInit()）
+PC→ESP32: C\r                              CANを閉じる（canDeinit()）
+PC→ESP32: t<ID:3桁hex><DLC:1桁hex><DATA:2*DLC桁hex>\r   標準(11bit)フレーム送信
+PC→ESP32: T<ID:8桁hex><DLC:1桁hex><DATA:2*DLC桁hex>\r   拡張(29bit)フレーム送信
+PC→ESP32: r<ID:3桁hex><DLC:1桁hex>\r        標準RTRフレーム送信（データなし）
+PC→ESP32: R<ID:8桁hex><DLC:1桁hex>\r        拡張RTRフレーム送信（データなし）
+PC→ESP32: S6\r                             ビットレート確認（500kbps固定のためS6のみACK）
+PC→ESP32: Z0\r / Z1\r                      受信通知への4桁hexタイムスタンプ付与 OFF/ON
+ESP32→PC: 上記t/T/r/Rと同形式               'O'済みの間、受信した全フレームを非同期通知
+応答: ACK='\r' / NACK='\a'(BEL)
 ```
 
-USB シリアル（115200bps、`logger`と共用）を使う。OLEDメニュー「OBD > CAN Proxy」から入る
-（`service/menu.cpp`）。BTN1長押しで終了しメニューに戻る。
+USBシリアル（`logger`と共用、ボーレートは起動時`logger.init()`のまま）。OLEDメニュー
+「OBD > CAN Proxy」から入る（`service/menu.cpp`）。BTN1長押しで終了しメニューに戻る。
 
 | # | 対象ファイル | 変更内容 |
 |---|------------|---------|
-| 1 | `device/can.h/.cpp` | `canRawTransmit()`/`canRawReceive()`追加。ISO-TPフレーミングなしで任意ID/データを送受信する生API |
-| 2 | `service/can_proxy.h/.cpp` 新規 | `canProxyRun()`。PC→ESP32のバイト列を状態機械でパースしCANへ送信、CAN受信を都度PCへ転送するブロッキングループ |
-| 3 | `service/menu.cpp` | 「OBD > CAN Proxy」メニュー追加 |
+| 1 | `device/can.h/.cpp` | `canRawTransmit()`/`canRawReceive()`追加（RTR対応込み）。ISO-TPフレーミングなしで任意ID/データを送受信する生API |
+| 2 | `service/can_proxy.h/.cpp` 新規 | SLCANコマンドパーサ＋`canProxyRun()`ブロッキングループ |
+| 3 | `service/menu.cpp` | 「OBD > CAN Proxy」メニュー追加。CANの開閉はSLCANの`O`/`C`コマンドに委ねるため、メニュー側では`canInit()`を呼ばない（`canDeinit()`のみ、BTN1長押しで`C`を送らず抜けた場合の後始末） |
 
 **設計判断:**
 
-- プロキシ実行中はUSBシリアルをバイナリプロトコル専用にする必要があるため、`canRawTransmit()`/
+- プロキシ実行中はUSBシリアルをSLCANプロトコル専用にする必要があるため、`canRawTransmit()`/
   `canRawReceive()`・`canProxyRun()`のいずれも`logger`（通常のデバッグprint）を一切呼ばない。
   既存の`canSendObdRequestUds()`等が使う`transmitObdRequest()`（送信失敗ログ）や
   `recoverIfBusOff()`（バスオフ復帰ログ）も意図的に経由していない
 - 上記の帰結として、**プロキシモード中はバスオフからの自動復帰を行わない**。復帰が必要な場合は
   BTN1長押しでモードを抜け、他のOBD機能を1回使えば通常通り復帰する
-- `0x55`/`0xAA`への偶然の一致対策として1バイトXORチェックサムを追加（2026-08-25）。
-  DLCまで偶然一致しても、チェックサムまで一致する確率は約1/256に落ちる。特にPC→ESP32方向は
-  チェックサム不一致なら**CAN送信自体を行わない**（実車のバスへ誤ったフレームを送りつけない
-  ための安全弁）。完全な誤り訂正ではない（COBS等のバイトスタッフィングまではやっていない）が、
-  デバッグツールとしては十分な割り切り
+- ビットレートはS6(500kbps)固定。`canInit()`自体が500kbps固定実装のため、他のビットレート要求は
+  すべてNACKする（動的再設定は今回のスコープ外）
+- アクセプタンスフィルタ（`M`/`m`コマンド）はno-op（元々`TWAI_FILTER_CONFIG_ACCEPT_ALL()`で
+  全フレーム受信する設計のため、フィルタの実装価値が薄い）
 
 **実車確認は未実施**。
 

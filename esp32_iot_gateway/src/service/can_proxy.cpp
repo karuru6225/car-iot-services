@@ -6,140 +6,234 @@
 namespace
 {
 // プロトコル定義はcan_proxy.h参照
-const uint8_t SYNC_TO_CAN = 0x55;   // PC→ESP32（このバイトから始まるフレームをCANへ送信する）
-const uint8_t SYNC_FROM_CAN = 0xAA; // ESP32→PC（CAN受信フレームの転送に使う）
 
-// PC→ESP32のバイト列を1バイトずつ受け取って組み立てる状態機械。
-// Serial.available()の到着タイミングはバイト単位でバラバラなため、呼び出しをまたいで状態を保持する。
-enum class ParseState
+const uint8_t ACK = '\r';
+const uint8_t NACK = '\a'; // BEL (0x07)
+
+// "T"+8桁ID+1桁DLC+16桁DATA=26文字。安全マージンを見て32とする
+const size_t CMD_BUF_MAX = 32;
+
+bool s_working = false;    // 'O'で真、'C'で偽。CAN受信のPCへの転送もこれで制御する
+bool s_timestamp = false;  // 'Z1'で真。受信通知の末尾に4桁hexタイムスタンプを付与する
+
+char s_cmdBuf[CMD_BUF_MAX];
+size_t s_cmdLen = 0;
+
+char hexChar(uint8_t nibble)
 {
-  WaitSync, // 0x55を待つ（それ以外のバイトは読み捨てる）
-  Flags,
-  Id,
-  Dlc,
-  Data,
-  Checksum, // FLAGS+ID+DLC+DATA全体のXOR（0x55/0xAAとの偶然の一致対策、can_proxy.h参照）
-};
-
-ParseState s_state = ParseState::WaitSync;
-uint8_t s_flags = 0;
-uint32_t s_id = 0;
-uint8_t s_idBytesRead = 0;
-uint8_t s_dlc = 0;
-uint8_t s_data[8];
-uint8_t s_dataBytesRead = 0;
-uint8_t s_checksum = 0; // 受信中に随時更新する累積XOR
-
-// 1バイト受信するごとに呼ぶ。フレームが完成し、かつチェックサムが一致すればtrueを返し
-// out引数に結果を書く。チェックサム不一致の場合はfalseのままフレームを破棄する
-// （偶然0x55にマッチしたゴミデータをCAN送信してしまわないための安全弁）
-bool feedByte(uint8_t b, uint32_t &idOut, bool &extdOut, uint8_t *dataOut, uint8_t &dlcOut)
-{
-  switch (s_state)
-  {
-  case ParseState::WaitSync:
-    if (b == SYNC_TO_CAN)
-    {
-      s_state = ParseState::Flags;
-      s_checksum = 0;
-    }
-    return false;
-
-  case ParseState::Flags:
-    s_flags = b;
-    s_checksum ^= b;
-    s_id = 0;
-    s_idBytesRead = 0;
-    s_state = ParseState::Id;
-    return false;
-
-  case ParseState::Id:
-    s_id |= ((uint32_t)b) << (8 * s_idBytesRead);
-    s_checksum ^= b;
-    s_idBytesRead++;
-    if (s_idBytesRead >= 4)
-      s_state = ParseState::Dlc;
-    return false;
-
-  case ParseState::Dlc:
-    if (b > 8)
-    {
-      // 不正なDLC → このフレームは破棄し、同期待ちへ戻る
-      s_state = ParseState::WaitSync;
-      return false;
-    }
-    s_dlc = b;
-    s_checksum ^= b;
-    s_dataBytesRead = 0;
-    s_state = (s_dlc == 0) ? ParseState::Checksum : ParseState::Data;
-    return false;
-
-  case ParseState::Data:
-    s_data[s_dataBytesRead++] = b;
-    s_checksum ^= b;
-    if (s_dataBytesRead >= s_dlc)
-      s_state = ParseState::Checksum;
-    return false;
-
-  case ParseState::Checksum:
-    s_state = ParseState::WaitSync; // 一致・不一致に関わらず次フレームの同期待ちへ
-    if (b != s_checksum)
-      return false; // 不一致 → 偶然の一致とみなして破棄（CANへは送信しない）
-    idOut = s_id;
-    extdOut = (s_flags & 0x01) != 0;
-    dlcOut = s_dlc;
-    memcpy(dataOut, s_data, s_dlc);
-    return true;
-  }
-  return false; // 到達しない（全ケース網羅済み）
+  return "0123456789ABCDEF"[nibble & 0x0F];
 }
 
-void writeOutgoing(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc)
+// buf[offset .. offset+count)をhex文字列としてパースする。不正な文字があればfalse
+bool parseHex(const char *buf, size_t offset, size_t count, uint32_t &out)
 {
-  uint8_t flags = extd ? (uint8_t)0x01 : (uint8_t)0x00;
-  uint8_t idBytes[4] = {
-      (uint8_t)(id & 0xFF), (uint8_t)((id >> 8) & 0xFF),
-      (uint8_t)((id >> 16) & 0xFF), (uint8_t)((id >> 24) & 0xFF)};
+  out = 0;
+  for (size_t i = 0; i < count; i++)
+  {
+    char c = buf[offset + i];
+    uint8_t nibble;
+    if (c >= '0' && c <= '9')
+      nibble = (uint8_t)(c - '0');
+    else if (c >= 'A' && c <= 'F')
+      nibble = (uint8_t)(c - 'A' + 10);
+    else if (c >= 'a' && c <= 'f')
+      nibble = (uint8_t)(c - 'a' + 10);
+    else
+      return false;
+    out = (out << 4) | nibble;
+  }
+  return true;
+}
 
-  uint8_t checksum = flags ^ dlc;
-  for (uint8_t i = 0; i < 4; i++)
-    checksum ^= idBytes[i];
-  for (uint8_t i = 0; i < dlc; i++)
-    checksum ^= data[i];
+void writeHex(uint32_t value, uint8_t digits)
+{
+  for (int i = digits - 1; i >= 0; i--)
+    Serial.write(hexChar((uint8_t)((value >> (i * 4)) & 0x0F)));
+}
 
-  Serial.write(SYNC_FROM_CAN);
-  Serial.write(flags);
-  Serial.write(idBytes, sizeof(idBytes));
-  Serial.write(dlc);
-  if (dlc > 0)
-    Serial.write(data, dlc);
-  Serial.write(checksum);
+// 受信したCANフレームをPCへ通知する（'O'済みのときのみ呼ばれる想定）
+void notifyFrame(uint32_t id, bool extd, bool rtr, const uint8_t *data, uint8_t dlc)
+{
+  Serial.write((uint8_t)(extd ? (rtr ? 'R' : 'T') : (rtr ? 'r' : 't')));
+  writeHex(id, extd ? 8 : 3);
+  Serial.write((uint8_t)hexChar(dlc));
+  if (!rtr)
+  {
+    for (uint8_t i = 0; i < dlc; i++)
+    {
+      Serial.write((uint8_t)hexChar(data[i] >> 4));
+      Serial.write((uint8_t)hexChar(data[i] & 0x0F));
+    }
+  }
+  if (s_timestamp)
+    writeHex((uint16_t)(millis() % 60000), 4);
+  Serial.write(ACK);
+}
+
+// t/T/r/Rコマンドを解析してCAN送信する。フォーマット不正またはCAN未オープンならfalse
+bool handleSendFrame(const char *buf, size_t len, bool extd, bool rtr)
+{
+  size_t idDigits = extd ? 8 : 3;
+  size_t pos = 1;
+  if (len < pos + idDigits + 1)
+    return false;
+
+  uint32_t id;
+  if (!parseHex(buf, pos, idDigits, id))
+    return false;
+  pos += idDigits;
+
+  uint32_t dlc32;
+  if (!parseHex(buf, pos, 1, dlc32) || dlc32 > 8)
+    return false;
+  uint8_t dlc = (uint8_t)dlc32;
+  pos += 1;
+
+  uint8_t data[8] = {};
+  if (!rtr)
+  {
+    if (len < pos + (size_t)dlc * 2)
+      return false;
+    for (uint8_t i = 0; i < dlc; i++)
+    {
+      uint32_t byteVal;
+      if (!parseHex(buf, pos, 2, byteVal))
+        return false;
+      data[i] = (uint8_t)byteVal;
+      pos += 2;
+    }
+  }
+
+  if (!s_working)
+    return false;
+  return canRawTransmit(id, extd, data, dlc, rtr);
+}
+
+void handleCommand(const char *buf, size_t len)
+{
+  if (len == 0)
+    return;
+
+  switch (buf[0])
+  {
+  case 'O': // CANを開く
+    if (canInit())
+    {
+      s_working = true;
+      Serial.write(ACK);
+    }
+    else
+    {
+      Serial.write(NACK);
+    }
+    break;
+
+  case 'C': // CANを閉じる（既に閉じていても安全に呼べる）
+    canDeinit();
+    s_working = false;
+    Serial.write(ACK);
+    break;
+
+  case 't':
+    Serial.write(handleSendFrame(buf, len, false, false) ? ACK : NACK);
+    break;
+  case 'T':
+    Serial.write(handleSendFrame(buf, len, true, false) ? ACK : NACK);
+    break;
+  case 'r':
+    Serial.write(handleSendFrame(buf, len, false, true) ? ACK : NACK);
+    break;
+  case 'R':
+    Serial.write(handleSendFrame(buf, len, true, true) ? ACK : NACK);
+    break;
+
+  case 'S': // ビットレート確認。このボードは500kbps固定のためS6のみ受け付ける
+    Serial.write((len >= 2 && buf[1] == '6') ? ACK : NACK);
+    break;
+
+  case 'Z': // 受信通知への4桁hexタイムスタンプ付与 ON/OFF
+    if (len >= 2 && (buf[1] == '0' || buf[1] == '1'))
+    {
+      s_timestamp = (buf[1] == '1');
+      Serial.write(ACK);
+    }
+    else
+    {
+      Serial.write(NACK);
+    }
+    break;
+
+  case 'F': // ステータスフラグ照会（エラーなし固定、情報用途のみ）
+    Serial.print("F00");
+    Serial.write(ACK);
+    break;
+
+  case 'V': // バージョン照会（固定値、情報用途のみ）
+    Serial.print("V1013");
+    Serial.write(ACK);
+    break;
+
+  case 'N': // シリアル番号照会（固定値、情報用途のみ）
+    Serial.print("N0000");
+    Serial.write(ACK);
+    break;
+
+  case 'M': // アクセプタンスコード設定（フィルタ未実装、no-op）
+  case 'm': // アクセプタンスマスク設定（フィルタ未実装、no-op）
+    Serial.write(ACK);
+    break;
+
+  default:
+    Serial.write(NACK);
+    break;
+  }
 }
 } // namespace
 
 void canProxyRun(bool (*shouldExit)())
 {
-  s_state = ParseState::WaitSync; // 前回の呼び出しの残骸を引き継がないようリセット
+  s_working = false;
+  s_timestamp = false;
+  s_cmdLen = 0;
 
   while (!shouldExit())
   {
-    // CAN → PC（フィルタなし、受信した全フレームを転送する）
-    uint32_t rxId;
-    bool rxExtd;
-    uint8_t rxData[8];
-    uint8_t rxDlc;
-    if (canRawReceive(&rxId, &rxExtd, rxData, &rxDlc, 0))
-      writeOutgoing(rxId, rxExtd, rxData, rxDlc);
+    // CAN → PC（'O'済みの間だけ、受信した全フレームを通知する）
+    if (s_working)
+    {
+      uint32_t rxId;
+      bool rxExtd, rxRtr;
+      uint8_t rxData[8];
+      uint8_t rxDlc;
+      if (canRawReceive(&rxId, &rxExtd, &rxRtr, rxData, &rxDlc, 0))
+        notifyFrame(rxId, rxExtd, rxRtr, rxData, rxDlc);
+    }
 
-    // PC → CAN（届いているバイトを溜めずに随時消化する）
+    // PC → CAN（'\r'区切りでコマンド行を組み立てて都度処理する）
     while (Serial.available() > 0)
     {
-      uint32_t txId;
-      bool txExtd;
-      uint8_t txData[8];
-      uint8_t txDlc;
-      if (feedByte((uint8_t)Serial.read(), txId, txExtd, txData, txDlc))
-        canRawTransmit(txId, txExtd, txData, txDlc);
+      char c = (char)Serial.read();
+      if (c == '\r')
+      {
+        handleCommand(s_cmdBuf, s_cmdLen);
+        s_cmdLen = 0;
+      }
+      else if (s_cmdLen < CMD_BUF_MAX)
+      {
+        s_cmdBuf[s_cmdLen++] = c;
+      }
+      else
+      {
+        // バッファ超過 → 異常なコマンドとみなして破棄
+        Serial.write(NACK);
+        s_cmdLen = 0;
+      }
     }
+  }
+
+  if (s_working)
+  {
+    canDeinit();
+    s_working = false;
   }
 }

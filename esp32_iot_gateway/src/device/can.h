@@ -57,9 +57,10 @@ uint8_t canScanEcuAddresses(uint8_t *ecuAddrsOut, uint8_t maxCount, uint32_t win
 // バスオフ復帰が必要な場合はプロキシモードを抜けて他のOBD機能を使えば通常通り復帰する。
 // canInit()済み前提（OBD.md「CAN Proxyモード」参照）。
 
-// 任意のCANフレームを1件送信する。dlcは0〜8、それ以外はfalse
-bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc);
+// 任意のCANフレームを1件送信する。dlcは0〜8、それ以外はfalse。
+// rtr=trueならRTRフレーム（データなし、dlcは要求フレーム長の意味のみ）として送信する
+bool canRawTransmit(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc, bool rtr = false);
 
 // timeoutMs以内に受信したCANフレームを1件返す（IDのフィルタなし、全フレーム対象）。
-// 受信できなければfalseを返し、引数は変更しない
-bool canRawReceive(uint32_t *id, bool *extd, uint8_t *data, uint8_t *dlc, uint32_t timeoutMs);
+// 受信できなければfalseを返し、引数は変更しない。RTRフレームの場合dataは書き込まない
+bool canRawReceive(uint32_t *id, bool *extd, bool *rtr, uint8_t *data, uint8_t *dlc, uint32_t timeoutMs);

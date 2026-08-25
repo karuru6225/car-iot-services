@@ -848,7 +848,9 @@ static bool canProxyShouldExit()
 
 static MenuState tickCanProxyRunning(ButtonEvent)
 {
-  canInit();
+  // canInit()/canDeinit()はここでは呼ばない。SLCANプロトコルの'O'/'C'コマンドが
+  // CANのオープン/クローズを制御する（canProxyRun()内部）。BTN1長押しで'C'を送らずに
+  // 抜けた場合の後始末としてcanDeinit()だけ呼ぶ（未オープンでも安全に呼べる）
   oledShowMessage("CAN Proxy", "BTN1 long: exit");
   canProxyRun(canProxyShouldExit);
   canDeinit();
