@@ -13,11 +13,17 @@ const uint8_t NACK = '\a'; // BEL (0x07)
 // "T"+8桁ID+1桁DLC+16桁DATA=26文字。安全マージンを見て32とする
 const size_t CMD_BUF_MAX = 32;
 
+// 未完成コマンド（'\r'が来る前にバイトが途切れた状態）を破棄するまでのアイドル時間。
+// PC側の切断・クラッシュ等で中途半端なバイト列が残ると、再接続後の正常なコマンドの
+// 先頭に紛れ込んで誤解釈されるため、一定時間バイトが来なければ残骸として捨てる
+const uint32_t CMD_IDLE_TIMEOUT_MS = 200;
+
 bool s_working = false;    // 'O'で真、'C'で偽。CAN受信のPCへの転送もこれで制御する
 bool s_timestamp = false;  // 'Z1'で真。受信通知の末尾に4桁hexタイムスタンプを付与する
 
 char s_cmdBuf[CMD_BUF_MAX];
 size_t s_cmdLen = 0;
+uint32_t s_lastByteMs = 0; // s_cmdBufに最後にバイトを追加したtick（アイドルタイムアウト判定用）
 
 char hexChar(uint8_t nibble)
 {
@@ -209,6 +215,10 @@ void canProxyRun(bool (*shouldExit)())
         notifyFrame(rxId, rxExtd, rxRtr, rxData, rxDlc);
     }
 
+    // 未完成コマンドが一定時間放置されたら残骸として破棄する（切断・クラッシュ対策）
+    if (s_cmdLen > 0 && millis() - s_lastByteMs > CMD_IDLE_TIMEOUT_MS)
+      s_cmdLen = 0;
+
     // PC → CAN（'\r'区切りでコマンド行を組み立てて都度処理する）
     while (Serial.available() > 0)
     {
@@ -221,6 +231,7 @@ void canProxyRun(bool (*shouldExit)())
       else if (s_cmdLen < CMD_BUF_MAX)
       {
         s_cmdBuf[s_cmdLen++] = c;
+        s_lastByteMs = millis();
       }
       else
       {
