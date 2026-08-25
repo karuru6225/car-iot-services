@@ -848,12 +848,12 @@ static bool canProxyShouldExit()
 
 static MenuState tickCanProxyRunning(ButtonEvent)
 {
-  // canInit()/canDeinit()はここでは呼ばない。SLCANプロトコルの'O'/'C'コマンドが
-  // CANのオープン/クローズを制御する（canProxyRun()内部）。BTN1長押しで'C'を送らずに
-  // 抜けた場合の後始末としてcanDeinit()だけ呼ぶ（未オープンでも安全に呼べる）
+  // CANのオープン/クローズ（canInit()/canDeinit()）はここでは呼ばない。SLCANプロトコルの
+  // 'O'/'C'コマンドが制御し、BTN1長押しで'C'を送らずに抜けた場合の後始末も
+  // canProxyRun()自身がs_working（自分で開いたかどうか）を見て行う（can_proxy.cpp参照）。
+  // ライフサイクルの所有者をcan_proxy.cpp側だけに一本化するため、ここでは呼ばない
   oledShowMessage("CAN Proxy", "BTN1 long: exit");
   canProxyRun(canProxyShouldExit);
-  canDeinit();
   return MenuState::MENU_NAV;
 }
 

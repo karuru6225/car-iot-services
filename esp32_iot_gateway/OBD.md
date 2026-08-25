@@ -1253,9 +1253,13 @@ USBシリアル（`logger`と共用、ボーレートは起動時`logger.init()`
    が、OLEDに`"CAN init failed"`を表示するようにした（`oledShowMessage()`、`oled.h`を新規include）
 5. （上記のID範囲チェック）
 
-**対応しなかった1件**: `canDeinit()`の呼び出しが`menu.cpp`（非ミュート）・`can_proxy.cpp`内部
-（ミュート中）・起動時`main.cpp`の3箇所に分散していて後始末の責任が曖昧という指摘。現状は
-`canDeinit()`が`s_ready`ガードで冪等なため実害はなく、優先度を下げて見送った。
+**6件目も対応（2026-08-25）**: `canDeinit()`の呼び出しが`menu.cpp`（非ミュート）・
+`can_proxy.cpp`内部（ミュート中）・起動時`main.cpp`の3箇所に分散していて後始末の責任が曖昧
+という指摘。`menu.cpp`の`tickCanProxyRunning()`から`canDeinit()`呼び出しを削除し、
+`canProxyRun()`自身が`s_working`（自分で`'O'`を送って開いたかどうか）を見て後始末する
+一本化した設計にした。挙動は変わらない（旧`menu.cpp`側の呼び出しは`s_ready`ガードで
+実害ゼロなno-opだった）が、CAN Proxyのライフサイクル管理を`can_proxy.cpp`だけに閉じ込め、
+`canInit()`側（`'O'`コマンドのみが握る設計）と対称にした。
 
 **実車確認は未実施**。
 
