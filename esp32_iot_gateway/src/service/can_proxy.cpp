@@ -116,8 +116,8 @@ void handleCommand(const char *buf, size_t len)
 
   switch (buf[0])
   {
-  case 'O': // CANを開く
-    if (canInit())
+  case 'O': // CANを開く（USBシリアルをSLCAN専用にするためquiet=trueでlogger出力を抑止）
+    if (canInit(true))
     {
       s_working = true;
       Serial.write(ACK);
@@ -129,7 +129,7 @@ void handleCommand(const char *buf, size_t len)
     break;
 
   case 'C': // CANを閉じる（既に閉じていても安全に呼べる）
-    canDeinit();
+    canDeinit(true);
     s_working = false;
     Serial.write(ACK);
     break;
@@ -233,7 +233,7 @@ void canProxyRun(bool (*shouldExit)())
 
   if (s_working)
   {
-    canDeinit();
+    canDeinit(true); // 'C'を送らずBTN1長押しで抜けた場合の後始末。ここもquiet=trueを維持する
     s_working = false;
   }
 }

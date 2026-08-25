@@ -1212,6 +1212,12 @@ USBシリアル（`logger`と共用、ボーレートは起動時`logger.init()`
   `recoverIfBusOff()`（バスオフ復帰ログ）も意図的に経由していない
 - 上記の帰結として、**プロキシモード中はバスオフからの自動復帰を行わない**。復帰が必要な場合は
   BTN1長押しでモードを抜け、他のOBD機能を1回使えば通常通り復帰する
+- `canInit()`/`canDeinit()`自体も内部で`logger.printf`/`println`を呼ぶため（開始/完了ログ、
+  `canLogStatus()`のTEC/REC等）、SLCANの`O`/`C`コマンドから呼ぶ際はそのまま使うとログテキストが
+  ストリームに混入してしまう（しかも`logger.println()`は末尾に`\r\n`を付けるため、SLCANの
+  コマンド終端`\r`と衝突し、PC側パーサが誤って1行分の応答として読んでしまう）。これに対応する
+  ため`canInit(bool quiet)`/`canDeinit(bool quiet)`を追加し（`device/can.h/.cpp`、既定値`false`で
+  既存呼び出しは非表示のまま）、`can_proxy.cpp`からは`quiet=true`で呼ぶ（2026-08-25）
 - ビットレートはS6(500kbps)固定。`canInit()`自体が500kbps固定実装のため、他のビットレート要求は
   すべてNACKする（動的再設定は今回のスコープ外）
 - アクセプタンスフィルタ（`M`/`m`コマンド）はno-op（元々`TWAI_FILTER_CONFIG_ACCEPT_ALL()`で

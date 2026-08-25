@@ -52,12 +52,13 @@ void canLogStatus(const char *tag)
                 sts.rx_missed_count, sts.rx_overrun_count, sts.arb_lost_count, sts.bus_error_count);
 }
 
-bool canInit()
+bool canInit(bool quiet)
 {
   if (s_ready)
     return true;
 
-  logger.printf("[CAN] canInit: 開始 TX=GPIO%u RX=GPIO%u EN=GPIO%u\n", CAN_TX_PIN, CAN_RX_PIN, CAN_EN_PIN);
+  if (!quiet)
+    logger.printf("[CAN] canInit: 開始 TX=GPIO%u RX=GPIO%u EN=GPIO%u\n", CAN_TX_PIN, CAN_RX_PIN, CAN_EN_PIN);
 
   pinMode(CAN_EN_PIN, OUTPUT);
   digitalWrite(CAN_EN_PIN, HIGH);
@@ -71,14 +72,16 @@ bool canInit()
   esp_err_t err = twai_driver_install(&gConfig, &tConfig, &fConfig);
   if (err != ESP_OK)
   {
-    logger.printf("[CAN] canInit: twai_driver_install 失敗 (%s)\n", esp_err_to_name(err));
+    if (!quiet)
+      logger.printf("[CAN] canInit: twai_driver_install 失敗 (%s)\n", esp_err_to_name(err));
     digitalWrite(CAN_EN_PIN, LOW);
     return false;
   }
   err = twai_start();
   if (err != ESP_OK)
   {
-    logger.printf("[CAN] canInit: twai_start 失敗 (%s)\n", esp_err_to_name(err));
+    if (!quiet)
+      logger.printf("[CAN] canInit: twai_start 失敗 (%s)\n", esp_err_to_name(err));
     twai_driver_uninstall();
     digitalWrite(CAN_EN_PIN, LOW);
     return false;
@@ -86,20 +89,25 @@ bool canInit()
 
   s_ready = true;
   s_failCount = 0;
-  logger.println("[CAN] canInit: 起動完了（500kbps NORMAL）");
-  canLogStatus("canInit直後");
+  if (!quiet)
+  {
+    logger.println("[CAN] canInit: 起動完了（500kbps NORMAL）");
+    canLogStatus("canInit直後");
+  }
   return true;
 }
 
-void canDeinit()
+void canDeinit(bool quiet)
 {
   if (s_ready)
   {
-    canLogStatus("canDeinit直前");
+    if (!quiet)
+      canLogStatus("canDeinit直前");
     twai_stop();
     twai_driver_uninstall();
     s_ready = false;
-    logger.println("[CAN] canDeinit: 停止");
+    if (!quiet)
+      logger.println("[CAN] canDeinit: 停止");
   }
   pinMode(CAN_EN_PIN, OUTPUT);
   digitalWrite(CAN_EN_PIN, LOW);

@@ -5,11 +5,14 @@
 // Honda N-VAN の OBD-II（Mode 01、29bit 拡張アドレッシング）と通信する。
 // 詳細は CAN_REFERENCE.md / OBD.md 参照。
 
-// CAN 起動（電源 ON → TWAI 500kbps NORMAL 起動）。既に起動済みなら即 true を返す（冪等）
-bool canInit();
+// CAN 起動（電源 ON → TWAI 500kbps NORMAL 起動）。既に起動済みなら即 true を返す（冪等）。
+// quiet=trueならlogger出力を一切行わない（CAN Proxyモードがslcanの'O'コマンドから呼ぶ用。
+// USBシリアルをSLCANプロトコル専用にする必要があるため。service/can_proxy.cpp参照）
+bool canInit(bool quiet = false);
 
-// CAN 停止（TWAI 停止 → 電源 OFF）。未起動でも安全に呼べる
-void canDeinit();
+// CAN 停止（TWAI 停止 → 電源 OFF）。未起動でも安全に呼べる。
+// quiet=trueの用途はcanInit()と同じ（CAN Proxyモードの'C'コマンドから呼ぶ用）
+void canDeinit(bool quiet = false);
 
 // Mode 01 で複数PIDをまとめて1フレーム(Single Frame)で要求する。count は1〜6
 // （PCIバイトの長さ制約: Mode1バイト+PID数がSF7バイト以内に収まる上限）。
