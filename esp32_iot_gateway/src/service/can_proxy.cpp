@@ -18,6 +18,7 @@ enum class ParseState
   Id,
   Dlc,
   Data,
+  Checksum, // FLAGS+ID+DLC+DATA全体のXOR（0x55/0xAAとの偶然の一致対策、can_proxy.h参照）
 };
 
 ParseState s_state = ParseState::WaitSync;
@@ -27,19 +28,26 @@ uint8_t s_idBytesRead = 0;
 uint8_t s_dlc = 0;
 uint8_t s_data[8];
 uint8_t s_dataBytesRead = 0;
+uint8_t s_checksum = 0; // 受信中に随時更新する累積XOR
 
-// 1バイト受信するごとに呼ぶ。フレームが完成したらtrueを返し、out引数に結果を書く
+// 1バイト受信するごとに呼ぶ。フレームが完成し、かつチェックサムが一致すればtrueを返し
+// out引数に結果を書く。チェックサム不一致の場合はfalseのままフレームを破棄する
+// （偶然0x55にマッチしたゴミデータをCAN送信してしまわないための安全弁）
 bool feedByte(uint8_t b, uint32_t &idOut, bool &extdOut, uint8_t *dataOut, uint8_t &dlcOut)
 {
   switch (s_state)
   {
   case ParseState::WaitSync:
     if (b == SYNC_TO_CAN)
+    {
       s_state = ParseState::Flags;
+      s_checksum = 0;
+    }
     return false;
 
   case ParseState::Flags:
     s_flags = b;
+    s_checksum ^= b;
     s_id = 0;
     s_idBytesRead = 0;
     s_state = ParseState::Id;
@@ -47,6 +55,7 @@ bool feedByte(uint8_t b, uint32_t &idOut, bool &extdOut, uint8_t *dataOut, uint8
 
   case ParseState::Id:
     s_id |= ((uint32_t)b) << (8 * s_idBytesRead);
+    s_checksum ^= b;
     s_idBytesRead++;
     if (s_idBytesRead >= 4)
       s_state = ParseState::Dlc;
@@ -60,45 +69,51 @@ bool feedByte(uint8_t b, uint32_t &idOut, bool &extdOut, uint8_t *dataOut, uint8
       return false;
     }
     s_dlc = b;
+    s_checksum ^= b;
     s_dataBytesRead = 0;
-    if (s_dlc == 0)
-    {
-      idOut = s_id;
-      extdOut = (s_flags & 0x01) != 0;
-      dlcOut = 0;
-      s_state = ParseState::WaitSync;
-      return true;
-    }
-    s_state = ParseState::Data;
+    s_state = (s_dlc == 0) ? ParseState::Checksum : ParseState::Data;
     return false;
 
   case ParseState::Data:
     s_data[s_dataBytesRead++] = b;
+    s_checksum ^= b;
     if (s_dataBytesRead >= s_dlc)
-    {
-      idOut = s_id;
-      extdOut = (s_flags & 0x01) != 0;
-      dlcOut = s_dlc;
-      memcpy(dataOut, s_data, s_dlc);
-      s_state = ParseState::WaitSync;
-      return true;
-    }
+      s_state = ParseState::Checksum;
     return false;
+
+  case ParseState::Checksum:
+    s_state = ParseState::WaitSync; // 一致・不一致に関わらず次フレームの同期待ちへ
+    if (b != s_checksum)
+      return false; // 不一致 → 偶然の一致とみなして破棄（CANへは送信しない）
+    idOut = s_id;
+    extdOut = (s_flags & 0x01) != 0;
+    dlcOut = s_dlc;
+    memcpy(dataOut, s_data, s_dlc);
+    return true;
   }
   return false; // 到達しない（全ケース網羅済み）
 }
 
 void writeOutgoing(uint32_t id, bool extd, const uint8_t *data, uint8_t dlc)
 {
+  uint8_t flags = extd ? (uint8_t)0x01 : (uint8_t)0x00;
+  uint8_t idBytes[4] = {
+      (uint8_t)(id & 0xFF), (uint8_t)((id >> 8) & 0xFF),
+      (uint8_t)((id >> 16) & 0xFF), (uint8_t)((id >> 24) & 0xFF)};
+
+  uint8_t checksum = flags ^ dlc;
+  for (uint8_t i = 0; i < 4; i++)
+    checksum ^= idBytes[i];
+  for (uint8_t i = 0; i < dlc; i++)
+    checksum ^= data[i];
+
   Serial.write(SYNC_FROM_CAN);
-  Serial.write(extd ? (uint8_t)0x01 : (uint8_t)0x00);
-  Serial.write((uint8_t)(id & 0xFF));
-  Serial.write((uint8_t)((id >> 8) & 0xFF));
-  Serial.write((uint8_t)((id >> 16) & 0xFF));
-  Serial.write((uint8_t)((id >> 24) & 0xFF));
+  Serial.write(flags);
+  Serial.write(idBytes, sizeof(idBytes));
   Serial.write(dlc);
   if (dlc > 0)
     Serial.write(data, dlc);
+  Serial.write(checksum);
 }
 } // namespace
 
