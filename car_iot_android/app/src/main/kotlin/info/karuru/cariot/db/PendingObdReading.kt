@@ -7,14 +7,20 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
 import info.karuru.cariot.obd.ObdReading
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 // AWSアップロード待ちのOBD-IIデータ。infra/lambda_src/obd_ingest/index.pyの_FIELD_MAPが
 // 受理するフィールドのみを保持する（atfTempC等の拡張フィールドはLambda未対応のため対象外）。
 // アップロード成功でDELETE、失敗時は残して次回再送する（mobile/lib/services/obd_uploader.dartと
 // 異なりRoomで永続化し、Service強制終了後も引き継げるようにする、docs/car_iot_android_plan.md）。
+// @Serializableはupload/ObdUploader.ktでのAPI送信用JSON化にそのまま使う（idはRoom内部の
+// 主キーでAPIに送る意味がないため@Transientで除外、フィールド35個をAPI用DTOへ書き写す
+// 重複を避けるための判断）。
 @Entity(tableName = "pending_obd_reading")
+@Serializable
 data class PendingObdReading(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @PrimaryKey(autoGenerate = true) @Transient val id: Long = 0,
     val ts: Long,
     val rpm: Int,
     val speedKmh: Int,
