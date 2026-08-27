@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -60,6 +61,15 @@ dependencies {
     // org.json.JSONObjectはAndroid Unit Test環境でstub化され動作しないため、
     // IDトークン(JWT)ペイロードのJSONパースにはこちらを使う
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+
+    // OBDアップロードキュー・Service稼働時間ログの永続化（Phase5、docs/car_iot_android_plan.md）
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("androidx.room:room-ktx:2.8.4")
+    ksp("androidx.room:room-compiler:2.8.4")
+
+    // アップロードのHTTP POST（Phase5）
+    // 5.5.0はcompileSdk37を要求しAGP8.11.1推奨の36と衝突するため5.4.0を使う
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
 
     testImplementation("junit:junit:4.13.2")
 }
