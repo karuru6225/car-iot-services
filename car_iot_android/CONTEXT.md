@@ -9,7 +9,7 @@
 
 **作業ブランチ**: `feat/car-iot-android`（mainには未マージ）。`mobile/`は当面残す（移植元参照用）。
 
-## 現在の状態（Phase 0〜4完了）
+## 現在の状態（Phase 0〜5完了）
 
 | Phase | 内容 | 状態 |
 |---|---|---|
@@ -18,15 +18,33 @@
 | 2 | 接続状態・計測値のUI表示 | 完了 |
 | 3 | Foreground Service化 | 完了（**アプリを完全にタスクから消してもBLE接続・受信が継続することを実機確認済み**） |
 | 4 | Cognito OAuth認証 | 完了（サインイン/アウト・セッション復元まで実機確認済み） |
-| 5 | アップロード（Room永続化、dataSyncスロットリング） | 未着手 |
+| 5 | アップロード（Room永続化、dataSyncスロットリング） | 完了（実機確認済み、下記参照） |
 | 6 | 位置情報 | 未着手 |
 | 7 | CDM連携（BLE検知でのkilled状態からの自動起動） | 未着手 |
 | 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | 未着手 |
 | 9 | 仕上げ | 未着手 |
 
-次にやるならPhase 5から。設計は`docs/car_iot_android_plan.md`に既にまとめてある
-（`PendingObdReading`/`ServiceRuntimeSegment`のRoomテーブル、`CarIotUploadService`という
-別Foreground Service(dataSync型)、稼働時間ベースのスロットリング判定）。
+次にやるならPhase 6から。設計は`docs/car_iot_android_plan.md`にまとめてある
+（位置情報は`play-services-location`を追加し`PendingObdReading.lat/lon`を埋める、
+`CarIotForegroundService`のtypeに`location`を追加）。
+
+### Phase 5実機検証メモ
+
+fakeobd env（`esp32-s3-devkitc-1-v1-develop-fakeobd`）で以下を確認済み:
+
+- BLE接続確立（CONNECTED）直後に`CarIotUploadService`が即座に起動する（ただしこの1回目は
+  OBDデータがまだ1件も届いていないタイミングだと空振りする。実用上は問題ない、次の
+  5分タイマーか次の接続で溜まった分がまとめて送られる）
+- 5分待たずとも、切断→再接続でCONNECTED遷移を再発火させれば即座にアップロードを
+  トリガーできる（検証を早めたい時に有効。実機で100件+14件の2バッチに分けて送信される
+  ことを確認＝`MAX_BATCH_SIZE`超過時のループ処理も動作確認済み）
+- `adb shell am force-stop`でプロセスを強制終了しても、Room DBファイルは失われず、
+  アプリ再起動→BLE再接続後に未送信データがそのまま送信される（Service強制終了への
+  耐性が狙い通り機能している）
+- Room DBの中身は実機からpullして確認できる:
+  `adb exec-out run-as info.karuru.cariot cat databases/car_iot.db > car_iot.db`
+  （`car_iot.db-wal`/`-shm`も同様にpullしてから`sqlite3`で開く。実機にはsqlite3バイナリが
+  無いため`run-as ... sqlite3`は使えない、ローカルのplatform-tools付属`sqlite3`を使う）
 
 ## パッケージ構成（現状）
 
@@ -49,8 +67,16 @@ info/karuru/cariot/
 │   ├── AuthResultActivity.kt       # 認可フロー完了後の実処理（トークン交換・保存）
 │   ├── CognitoConfig.kt            # OIDC discovery取得の共通ヘルパー
 │   ├── ExpiryCheck.kt / JwtClaims.kt  # 純粋ロジック、TDD済み
+├── db/
+│   ├── CarIotDatabase.kt           # RoomDatabase定義
+│   ├── PendingObdReading.kt        # アップロード待ちOBDデータ（Entity+Dao、@Serializable兼用）
+│   └── ServiceRuntimeSegment.kt    # 両Serviceの稼働区間ログ（Entity+Dao）
+├── upload/
+│   ├── RuntimeSegmentThrottle.kt   # dataSync 6時間上限へのスロットリング判定、純粋ロジック、TDD済み
+│   └── ObdUploader.kt              # JSON変換（TDD済み）+ OkHttpでのバッチ送信
 ├── service/
-│   └── CarIotForegroundService.kt  # connectedDevice型、BLE接続をActivityから独立させる
+│   ├── CarIotForegroundService.kt  # connectedDevice型、BLE接続をActivityから独立させる
+│   └── CarIotUploadService.kt      # dataSync型、起動のたびに未送信バッチを送信してstopSelf()
 └── state/
     └── CarIotState.kt              # プロセス内シングルトン、StateFlow群（Serviceが書き込み、UIが購読）
 ```
@@ -123,6 +149,20 @@ Android SDK提供の`org.json`パッケージはユニットテスト環境で�
 2025年7月に1.1.0として安定版リリースされたが、それと同時に全APIが非推奨化された
 （Googleは今後Android Keystore直接利用への移行を推奨）。このプロジェクトでは
 `SecureStore.kt`でAndroid Keystore(AES/GCM)を自前実装している。
+
+### 8. OkHttp 5.5.0はcompileSdk 37を要求する
+
+2026年8月時点の最新安定版はOkHttp 5.5.0だが、これは`compileSdk 37`を要求し、
+AGP 8.11.1が推奨する最大`compileSdk 36`と衝突して`checkDebugAarMetadata`が失敗する
+（`app/build.gradle.kts`参照）。ひとつ前の5.4.0は`compileSdk 36`のままで問題なく使えるため、
+そちらを採用している。今後AGP/compileSdkを上げる際に5.5.0への追従を検討すること。
+
+### 9. kotlinx.serialization.jsonの`JsonPrimitive`拡張プロパティは個別importが必要
+
+`.long`/`.int`/`.double`/`.boolean`（`JsonPrimitive`→プリミティブ型への変換）はパッケージ
+`kotlinx.serialization.json`のトップレベル拡張プロパティで、`jsonPrimitive`等をimportしても
+自動解決されない。`Unresolved reference` になった場合は
+`import kotlinx.serialization.json.long`のように個別にimportする（`ObdUploaderTest.kt`参照）。
 
 ## ビルド・テスト
 
