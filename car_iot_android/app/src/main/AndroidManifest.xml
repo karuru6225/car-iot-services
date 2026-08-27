@@ -4,9 +4,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
@@ -23,9 +25,11 @@
             </intent-filter>
         </activity>
 
+        <!-- location型を追加することで、このServiceが稼働中はACCESS_BACKGROUND_LOCATIONなしで
+             位置情報取得が許可される(Android公式仕様、Phase6 docs/car_iot_android_plan.md)。 -->
         <service
             android:name=".service.CarIotForegroundService"
-            android:foregroundServiceType="connectedDevice"
+            android:foregroundServiceType="connectedDevice|location"
             android:exported="false"/>
 
         <!-- OBDアップロードのみを担当するdataSync型Service。CarIotForegroundServiceからの

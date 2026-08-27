@@ -91,9 +91,10 @@ class MainActivity : ComponentActivity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       perms.add(Manifest.permission.BLUETOOTH_SCAN)
       perms.add(Manifest.permission.BLUETOOTH_CONNECT)
-    } else {
-      perms.add(Manifest.permission.ACCESS_FINE_LOCATION)
     }
+    // BLEスキャン自体はneverForLocationフラグにより位置情報権限を必要としないが、
+    // OBDデータへのGPS位置紐付け(Phase6、LocationTracker)のため別途リクエストする。
+    perms.add(Manifest.permission.ACCESS_FINE_LOCATION)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       perms.add(Manifest.permission.POST_NOTIFICATIONS)
     }
