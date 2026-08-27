@@ -92,6 +92,22 @@ class _BleHomeState extends State<BleHome> {
     _companion.isAssociated().then((v) {
       if (mounted) setState(() => _autoLaunchEnabled = v);
     });
+
+    // ウォーム起動: アプリ生存中にBLE検知された場合、未接続なら自動接続する
+    _companion.onAutoConnectTriggered = () {
+      if (_state == ConnState.disconnected) {
+        _addLog('BLE検知による自動接続（アプリ生存中）', LogType.sys);
+        _connect();
+      }
+    };
+
+    // コールド起動: killed状態からCDM起動された場合
+    _companion.consumeAutoConnectFlag().then((auto) {
+      if (auto && mounted && _state == ConnState.disconnected) {
+        _addLog('BLE検知によるアプリ自動起動', LogType.sys);
+        _connect();
+      }
+    });
   }
 
   // ---------- 認証 ----------

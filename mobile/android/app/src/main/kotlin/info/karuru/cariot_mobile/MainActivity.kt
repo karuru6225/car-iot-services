@@ -43,8 +43,25 @@ class MainActivity : FlutterActivity() {
           result.success(null)
         }
         "isAssociated" -> result.success(prefs.contains(PREF_DEVICE_ADDRESS))
+        "consumeAutoConnectFlag" -> {
+          val flag = intent?.getBooleanExtra(EXTRA_AUTO_CONNECT, false) ?: false
+          intent?.removeExtra(EXTRA_AUTO_CONNECT)
+          result.success(flag)
+        }
         else -> result.notImplemented()
       }
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    // launchMode="singleTop"のため、アプリ生存中にCarIotCompanionServiceがActivity起動を
+    // 試みてもActivityは再生成されずonNewIntentのみ呼ばれる。この場合initState経由の
+    // consumeAutoConnectFlagは通らないため、ここから直接Dartへ通知する。
+    if (intent.getBooleanExtra(EXTRA_AUTO_CONNECT, false)) {
+      intent.removeExtra(EXTRA_AUTO_CONNECT)
+      channel?.invokeMethod("autoConnectTriggered", null)
     }
   }
 
@@ -103,5 +120,10 @@ class MainActivity : FlutterActivity() {
     prefs.edit().putString(PREF_DEVICE_ADDRESS, address).apply()
     val manager = getSystemService(Context.COMPANION_DEVICE_SERVICE) as CompanionDeviceManager
     manager.startObservingDevicePresence(address)
+  }
+
+  companion object {
+    // CarIotCompanionService.onDeviceAppeared()経由でActivityが起動されたことを示すフラグ
+    const val EXTRA_AUTO_CONNECT = "auto_connect"
   }
 }

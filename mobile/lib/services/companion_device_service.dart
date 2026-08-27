@@ -10,6 +10,15 @@ import '../ble/ble_constants.dart';
 class CompanionDeviceService {
   static const _channel = MethodChannel('info.karuru.cariot_mobile/companion');
 
+  // アプリ生存中にBLE検知された場合（ウォーム起動）、initState()を経由せずここに直接通知が来る
+  VoidCallback? onAutoConnectTriggered;
+
+  CompanionDeviceService() {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'autoConnectTriggered') onAutoConnectTriggered?.call();
+    });
+  }
+
   Future<void> associate() async {
     if (!Platform.isAndroid) return;
     await _channel.invokeMethod('associate', {
@@ -21,5 +30,11 @@ class CompanionDeviceService {
   Future<bool> isAssociated() async {
     if (!Platform.isAndroid) return false;
     return await _channel.invokeMethod<bool>('isAssociated') ?? false;
+  }
+
+  // killed状態からCDM起動された場合のフラグを1回だけ取り出す（コールド起動用）
+  Future<bool> consumeAutoConnectFlag() async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('consumeAutoConnectFlag') ?? false;
   }
 }
