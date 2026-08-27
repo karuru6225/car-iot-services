@@ -2,6 +2,7 @@ package info.karuru.cariot
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
   // にインスタンス化する必要がある（CompanionDeviceHelper.kt参照）。
   private val companionHelper = CompanionDeviceHelper(this)
   private var companionAssociated by mutableStateOf(false)
+  private var backgroundLocationGranted by mutableStateOf(false)
 
   private val requestPermissions =
       registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -53,10 +55,16 @@ class MainActivity : ComponentActivity() {
         }
       }
 
+  private val requestBackgroundLocation =
+      registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        backgroundLocationGranted = granted
+      }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     authStore = AuthStore(applicationContext)
     companionAssociated = companionHelper.isAssociated()
+    backgroundLocationGranted = hasBackgroundLocationPermission()
 
     // 起動時のセッション復元（mobile/lib/services/auth_service.dartのtryRestoreSession()相当、
     // 実際のトークンリフレッシュはアップロード時に行うのでここでは保存済みemailを表示するだけ）
@@ -74,10 +82,28 @@ class MainActivity : ComponentActivity() {
               onSignOut = { signOut() },
               companionAssociated = companionAssociated,
               onEnableAutoLaunch = { enableAutoLaunch() },
+              backgroundLocationGranted = backgroundLocationGranted,
+              onRequestBackgroundLocation = {
+                requestBackgroundLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+              },
           )
         }
       }
     }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    // システム設定アプリ経由で許可された場合(Android 11+の一般的なフロー)は
+    // ActivityResultのコールバックを通らないため、画面復帰のたびに再チェックする。
+    backgroundLocationGranted = hasBackgroundLocationPermission()
+  }
+
+  private fun hasBackgroundLocationPermission(): Boolean {
+    return ContextCompat.checkSelfPermission(
+        this,
+        Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+    ) == PackageManager.PERMISSION_GRANTED
   }
 
   // ESP32とのCDM関連付けを行い、アプリがkilled状態でもBLE検知でCarIotForegroundServiceのみ
@@ -130,6 +156,8 @@ private fun ConnectionScreen(
     onSignOut: () -> Unit,
     companionAssociated: Boolean,
     onEnableAutoLaunch: () -> Unit,
+    backgroundLocationGranted: Boolean,
+    onRequestBackgroundLocation: () -> Unit,
 ) {
   val state by CarIotState.connState.collectAsStateWithLifecycle()
   val deviceName by CarIotState.deviceName.collectAsStateWithLifecycle()
@@ -181,6 +209,15 @@ private fun ConnectionScreen(
         Text("自動起動: 有効")
       } else {
         Button(onClick = onEnableAutoLaunch) { Text("自動起動を有効にする") }
+      }
+    }
+    // 自動起動時に起動するCarIotForegroundServiceはlocation型FGSのため、
+    // ACCESS_BACKGROUND_LOCATIONが無いと起動時にクラッシュする（実機で確認済み、Phase7）。
+    Row(modifier = Modifier.padding(top = 12.dp)) {
+      if (backgroundLocationGranted) {
+        Text("バックグラウンド位置情報: 許可済み")
+      } else {
+        Button(onClick = onRequestBackgroundLocation) { Text("バックグラウンド位置情報を許可する") }
       }
     }
   }

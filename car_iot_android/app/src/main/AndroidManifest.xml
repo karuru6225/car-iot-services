@@ -5,6 +5,10 @@
         android:usesPermissionFlags="neverForLocation"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- CDM経由でCarIotForegroundService(location型FGS)をバックグラウンドから起動するには
+         ACCESS_BACKGROUND_LOCATIONが必須(無いと起動時にクラッシュすることを実機で確認済み、
+         Phase7)。ACCESS_FINE_LOCATION許可後に別途リクエストする必要がある。 -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
