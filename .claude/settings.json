@@ -12,7 +12,11 @@
       "mcp__kicad-mcp__analyze_schematic_connections",
       "Bash(git -C c:/Users/karuru/git_repos/car-iot-services status)",
       "Bash(git -C c:/Users/karuru/git_repos/car-iot-services log --oneline main..HEAD)",
-      "Bash(flutter build *)"
+      "Bash(flutter build *)",
+      "Bash(./gradlew.bat assembleDebug --console=plain)",
+      "Bash(./gradlew.bat testDebugUnitTest --console=plain)",
+      "Bash(./gradlew.bat testDebugUnitTest assembleDebug --console=plain)",
+      "Bash(./gradlew.bat assembleDebug testDebugUnitTest --console=plain)"
     ]
   }
 }
