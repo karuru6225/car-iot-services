@@ -10,3 +10,6 @@
 key.properties
 **/*.keystore
 **/*.jks
+
+# terraform outputの実値が入る（mobile/lib/config.dartと同じ運用、AppConfig.kt.exampleを参照）
+AppConfig.kt

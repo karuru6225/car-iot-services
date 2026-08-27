@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"/>
@@ -25,6 +26,43 @@
             android:name=".service.CarIotForegroundService"
             android:foregroundServiceType="connectedDevice"
             android:exported="false"/>
+
+        <!-- Cognito Hosted UI(Google連携)からのリダイレクトを受ける。AuthorizationManagementActivity
+             への中継のみ行う薄いActivity（infra/mobile_auth.tfのcallback_urlsと完全一致させること）。 -->
+        <activity
+            android:name=".auth.OAuthRedirectActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="info.karuru.cariotmobile" android:host="oauthredirect"/>
+            </intent-filter>
+        </activity>
+
+        <!-- AuthLoginFlow.startSignIn()のcompletedIntentで指定される、実際のトークン交換を
+             行うActivity。外部からの起動は想定しないためexported=false。 -->
+        <activity
+            android:name=".auth.AuthResultActivity"
+            android:exported="false"/>
+
+        <!-- net.openid:appauthが内蔵するRedirectUriReceiverActivityは使わず自作の
+             OAuthRedirectActivityに一本化する（appAuthRedirectSchemeを設定しないため、
+             このライブラリ内蔵Activityはマージ時に除去する必要がある）。 -->
+        <activity
+            android:name="net.openid.appauth.RedirectUriReceiverActivity"
+            tools:node="remove"/>
+
+        <!-- net.openid:appauthのAuthorizationManagementActivityはデフォルトlaunchMode=singleTaskだが、
+             Android 14+でシステムがActivityを再生成してしまい認可フローが中断される既知の問題がある
+             （実機でCustom Tabsが一瞬開いてすぐ閉じる症状として発覚。
+             https://github.com/openid/AppAuth-Android/issues/977 の回避策を適用）。 -->
+        <activity
+            android:name="net.openid.appauth.AuthorizationManagementActivity"
+            android:exported="false"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden"
+            android:launchMode="singleInstance"
+            tools:replace="android:launchMode"/>
     </application>
 
 </manifest>

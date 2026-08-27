@@ -23,6 +23,14 @@ object CarIotState {
   private val _obdReading = MutableStateFlow<ObdReading?>(null)
   val obdReading: StateFlow<ObdReading?> = _obdReading.asStateFlow()
 
+  // サインイン中のユーザーのメールアドレス（表示用）。未サインインならnull。
+  private val _userEmail = MutableStateFlow<String?>(null)
+  val userEmail: StateFlow<String?> = _userEmail.asStateFlow()
+
+  fun setUserEmail(v: String?) {
+    _userEmail.value = v
+  }
+
   fun setConnState(v: ConnState) {
     _connState.value = v
   }

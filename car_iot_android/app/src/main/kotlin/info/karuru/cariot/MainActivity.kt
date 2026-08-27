@@ -20,16 +20,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import info.karuru.cariot.auth.AuthLoginFlow
+import info.karuru.cariot.auth.AuthStore
 import info.karuru.cariot.ble.ConnState
 import info.karuru.cariot.service.ACTION_CONNECT
 import info.karuru.cariot.service.ACTION_DISCONNECT
 import info.karuru.cariot.service.CarIotForegroundService
 import info.karuru.cariot.state.CarIotState
+import kotlinx.coroutines.launch
 
 // BLE接続・OBD受信の実処理はCarIotForegroundServiceが担当し、ここは状態(CarIotState)の
 // 表示とコマンド送信だけを行う薄い層（docs/car_iot_android_plan.md Phase 3）。
 // Activityが破棄されてもServiceは動き続けるため、onDestroy()でdisconnect()は呼ばない。
+// 認証（Phase 4）: サインイン自体はブラウザ(Custom Tabs)を開くためActivity起点で行うが、
+// 結果の受け取り・状態更新はOAuthRedirectActivity→CarIotState.userEmail経由で行う。
 class MainActivity : ComponentActivity() {
+  private val authLoginFlow = AuthLoginFlow(this)
+  private lateinit var authStore: AuthStore
+
   private val requestPermissions =
       registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted.values.all { it }) {
@@ -39,6 +48,13 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    authStore = AuthStore(applicationContext)
+
+    // 起動時のセッション復元（mobile/lib/services/auth_service.dartのtryRestoreSession()相当、
+    // 実際のトークンリフレッシュはアップロード時に行うのでここでは保存済みemailを表示するだけ）
+    if (authStore.hasRefreshToken()) {
+      CarIotState.setUserEmail(authStore.getEmail())
+    }
 
     setContent {
       MaterialTheme {
@@ -46,10 +62,23 @@ class MainActivity : ComponentActivity() {
           ConnectionScreen(
               onConnect = { requestPermissions.launch(blePermissions()) },
               onDisconnect = { startBleService(ACTION_DISCONNECT) },
+              onSignIn = { signIn() },
+              onSignOut = { signOut() },
           )
         }
       }
     }
+  }
+
+  private fun signIn() {
+    lifecycleScope.launch {
+      authLoginFlow.startSignIn()
+    }
+  }
+
+  private fun signOut() {
+    authStore.clear()
+    CarIotState.setUserEmail(null)
   }
 
   private fun startBleService(action: String) {
@@ -73,11 +102,17 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun ConnectionScreen(onConnect: () -> Unit, onDisconnect: () -> Unit) {
+private fun ConnectionScreen(
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onSignIn: () -> Unit,
+    onSignOut: () -> Unit,
+) {
   val state by CarIotState.connState.collectAsStateWithLifecycle()
   val deviceName by CarIotState.deviceName.collectAsStateWithLifecycle()
   val measurement by CarIotState.measurement.collectAsStateWithLifecycle()
   val obdReading by CarIotState.obdReading.collectAsStateWithLifecycle()
+  val userEmail by CarIotState.userEmail.collectAsStateWithLifecycle()
 
   val label = when (state) {
     ConnState.DISCONNECTED -> "未接続"
@@ -89,7 +124,16 @@ private fun ConnectionScreen(onConnect: () -> Unit, onDisconnect: () -> Unit) {
   val isBusy = state == ConnState.SCANNING || state == ConnState.CONNECTING
 
   Column(modifier = Modifier.padding(24.dp)) {
-    Text(label)
+    Text(userEmail?.let { "ログイン: $it" } ?: "未ログイン")
+    Row(modifier = Modifier.padding(top = 8.dp)) {
+      if (userEmail == null) {
+        Button(onClick = onSignIn) { Text("サインイン") }
+      } else {
+        Button(onClick = onSignOut) { Text("サインアウト") }
+      }
+    }
+
+    Text(label, modifier = Modifier.padding(top = 24.dp))
     Row(modifier = Modifier.padding(top = 12.dp)) {
       Button(onClick = onConnect, enabled = !isConnected && !isBusy) {
         Text("接続")

@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -54,6 +55,11 @@ dependencies {
     // BleConnectionManagerの状態(StateFlow)をComposeで購読するために使う
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Cognito Hosted UI(Google連携)のOAuth/OIDCクライアント
+    implementation("net.openid:appauth:0.11.1")
+    // org.json.JSONObjectはAndroid Unit Test環境でstub化され動作しないため、
+    // IDトークン(JWT)ペイロードのJSONパースにはこちらを使う
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
 
     testImplementation("junit:junit:4.13.2")
 }
