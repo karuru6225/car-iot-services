@@ -15,10 +15,12 @@ import '../models/log_entry.dart';
 import '../models/obd_metric.dart';
 import '../models/obd_reading.dart';
 import '../services/auth_service.dart';
+import '../services/companion_device_service.dart';
 import '../services/location_service.dart';
 import '../services/obd_uploader.dart';
 import '../theme/app_colors.dart';
 import '../widgets/auth_card.dart';
+import '../widgets/auto_launch_card.dart';
 import '../widgets/conn_card.dart';
 import '../widgets/debug_toggle_card.dart';
 import '../widgets/log_card.dart';
@@ -72,6 +74,10 @@ class _BleHomeState extends State<BleHome> {
   // GPS位置情報（OBDデータへの紐付け用）
   final _location = LocationService();
 
+  // BLE検知によるアプリ自動起動（Android CompanionDeviceManager）
+  final _companion = CompanionDeviceService();
+  bool _autoLaunchEnabled = false;
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +86,11 @@ class _BleHomeState extends State<BleHome> {
     _uploader.start();
     _auth.tryRestoreSession().then((email) {
       if (mounted) setState(() => _userEmail = email);
+    });
+
+    // 自動起動の関連付け状態を表示に反映
+    _companion.isAssociated().then((v) {
+      if (mounted) setState(() => _autoLaunchEnabled = v);
     });
   }
 
@@ -102,6 +113,20 @@ class _BleHomeState extends State<BleHome> {
     if (!mounted) return;
     setState(() => _userEmail = null);
     _addLog('ログアウトしました', LogType.sys);
+  }
+
+  // ---------- 自動起動（CDM関連付け） ----------
+
+  Future<void> _enableAutoLaunch() async {
+    _addLog('自動起動の関連付けを開始します（ESP32を起動しておいてください）', LogType.sys);
+    try {
+      await _companion.associate();
+      final ok = await _companion.isAssociated();
+      if (mounted) setState(() => _autoLaunchEnabled = ok);
+      _addLog(ok ? '自動起動を有効化しました' : '関連付けに失敗しました', ok ? LogType.sys : LogType.err);
+    } catch (e) {
+      _addLog('自動起動の設定エラー: $e', LogType.err);
+    }
   }
 
   // ---------- ログ ----------
@@ -438,6 +463,8 @@ class _BleHomeState extends State<BleHome> {
                 onConnect: _connect,
                 onDisconnect: isConn ? _disconnect : _cancelConnect,
               ),
+              const SizedBox(height: 12),
+              AutoLaunchCard(enabled: _autoLaunchEnabled, onEnable: _enableAutoLaunch),
               const SizedBox(height: 12),
               DebugToggleCard(
                 value: _debugMode,
