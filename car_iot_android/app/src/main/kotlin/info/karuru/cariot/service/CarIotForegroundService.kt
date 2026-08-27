@@ -18,6 +18,7 @@ import info.karuru.cariot.db.CarIotDatabase
 import info.karuru.cariot.db.PendingObdReading
 import info.karuru.cariot.db.SERVICE_KIND_FOREGROUND
 import info.karuru.cariot.db.ServiceRuntimeSegment
+import info.karuru.cariot.location.LocationTracker
 import info.karuru.cariot.obd.ObdReading
 import info.karuru.cariot.state.CarIotState
 import info.karuru.cariot.upload.PENDING_READING_HARD_CAP
@@ -46,6 +47,7 @@ const val ACTION_DISCONNECT = "info.karuru.cariot.action.DISCONNECT"
 // 変わった直後の尾流し）でCarIotUploadServiceを起動してアップロードをトリガーする。
 class CarIotForegroundService : Service() {
   private lateinit var bleManager: BleConnectionManager
+  private lateinit var locationTracker: LocationTracker
   private var wakeLock: PowerManager.WakeLock? = null
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val db by lazy { CarIotDatabase.getInstance(applicationContext) }
@@ -56,6 +58,7 @@ class CarIotForegroundService : Service() {
   override fun onCreate() {
     super.onCreate()
     bleManager = BleConnectionManager(applicationContext, onObdReading = ::onObdReadingReceived)
+    locationTracker = LocationTracker(applicationContext)
     createNotificationChannel()
     // Android 12+でのANR回避のため、onCreate直後に仮の通知でstartForegroundしておく
     // （接続状態が変わったらNotificationManager.notify()で更新する）。
@@ -85,6 +88,7 @@ class CarIotForegroundService : Service() {
 
   override fun onDestroy() {
     bleManager.disconnect()
+    locationTracker.stop()
     releaseWakeLock()
     // 正常終了時はここでendTsを確定させる。runBlocking()はSQLite1行のUPDATEのみで
     // 短時間のため許容する（onDestroy()はsuspend関数ではないため）。ここに来る前に
@@ -97,12 +101,13 @@ class CarIotForegroundService : Service() {
     super.onDestroy()
   }
 
-  // BLE接続確立中だけアップロードタイマーを回す。接続直後は検証をしやすくするため
-  // 5分待たず即座に1回トリガーする。
+  // BLE接続確立中だけアップロードタイマーと位置情報取得を行う。接続直後は検証をしやすく
+  // するため5分待たず即座に1回トリガーする。
   private fun observeConnState() {
     scope.launch {
       CarIotState.connState.collect { state ->
         if (state == ConnState.CONNECTED) {
+          locationTracker.start()
           if (uploadTimerJob == null) {
             uploadTimerJob = scope.launch {
               triggerUpload()
@@ -113,6 +118,7 @@ class CarIotForegroundService : Service() {
             }
           }
         } else {
+          locationTracker.stop()
           uploadTimerJob?.cancel()
           uploadTimerJob = null
         }
@@ -121,9 +127,12 @@ class CarIotForegroundService : Service() {
   }
 
   private fun onObdReadingReceived(reading: ObdReading) {
+    // 位置情報取得の成否とOBD受信は独立させる（権限未許可・GPS未捕捉時はlat/lon=nullのまま
+    // 送信され、Lambda側もキーが無ければGPS未取得として扱う、docs/car_iot_android_plan.md）。
+    val location = locationTracker.lastLocation
     scope.launch {
       db.pendingObdReadingDao().insertAndTrim(
-          PendingObdReading.from(reading, lat = null, lon = null),
+          PendingObdReading.from(reading, lat = location?.latitude, lon = location?.longitude),
           PENDING_READING_HARD_CAP,
       )
     }
