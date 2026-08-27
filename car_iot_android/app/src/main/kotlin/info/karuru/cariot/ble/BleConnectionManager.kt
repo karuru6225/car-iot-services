@@ -56,6 +56,7 @@ class BleConnectionManager(private val context: Context) {
   private var userDisconnected = false
   private var retryDeadline: Long = 0
   private var deviceFound = false
+  private val notifyQueue = ArrayDeque<BluetoothGattCharacteristic>()
 
   fun connect() {
     // 二重接続防止: 既に接続中/接続試行中なら何もしない
@@ -145,12 +146,22 @@ class BleConnectionManager(private val context: Context) {
         Log.w(TAG, "計測サービスが見つかりません")
         return
       }
+      // Android BLEはGATT操作（descriptor書き込み等）を同時に複数投げると2つ目以降が失敗する
+      // 既知の制約があるため、Characteristicをキューに積んでonDescriptorWrite()の完了を
+      // 待ちながら1つずつ順番にNotifyを有効化する。
+      notifyQueue.clear()
       for (uuid in listOf(VOLT_MAIN_CHAR_UUID, CURR_CHAR_UUID, PWR_CHAR_UUID, VOLT_SUB_CHAR_UUID, OBD_CHAR_UUID)) {
         val characteristic = service.getCharacteristic(uuid) ?: continue
-        enableNotify(g, characteristic)
+        notifyQueue.addLast(characteristic)
       }
-      Log.i(TAG, "Notify購読開始")
-      _connState.value = ConnState.CONNECTED
+      processNextNotifyQueueItem(g)
+    }
+
+    override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+      if (status != BluetoothGatt.GATT_SUCCESS) {
+        Log.w(TAG, "descriptor書き込み失敗: ${descriptor.characteristic.uuid} status=$status")
+      }
+      processNextNotifyQueueItem(g)
     }
 
     override fun onCharacteristicChanged(
@@ -168,9 +179,22 @@ class BleConnectionManager(private val context: Context) {
     }
   }
 
-  private fun enableNotify(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+  // notifyQueueから1件取り出してNotifyを有効化する。空になったら購読完了とみなしCONNECTEDにする。
+  // CCCDが無いCharacteristicは書き込み自体が発生しないため、その場で次のアイテムへ進める。
+  private fun processNextNotifyQueueItem(g: BluetoothGatt) {
+    val characteristic = notifyQueue.removeFirstOrNull()
+    if (characteristic == null) {
+      Log.i(TAG, "Notify購読完了")
+      _connState.value = ConnState.CONNECTED
+      return
+    }
     g.setCharacteristicNotification(characteristic, true)
-    val descriptor = characteristic.getDescriptor(CCCD_UUID) ?: return
+    val descriptor = characteristic.getDescriptor(CCCD_UUID)
+    if (descriptor == null) {
+      Log.w(TAG, "CCCDが見つかりません: ${characteristic.uuid}")
+      processNextNotifyQueueItem(g)
+      return
+    }
     @Suppress("DEPRECATION")
     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
     @Suppress("DEPRECATION")
