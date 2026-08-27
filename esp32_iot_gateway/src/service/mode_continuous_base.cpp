@@ -45,7 +45,11 @@ const char *ContinuousModeHandlerBase::nextModeLabel() const
 
 void ContinuousModeHandlerBase::onTick()
 {
+#ifdef DEBUG_FAKE_OBD_DATA
+  OBDReading r = obdPollFake();
+#else
   OBDReading r = obdPoll();
+#endif
   blePeripheral.notifyObd(r);
 
   // CAN応答で昇格した場合、応答が途絶えたら（IGN OFF相当）昇格元モードへ戻す
