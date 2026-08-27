@@ -16,6 +16,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -24,6 +26,7 @@ import androidx.lifecycle.lifecycleScope
 import info.karuru.cariot.auth.AuthLoginFlow
 import info.karuru.cariot.auth.AuthStore
 import info.karuru.cariot.ble.ConnState
+import info.karuru.cariot.companion.CompanionDeviceHelper
 import info.karuru.cariot.service.ACTION_CONNECT
 import info.karuru.cariot.service.ACTION_DISCONNECT
 import info.karuru.cariot.service.CarIotForegroundService
@@ -38,6 +41,10 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
   private val authLoginFlow = AuthLoginFlow(this)
   private lateinit var authStore: AuthStore
+  // registerForActivityResult()をコンストラクタで呼ぶ都合上、Activity生成時（フィールド初期化時）
+  // にインスタンス化する必要がある（CompanionDeviceHelper.kt参照）。
+  private val companionHelper = CompanionDeviceHelper(this)
+  private var companionAssociated by mutableStateOf(false)
 
   private val requestPermissions =
       registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -49,6 +56,7 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     authStore = AuthStore(applicationContext)
+    companionAssociated = companionHelper.isAssociated()
 
     // 起動時のセッション復元（mobile/lib/services/auth_service.dartのtryRestoreSession()相当、
     // 実際のトークンリフレッシュはアップロード時に行うのでここでは保存済みemailを表示するだけ）
@@ -64,8 +72,20 @@ class MainActivity : ComponentActivity() {
               onDisconnect = { startBleService(ACTION_DISCONNECT) },
               onSignIn = { signIn() },
               onSignOut = { signOut() },
+              companionAssociated = companionAssociated,
+              onEnableAutoLaunch = { enableAutoLaunch() },
           )
         }
+      }
+    }
+  }
+
+  // ESP32とのCDM関連付けを行い、アプリがkilled状態でもBLE検知でCarIotForegroundServiceのみ
+  // 自動起動できるようにする（画面は前面に出さない、CarIotCompanionService.kt参照、Phase7）。
+  private fun enableAutoLaunch() {
+    lifecycleScope.launch {
+      if (companionHelper.associate()) {
+        companionAssociated = true
       }
     }
   }
@@ -108,6 +128,8 @@ private fun ConnectionScreen(
     onDisconnect: () -> Unit,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    companionAssociated: Boolean,
+    onEnableAutoLaunch: () -> Unit,
 ) {
   val state by CarIotState.connState.collectAsStateWithLifecycle()
   val deviceName by CarIotState.deviceName.collectAsStateWithLifecycle()
@@ -153,5 +175,13 @@ private fun ConnectionScreen(
     Text("vSub=${measurement.vSub ?: "—"}")
     Text("OBD: ${obdReading?.let { if (it.valid) "rpm=${it.rpm} speed=${it.speedKmh}" else "応答なし" } ?: "—"}",
         modifier = Modifier.padding(top = 16.dp))
+
+    Row(modifier = Modifier.padding(top = 24.dp)) {
+      if (companionAssociated) {
+        Text("自動起動: 有効")
+      } else {
+        Button(onClick = onEnableAutoLaunch) { Text("自動起動を有効にする") }
+      }
+    }
   }
 }
