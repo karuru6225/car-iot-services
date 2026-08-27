@@ -1,6 +1,7 @@
 package info.karuru.cariot
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -17,56 +18,66 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import info.karuru.cariot.ble.BleConnectionManager
 import info.karuru.cariot.ble.ConnState
+import info.karuru.cariot.service.ACTION_CONNECT
+import info.karuru.cariot.service.ACTION_DISCONNECT
+import info.karuru.cariot.service.CarIotForegroundService
+import info.karuru.cariot.state.CarIotState
 
+// BLE接続・OBD受信の実処理はCarIotForegroundServiceが担当し、ここは状態(CarIotState)の
+// 表示とコマンド送信だけを行う薄い層（docs/car_iot_android_plan.md Phase 3）。
+// Activityが破棄されてもServiceは動き続けるため、onDestroy()でdisconnect()は呼ばない。
 class MainActivity : ComponentActivity() {
-  private lateinit var bleManager: BleConnectionManager
-
   private val requestPermissions =
       registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted.values.all { it }) {
-          bleManager.connect()
+          startBleService(ACTION_CONNECT)
         }
       }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    bleManager = BleConnectionManager(applicationContext)
 
     setContent {
       MaterialTheme {
         Surface {
           ConnectionScreen(
-              bleManager = bleManager,
               onConnect = { requestPermissions.launch(blePermissions()) },
+              onDisconnect = { startBleService(ACTION_DISCONNECT) },
           )
         }
       }
     }
   }
 
-  override fun onDestroy() {
-    bleManager.disconnect()
-    super.onDestroy()
+  private fun startBleService(action: String) {
+    val intent = Intent(this, CarIotForegroundService::class.java).setAction(action)
+    ContextCompat.startForegroundService(this, intent)
   }
 
   private fun blePermissions(): Array<String> {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+    val perms = mutableListOf<String>()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      perms.add(Manifest.permission.BLUETOOTH_SCAN)
+      perms.add(Manifest.permission.BLUETOOTH_CONNECT)
     } else {
-      arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+      perms.add(Manifest.permission.ACCESS_FINE_LOCATION)
     }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      perms.add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    return perms.toTypedArray()
   }
 }
 
 @Composable
-private fun ConnectionScreen(bleManager: BleConnectionManager, onConnect: () -> Unit) {
-  val state by bleManager.connState.collectAsStateWithLifecycle()
-  val deviceName by bleManager.deviceName.collectAsStateWithLifecycle()
-  val measurement by bleManager.measurement.collectAsStateWithLifecycle()
-  val obdReading by bleManager.obdReading.collectAsStateWithLifecycle()
+private fun ConnectionScreen(onConnect: () -> Unit, onDisconnect: () -> Unit) {
+  val state by CarIotState.connState.collectAsStateWithLifecycle()
+  val deviceName by CarIotState.deviceName.collectAsStateWithLifecycle()
+  val measurement by CarIotState.measurement.collectAsStateWithLifecycle()
+  val obdReading by CarIotState.obdReading.collectAsStateWithLifecycle()
 
   val label = when (state) {
     ConnState.DISCONNECTED -> "未接続"
@@ -84,7 +95,7 @@ private fun ConnectionScreen(bleManager: BleConnectionManager, onConnect: () -> 
         Text("接続")
       }
       Button(
-          onClick = { bleManager.disconnect() },
+          onClick = onDisconnect,
           enabled = isConnected || isBusy,
           modifier = Modifier.padding(start = 12.dp),
       ) {

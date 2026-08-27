@@ -18,12 +18,10 @@ import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import info.karuru.cariot.obd.ObdReading
+import info.karuru.cariot.state.CarIotState
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 private const val TAG = "BleConnectionManager"
 private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
@@ -32,25 +30,14 @@ private const val SCAN_TIMEOUT_MS = 10_000L
 // mobile/lib/screens/ble_home_screen.dartの_connect()/_tryConnectOnce()/_discoverAndSubscribe()
 // のKotlin移植。スキャン→接続→サービスディスカバリ→計測値4種+OBDのNotify購読→切断検知で
 // 自動再接続、をCONNECT_RETRY_WINDOW_MSの間リトライし続ける。
-// 状態(接続状態・計測値・OBD値)はStateFlowで公開し、UI(MainActivity)はそれを購読するだけにする。
-@SuppressLint("MissingPermission") // 呼び出し側(MainActivity)で実行時権限を確認済み前提
+// 状態(接続状態・計測値・OBD値)はCarIotState（プロセス内シングルトン）に直接書き込み、
+// UI(MainActivity)はそちらのStateFlowを購読する。
+@SuppressLint("MissingPermission") // 呼び出し側(CarIotForegroundService)で実行時権限を確認済み前提
 class BleConnectionManager(private val context: Context) {
   private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
   private val adapter = bluetoothManager.adapter
   private val handler = Handler(Looper.getMainLooper())
   private val obdAssembler = ObdChunkAssembler()
-
-  private val _connState = MutableStateFlow(ConnState.DISCONNECTED)
-  val connState: StateFlow<ConnState> = _connState.asStateFlow()
-
-  private val _deviceName = MutableStateFlow("")
-  val deviceName: StateFlow<String> = _deviceName.asStateFlow()
-
-  private val _measurement = MutableStateFlow(Measurement())
-  val measurement: StateFlow<Measurement> = _measurement.asStateFlow()
-
-  private val _obdReading = MutableStateFlow<ObdReading?>(null)
-  val obdReading: StateFlow<ObdReading?> = _obdReading.asStateFlow()
 
   private var gatt: BluetoothGatt? = null
   private var userDisconnected = false
@@ -60,7 +47,7 @@ class BleConnectionManager(private val context: Context) {
 
   fun connect() {
     // 二重接続防止: 既に接続中/接続試行中なら何もしない
-    if (_connState.value != ConnState.DISCONNECTED) return
+    if (CarIotState.connState.value != ConnState.DISCONNECTED) return
     userDisconnected = false
     retryDeadline = System.currentTimeMillis() + CONNECT_RETRY_WINDOW_MS
     startScan()
@@ -80,7 +67,7 @@ class BleConnectionManager(private val context: Context) {
       return
     }
     Log.i(TAG, "スキャン開始...")
-    _connState.value = ConnState.SCANNING
+    CarIotState.setConnState(ConnState.SCANNING)
     deviceFound = false
     val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(MEAS_SERVICE_UUID)).build()
     val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
@@ -112,8 +99,8 @@ class BleConnectionManager(private val context: Context) {
 
   private fun connectToDevice(device: BluetoothDevice) {
     Log.i(TAG, "接続中: ${device.name}")
-    _connState.value = ConnState.CONNECTING
-    _deviceName.value = device.name ?: ""
+    CarIotState.setConnState(ConnState.CONNECTING)
+    CarIotState.setDeviceName(device.name ?: "")
     gatt = device.connectGatt(context, false, gattCallback)
   }
 
@@ -170,10 +157,10 @@ class BleConnectionManager(private val context: Context) {
         value: ByteArray,
     ) {
       when (characteristic.uuid) {
-        VOLT_MAIN_CHAR_UUID -> _measurement.value = _measurement.value.copy(vMain = parseFloat32(value))
-        CURR_CHAR_UUID -> _measurement.value = _measurement.value.copy(curr = parseFloat32(value))
-        PWR_CHAR_UUID -> _measurement.value = _measurement.value.copy(pwr = parseFloat32(value))
-        VOLT_SUB_CHAR_UUID -> _measurement.value = _measurement.value.copy(vSub = parseFloat32(value))
+        VOLT_MAIN_CHAR_UUID -> CarIotState.updateMeasurement { it.copy(vMain = parseFloat32(value)) }
+        CURR_CHAR_UUID -> CarIotState.updateMeasurement { it.copy(curr = parseFloat32(value)) }
+        PWR_CHAR_UUID -> CarIotState.updateMeasurement { it.copy(pwr = parseFloat32(value)) }
+        VOLT_SUB_CHAR_UUID -> CarIotState.updateMeasurement { it.copy(vSub = parseFloat32(value)) }
         OBD_CHAR_UUID -> onObdChunk(value)
       }
     }
@@ -185,7 +172,7 @@ class BleConnectionManager(private val context: Context) {
     val characteristic = notifyQueue.removeFirstOrNull()
     if (characteristic == null) {
       Log.i(TAG, "Notify購読完了")
-      _connState.value = ConnState.CONNECTED
+      CarIotState.setConnState(ConnState.CONNECTED)
       return
     }
     g.setCharacteristicNotification(characteristic, true)
@@ -204,7 +191,7 @@ class BleConnectionManager(private val context: Context) {
   private fun onObdChunk(raw: ByteArray) {
     try {
       val combined = obdAssembler.add(raw) ?: return
-      _obdReading.value = ObdReading.fromBytes(combined)
+      CarIotState.setObdReading(ObdReading.fromBytes(combined))
     } catch (e: Exception) {
       Log.e(TAG, "OBDデータ解析エラー", e)
     }
@@ -216,9 +203,6 @@ class BleConnectionManager(private val context: Context) {
 
   private fun cleanup() {
     obdAssembler.reset()
-    _connState.value = ConnState.DISCONNECTED
-    _deviceName.value = ""
-    _measurement.value = Measurement()
-    _obdReading.value = null
+    CarIotState.reset()
   }
 }
