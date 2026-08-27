@@ -12,9 +12,11 @@ android {
 
     defaultConfig {
         applicationId = "info.karuru.cariot"
-        // CompanionDeviceManager.startObservingDevicePresence()がAPI31必須
-        // （mobile/android版のBLE自動起動機能と同じ制約、docs/car_iot_android_plan.md参照）
-        minSdk = 31
+        // CompanionDeviceManager.startObservingDevicePresence(ObservingDevicePresenceRequest)
+        // + CompanionDeviceService.onDevicePresenceEvent()の新APIがAPI36必須
+        // （startObservingDevicePresence(String)/onDeviceAppeared()はAndroid16で非推奨化されたため
+        // 新APIのみ実装する方針、docs/car_iot_android_plan.md Phase7参照）
+        minSdk = 36
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
