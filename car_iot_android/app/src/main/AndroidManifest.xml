@@ -47,6 +47,17 @@
             android:foregroundServiceType="dataSync"
             android:exported="false"/>
 
+        <!-- CompanionDeviceManagerからESP32のBLEアドバタイズ検知イベントを受け取るService。
+             アプリがkilled状態でもシステムがバインドし起動する（Phase7、CDM連携）。 -->
+        <service
+            android:name=".companion.CarIotCompanionService"
+            android:permission="android.permission.BIND_COMPANION_DEVICE_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.companion.CompanionDeviceService"/>
+            </intent-filter>
+        </service>
+
         <!-- Cognito Hosted UI(Google連携)からのリダイレクトを受ける。AuthorizationManagementActivity
              への中継のみ行う薄いActivity（infra/mobile_auth.tfのcallback_urlsと完全一致させること）。 -->
         <activity
