@@ -1,0 +1,12 @@
+/local.properties
+/.gradle
+/build
+/*/build
+.cxx/
+*.iml
+.idea/
+
+# 署名関連（将来追加、絶対にコミットしない）
+key.properties
+**/*.keystore
+**/*.jks
