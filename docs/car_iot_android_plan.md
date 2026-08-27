@@ -191,3 +191,24 @@ info/karuru/cariot/
 
 1. 新規ディレクトリでGradle wrapperをセットアップし、`./gradlew assembleDebug`が通ることを確認
 2. 実機（Android 12+）にインストールし、アプリが起動して画面が表示されることを確認
+
+---
+
+## Phase 5実装時の変更点（当初の設計方針からの差分）
+
+Phase 5（アップロード機能）を実装する際、上記「確定した設計方針」の記述から以下の3点を
+変更した。元の記述はそのまま残し、ここに差分と理由を追記する。
+
+1. **ファイル名**: 上記では`upload/UploadThrottle.kt`としていたが、実装では
+   `upload/RuntimeSegmentThrottle.kt`にした。「何の稼働時間を扱うスロットリングか」を
+   ファイル名から読み取れるようにするため。
+2. **稼働時間集計の実装方式**: 上記では「RoomのSUM/DELETEクエリで完結させる」としていたが、
+   実装ではDAO（`ServiceRuntimeSegmentDao.segmentsOverlapping()`）は対象区間の一覧を
+   返すだけにし、`RuntimeSegmentThrottle.overlappingRuntimeMs()`というKotlin側の純粋関数で
+   集計する設計にした。ウィンドウ境界をまたぐ区間（`windowStart`より前から始まる区間、
+   `endTs=null`で実行中の区間）を正確に按分するのはSQLのSUMだけでは表現しづらく、
+   TDD可能な純粋関数に切り出した方が正確性とテスト容易性を両立できるため。
+3. **尾流し判定の置き場所**: 上記では`ObdUploader`にバッチ・尾流し判定ロジックを
+   持たせる想定だったが、実装では「OBDの`valid`がtrue→falseに変わった直後の即時
+   アップロード」判定を`CarIotForegroundService`側に置いた。OBD受信の都度呼ばれるのは
+   そちらのためで、`ObdUploader`はバッチ送信のみに責務を絞った。
