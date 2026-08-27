@@ -9,7 +9,7 @@
 
 **作業ブランチ**: `feat/car-iot-android`（mainには未マージ）。`mobile/`は当面残す（移植元参照用）。
 
-## 現在の状態（Phase 0〜6完了）
+## 現在の状態（Phase 0〜7完了）
 
 | Phase | 内容 | 状態 |
 |---|---|---|
@@ -20,13 +20,33 @@
 | 4 | Cognito OAuth認証 | 完了（サインイン/アウト・セッション復元まで実機確認済み） |
 | 5 | アップロード（Room永続化、dataSyncスロットリング） | 完了（実機確認済み、下記参照） |
 | 6 | 位置情報 | 完了（実機確認済み、下記参照） |
-| 7 | CDM連携（BLE検知でのkilled状態からの自動起動） | 未着手 |
+| 7 | CDM連携（BLE検知でのkilled状態からの自動起動） | 完了（実機確認済み、下記参照） |
 | 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | 未着手 |
 | 9 | 仕上げ | 未着手 |
 
-次にやるならPhase 7から。設計は`docs/car_iot_android_plan.md`にまとめてある
-（CDM連携で完全kill状態からもBLE検知でServiceのみ起動する、Flutter版
-`mobile/android/app/.../CarIotCompanionService.kt`が先行実装済みなので移植元として参照できる）。
+次にやるならPhase 8から。設計は`docs/car_iot_android_plan.md`にまとめてある。
+
+### Phase 7実機検証メモ
+
+CDM連携は**minSdkを31→36に引き上げ、新API**（`ObservingDevicePresenceRequest`/
+`onDevicePresenceEvent`）**のみ**で実装した（Android 16で旧API`onDeviceAppeared()`が
+非推奨化されたため、詳細は`docs/car_iot_android_plan.md`のPhase7セクション参照）。
+
+- **`ACCESS_BACKGROUND_LOCATION`が必須**: `CarIotForegroundService`はlocation型FGSのため、
+  CDM経由（バックグラウンド）から起動すると、この権限が無いと**プロセスがクラッシュする**
+  ことを実機で確認した。この権限を許可すればクラッシュしない（警告ログ自体は出るが動作する）
+- **killed状態からの自動起動を実機確認済み**: `adb shell am force-stop`でプロセスを
+  完全kill→ESP32のBLE再アドバタイズをCDMが検知→画面を一切開かずに`CarIotForegroundService`
+  が起動し、BLE再接続・Notify購読・アップロードトリガーまで自動で完了することを確認した
+- **検証時のハマりどころ**: CDMは一度Appeared通知済みのデバイスに対し、Disappearedが
+  先に発生しない限り再度のAppeared通知をスキップする。Disappearedの発生には実際に
+  デバイスが10秒前後見えなくなる必要があり、`force-stop`単体やBluetoothの
+  disable/enableだけでは発生しないことがある。`adb shell dumpsys companiondevice`で
+  `Nearby BLE Devices`の状態を見ながら検証するとよい
+- **関連付けダイアログが透明に見えることがある**: 実際には裏で関連付けが完了している
+  場合があり、`adb shell dumpsys companiondevice`の`Companion Device Associations`で
+  確認できる。アプリの再インストールで古いタスクが残っていたことが原因の一つだった
+  （端末再起動で解消）
 
 ### Phase 6実機検証メモ
 
@@ -85,6 +105,9 @@ info/karuru/cariot/
 ├── service/
 │   ├── CarIotForegroundService.kt  # connectedDevice|location型、BLE接続をActivityから独立させる
 │   └── CarIotUploadService.kt      # dataSync型、起動のたびに未送信バッチを送信してstopSelf()
+├── companion/
+│   ├── CompanionDeviceHelper.kt    # CDM関連付け(associate)、新API(ObservingDevicePresenceRequest)
+│   └── CarIotCompanionService.kt   # BLE検知(onDevicePresenceEvent)でCarIotForegroundServiceのみ起動
 └── state/
     └── CarIotState.kt              # プロセス内シングルトン、StateFlow群（Serviceが書き込み、UIが購読）
 ```

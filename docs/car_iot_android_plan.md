@@ -212,3 +212,68 @@ Phase 5（アップロード機能）を実装する際、上記「確定した�
    持たせる想定だったが、実装では「OBDの`valid`がtrue→falseに変わった直後の即時
    アップロード」判定を`CarIotForegroundService`側に置いた。OBD受信の都度呼ばれるのは
    そちらのためで、`ObdUploader`はバッチ送信のみに責務を絞った。
+
+---
+
+## Phase 7: CDM連携（実装内容と当初想定からの差分）
+
+ロードマップ表では「`CompanionDeviceHelper`/`CarIotCompanionService`」とだけ書かれていたが、
+実装にあたり以下の点が新たに判明・確定した。
+
+### CompanionDeviceManagerの新API採用とminSdk引き上げ
+
+`android.jar`（compileSdk 36）を`javap`で確認したところ、Android 16（API 36）で
+`CompanionDeviceManager.startObservingDevicePresence(String)`と
+`CompanionDeviceService.onDeviceAppeared()`（Flutter版`feat/ble-companion-auto-launch`が
+使っていた旧API）が非推奨化され、`startObservingDevicePresence(ObservingDevicePresenceRequest)`
++ `onDevicePresenceEvent(DevicePresenceEvent)`という新APIに置き換わっていることが分かった。
+新APIは**API36必須**。ユーザーと相談の結果、個人利用アプリの規模には旧API対応の複雑さは
+見合わないと判断し、**新APIのみ実装し`minSdk`を31→36に引き上げる**方針にした
+（`app/build.gradle.kts`）。
+
+新API利用時の実装ポイント:
+- 関連付け成功時に得られる`AssociationInfo.id`（Int、MACアドレス文字列ではない）を
+  `ObservingDevicePresenceRequest.Builder().setAssociationId(id).build()`に渡す
+- `CompanionDeviceService`側は`onDevicePresenceEvent(event)`をオーバーライドし、
+  `event.event == DevicePresenceEvent.EVENT_BLE_APPEARED`の時だけ処理する
+  （`EVENT_BLE_DISAPPEARED`/`EVENT_BT_CONNECTED`/`EVENT_BT_DISCONNECTED`等もある）
+
+### 実機で判明した重要な制約: ACCESS_BACKGROUND_LOCATIONが必須
+
+`CarIotForegroundService`は`connectedDevice|location`型で宣言している（Phase6）。CDM経由
+（バックグラウンド）から`startForegroundService()`でこれを起動すると、`ACCESS_BACKGROUND_LOCATION`
+権限が無い場合はAndroidが「Foreground service started from background can not have
+location/camera/microphone access」という制約を適用し、**プロセスがクラッシュする**ことが
+実機検証で判明した（Android公式ドキュメントで裏取り済み: location型FGSをバックグラウンドから
+起動するにはこの権限が必要）。
+
+対応として`ACCESS_BACKGROUND_LOCATION`をManifestに追加し、`MainActivity`に許可導線
+（`ACCESS_FINE_LOCATION`許可後に別途`ACCESS_BACKGROUND_LOCATION`をリクエストするボタン、
+Android 11+の「常に許可」導線）を追加した。この権限さえあれば同じ警告ログは出るが
+クラッシュはしない。
+
+### CDMの「Appeared重複排除」の仕組みと実機検証の勘所
+
+AOSPソース（`DevicePresenceProcessor.java`、`BleDeviceProcessor.java`）を確認したところ、
+CDMは内部で「現在Appeared状態のassociationId集合」を保持しており、一度Appeared通知済みの
+デバイスに対しては、再度`EVENT_BLE_APPEARED`が来ても**`EVENT_BLE_DISAPPEARED`が先に発生して
+集合から除かれない限りコールバックしない**（重複通知防止のため）。
+
+`EVENT_BLE_DISAPPEARED`はBLEスキャンの`MATCH_LOST`コールバックで発火し、実測ではデバイスが
+実際に見えなくなってから10秒前後かかる。そのため実機で「killed状態からの自動起動」を
+検証する際は:
+- 単に`adb shell am force-stop`しただけではDisappearedが発生しないことがある
+  （BluetoothGatt接続がシステム側にすぐには解放されないため）
+- ESP32を物理的にリセットしても、起動が速すぎるとMATCH_LOSTのタイムアウトに届かず
+  Disappearedが記録されないことがある
+- 確実に検証したい場合は、`adb shell dumpsys companiondevice`で
+  `Companion Device Present: Nearby BLE Devices`の状態を見て、対象デバイスが実際に
+  消えているか確認するとよい
+
+### 関連付けダイアログが透明に見える事象
+
+`CompanionDeviceManager.associate()`のシステムダイアログ（`CompanionAssociationActivity`）が、
+実機で透明な画面のまま操作不能に見えることがあった。実際には裏で関連付け処理は完了して
+おり、`adb shell dumpsys companiondevice`で`Companion Device Associations`を確認すれば
+association自体が作成されているかどうか判断できる（アプリの再インストールで残った
+古いタスクスタックが原因だった可能性が高く、端末再起動で解消した）。
