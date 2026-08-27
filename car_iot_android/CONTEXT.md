@@ -9,7 +9,7 @@
 
 **作業ブランチ**: `feat/car-iot-android`（mainには未マージ）。`mobile/`は当面残す（移植元参照用）。
 
-## 現在の状態（Phase 0〜5完了）
+## 現在の状態（Phase 0〜6完了）
 
 | Phase | 内容 | 状態 |
 |---|---|---|
@@ -19,14 +19,20 @@
 | 3 | Foreground Service化 | 完了（**アプリを完全にタスクから消してもBLE接続・受信が継続することを実機確認済み**） |
 | 4 | Cognito OAuth認証 | 完了（サインイン/アウト・セッション復元まで実機確認済み） |
 | 5 | アップロード（Room永続化、dataSyncスロットリング） | 完了（実機確認済み、下記参照） |
-| 6 | 位置情報 | 未着手 |
+| 6 | 位置情報 | 完了（実機確認済み、下記参照） |
 | 7 | CDM連携（BLE検知でのkilled状態からの自動起動） | 未着手 |
 | 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | 未着手 |
 | 9 | 仕上げ | 未着手 |
 
-次にやるならPhase 6から。設計は`docs/car_iot_android_plan.md`にまとめてある
-（位置情報は`play-services-location`を追加し`PendingObdReading.lat/lon`を埋める、
-`CarIotForegroundService`のtypeに`location`を追加）。
+次にやるならPhase 7から。設計は`docs/car_iot_android_plan.md`にまとめてある
+（CDM連携で完全kill状態からもBLE検知でServiceのみ起動する、Flutter版
+`mobile/android/app/.../CarIotCompanionService.kt`が先行実装済みなので移植元として参照できる）。
+
+### Phase 6実機検証メモ
+
+`ACCESS_FINE_LOCATION`権限を「アプリ使用中のみ許可」で許可した状態でBLE接続し、
+Room DBの`pending_obd_reading`テーブルに実際のGPS座標（緯度35.7651xx、経度139.6234xx付近、
+検証場所の実際の現在地）が`lat`/`lon`列に正しく入ることを確認済み。
 
 ### Phase 5実機検証メモ
 
@@ -74,8 +80,10 @@ info/karuru/cariot/
 ├── upload/
 │   ├── RuntimeSegmentThrottle.kt   # dataSync 6時間上限へのスロットリング判定、純粋ロジック、TDD済み
 │   └── ObdUploader.kt              # JSON変換（TDD済み）+ OkHttpでのバッチ送信
+├── location/
+│   └── LocationTracker.kt          # FusedLocationProviderClientで直近位置をキャッシュするだけの薄いクラス
 ├── service/
-│   ├── CarIotForegroundService.kt  # connectedDevice型、BLE接続をActivityから独立させる
+│   ├── CarIotForegroundService.kt  # connectedDevice|location型、BLE接続をActivityから独立させる
 │   └── CarIotUploadService.kt      # dataSync型、起動のたびに未送信バッチを送信してstopSelf()
 └── state/
     └── CarIotState.kt              # プロセス内シングルトン、StateFlow群（Serviceが書き込み、UIが購読）
