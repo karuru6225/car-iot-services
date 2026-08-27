@@ -11,7 +11,8 @@
       "Bash(\"c:/Users/karuru/git_repos/car-iot-services/tools/kicad-netlist-tool/.venv/Scripts/python.exe\" -m kicad_netlist_tool parse -f compact \"c:/Users/karuru/git_repos/car-iot-services/m5atom_power_adc/m5atom_power_adc.kicad_sch\")",
       "mcp__kicad-mcp__analyze_schematic_connections",
       "Bash(git -C c:/Users/karuru/git_repos/car-iot-services status)",
-      "Bash(git -C c:/Users/karuru/git_repos/car-iot-services log --oneline main..HEAD)"
+      "Bash(git -C c:/Users/karuru/git_repos/car-iot-services log --oneline main..HEAD)",
+      "Bash(flutter build *)"
     ]
   }
 }
