@@ -13,6 +13,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <!-- OBDデータのAWSアップロード・Cognito認証に使用 -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- CDM: 端末プレゼンス監視（BLEアドバタイズ検知でアプリをkilled状態から起動するため, API31+） -->
+    <uses-permission android:name="android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE"/>
+    <uses-feature
+        android:name="android.software.companion_device_setup"
+        android:required="false"/>
 
     <application
         android:label="car_iot_ble"
@@ -44,6 +49,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- CDM: ESP32のBLEアドバタイズ検知をシステムから通知してもらうためのService -->
+        <service
+            android:name=".CarIotCompanionService"
+            android:permission="android.permission.BIND_COMPANION_DEVICE_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.companion.CompanionDeviceService"/>
+            </intent-filter>
+        </service>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
