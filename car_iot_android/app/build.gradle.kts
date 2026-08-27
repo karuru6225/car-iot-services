@@ -71,5 +71,8 @@ dependencies {
     // 5.5.0はcompileSdk37を要求しAGP8.11.1推奨の36と衝突するため5.4.0を使う
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
 
+    // 位置情報取得（Phase6）。標準のLocationManagerより省電力・高精度なFusedLocationProviderClientを使う
+    implementation("com.google.android.gms:play-services-location:21.4.0")
+
     testImplementation("junit:junit:4.13.2")
 }
