@@ -9,7 +9,7 @@
 
 **作業ブランチ**: `feat/car-iot-android`（mainには未マージ）。`mobile/`は当面残す（移植元参照用）。
 
-## 現在の状態（Phase 0〜7完了）
+## 現在の状態（Phase 0〜7完了、Phase 8前半完了）
 
 | Phase | 内容 | 状態 |
 |---|---|---|
@@ -21,10 +21,24 @@
 | 5 | アップロード（Room永続化、dataSyncスロットリング） | 完了（実機確認済み、下記参照） |
 | 6 | 位置情報 | 完了（実機確認済み、下記参照） |
 | 7 | CDM連携（BLE検知でのkilled状態からの自動起動） | 完了（実機確認済み、下記参照） |
-| 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | 未着手 |
+| 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | **前半完了**（タブ構成・バッテリー・OBDタブ実装済み。メーター＝ゲージ4種・設定永続化・インポート/エクスポートは未着手、下記参照） |
 | 9 | 仕上げ | 未着手 |
 
-次にやるならPhase 8から。設計は`docs/car_iot_android_plan.md`にまとめてある。
+次にやるならPhase 8後半（メータータブ）から。設計は`docs/car_iot_android_plan.md`にまとめてある。
+
+### Phase 8前半実機検証メモ
+
+`MainActivity.kt`に`NavigationBar`で4タブ（接続/バッテリー/OBD/メーター）を導入し、
+バッテリー・OBDタブを実装した（メータータブは「準備中」のプレースホルダーのまま）。
+
+- fakeobd env接続状態で、バッテリータブ（vMain/curr/pwr/vSub、小数桁数・単位表示）と
+  OBDタブ（35項目、`ObdMetric`のlabel/unit/decimalsに基づくフォーマット）の表示を
+  実機で確認済み
+- **レイアウト変更後は座標を取り直すこと**: `Scaffold`+`NavigationBar`導入でUIの
+  座標が変わり、以前使っていた「接続」ボタン等の固定座標がずれて操作できなくなった。
+  `adb shell uiautomator dump`で都度座標を確認すること
+- タブアイコンには`androidx.compose.material:material-icons-extended`を使う
+  （`-core`だけでは`Icons.Filled.Bluetooth`等の非基本アイコンが解決できない）
 
 ### Phase 7実機検証メモ
 
@@ -76,7 +90,7 @@ fakeobd env（`esp32-s3-devkitc-1-v1-develop-fakeobd`）で以下を確認済み
 
 ```text
 info/karuru/cariot/
-├── MainActivity.kt                 # UI表示専念、CarIotStateを購読するだけ
+├── MainActivity.kt                 # NavigationBar(4タブ)の入れ物＋認証・BLE・CDM配線
 ├── AppConfig.kt(.example)          # terraform outputの値。実ファイルは.gitignore対象
 ├── ble/
 │   ├── BleConstants.kt             # UUID定数
@@ -85,6 +99,12 @@ info/karuru/cariot/
 │   └── BleConnectionManager.kt     # スキャン・接続・Notify購読、CarIotStateに直接書き込む
 ├── obd/
 │   ├── Crc8.kt / ObdReading.kt     # TDD済み（テストはapp/src/test/kotlin/...）
+│   └── ObdMetric.kt                # OBD全35項目のlabel/unit/decimals/min/max/valueOf（OBDタブ用）
+├── ui/
+│   ├── connection/ConnectionScreen.kt  # 接続タブ（サインイン/接続/自動起動/位置情報許可）
+│   ├── battery/BatteryScreen.kt        # バッテリータブ（vMain/curr/pwr/vSub）
+│   ├── obd/ObdScreen.kt                # OBDタブ（35項目グリッド表示）
+│   └── meter/MeterScreen.kt            # メータータブ（仮実装、Phase8後半で本実装予定）
 ├── auth/
 │   ├── SecureStore.kt              # Android Keystore(AES/GCM)直接利用の暗号化ストレージ
 │   ├── AuthStore.kt                # トークン読み書き・リフレッシュ（Activity不要）

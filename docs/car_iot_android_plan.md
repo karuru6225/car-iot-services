@@ -277,3 +277,34 @@ CDMは内部で「現在Appeared状態のassociationId集合」を保持して�
 おり、`adb shell dumpsys companiondevice`で`Companion Device Associations`を確認すれば
 association自体が作成されているかどうか判断できる（アプリの再インストールで残った
 古いタスクスタックが原因だった可能性が高く、端末再起動で解消した）。
+
+---
+
+## Phase 8（前半）: タブ構成＋バッテリー/OBDタブ（実装内容）
+
+ロードマップ表では「バッテリー/OBD/メータータブ、ゲージ4種、設定インポート/エクスポート」を
+まとめてPhase 8としていたが、ボリュームが大きいためユーザーと相談の上、**タブ構成の導入と
+バッテリー/OBDタブまでを先に実装し、メータータブ（ゲージ4種・設定永続化・インポート/
+エクスポート）は別途進める**ことにした。配色はFlutter版のダークテーマを移植せず、現状の
+Material3デフォルトのままとした。
+
+- `MainActivity.kt`に`Scaffold`+`NavigationBar`で4タブ（接続/バッテリー/OBD/メーター）を
+  導入。既存の接続画面は`ui/connection/ConnectionScreen.kt`に切り出し、計測値・OBD概要の
+  ベタ書き表示は削除して新設タブに機能を分離した
+- `obd/ObdMetric.kt`: `mobile/lib/models/obd_metric.dart`を1:1移植（35項目＋算出値
+  `FUEL_ECONOMY_KM_L`、宣言順を厳密に維持）。Kotlinのenum命名規約に合わせ`RPM`
+  `SPEED_KMH`等の大文字SNAKE_CASEにした（Flutter版はcamelCase）
+- `ui/battery/BatteryScreen.kt` / `ui/obd/ObdScreen.kt`: `meas_card.dart` /
+  `obd_card.dart`を移植。2列`LazyVerticalGrid`、フォーマット規則（小数桁数・単位の
+  出し分け・null時の`'—'`表示）を同じにした
+- **新規依存**: `androidx.compose.material:material-icons-extended`（タブアイコン用）。
+  最初は`material-icons-core`を追加したが、`Icons.Filled.Bluetooth`/`BatteryFull`/
+  `Speed`/`DashboardCustomize`は基本セットに含まれず`Unresolved reference`になったため
+  `-extended`に切り替えた
+
+### 実機検証時のハマりどころ
+
+タブ構成導入（`Scaffold`+`NavigationBar`）でレイアウトが変わり、以前使っていた
+UI操作の座標（例:「接続」ボタンの中心）がずれた。`Scaffold`の`innerPadding`を挟んだことで
+コンテンツ開始位置が変わるため、レイアウトを変更した際は`adb shell uiautomator dump`で
+座標を都度取り直すこと（過去に使っていた固定座標を使い回さない）。
