@@ -8,30 +8,38 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.DashboardCustomize
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import info.karuru.cariot.auth.AuthLoginFlow
 import info.karuru.cariot.auth.AuthStore
-import info.karuru.cariot.ble.ConnState
 import info.karuru.cariot.companion.CompanionDeviceHelper
 import info.karuru.cariot.service.ACTION_CONNECT
 import info.karuru.cariot.service.ACTION_DISCONNECT
 import info.karuru.cariot.service.CarIotForegroundService
 import info.karuru.cariot.state.CarIotState
+import info.karuru.cariot.ui.battery.BatteryScreen
+import info.karuru.cariot.ui.connection.ConnectionScreen
+import info.karuru.cariot.ui.meter.MeterScreen
+import info.karuru.cariot.ui.obd.ObdScreen
 import kotlinx.coroutines.launch
 
 // BLE接続・OBD受信の実処理はCarIotForegroundServiceが担当し、ここは状態(CarIotState)の
@@ -75,18 +83,57 @@ class MainActivity : ComponentActivity() {
     setContent {
       MaterialTheme {
         Surface {
-          ConnectionScreen(
-              onConnect = { requestPermissions.launch(blePermissions()) },
-              onDisconnect = { startBleService(ACTION_DISCONNECT) },
-              onSignIn = { signIn() },
-              onSignOut = { signOut() },
-              companionAssociated = companionAssociated,
-              onEnableAutoLaunch = { enableAutoLaunch() },
-              backgroundLocationGranted = backgroundLocationGranted,
-              onRequestBackgroundLocation = {
-                requestBackgroundLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+          var tabIndex by remember { mutableIntStateOf(0) }
+          Scaffold(
+              bottomBar = {
+                NavigationBar {
+                  NavigationBarItem(
+                      selected = tabIndex == 0,
+                      onClick = { tabIndex = 0 },
+                      icon = { Icon(Icons.Filled.Bluetooth, contentDescription = null) },
+                      label = { Text("接続") },
+                  )
+                  NavigationBarItem(
+                      selected = tabIndex == 1,
+                      onClick = { tabIndex = 1 },
+                      icon = { Icon(Icons.Filled.BatteryFull, contentDescription = null) },
+                      label = { Text("バッテリー") },
+                  )
+                  NavigationBarItem(
+                      selected = tabIndex == 2,
+                      onClick = { tabIndex = 2 },
+                      icon = { Icon(Icons.Filled.Speed, contentDescription = null) },
+                      label = { Text("OBD") },
+                  )
+                  NavigationBarItem(
+                      selected = tabIndex == 3,
+                      onClick = { tabIndex = 3 },
+                      icon = { Icon(Icons.Filled.DashboardCustomize, contentDescription = null) },
+                      label = { Text("メーター") },
+                  )
+                }
               },
-          )
+          ) { innerPadding ->
+            Surface(modifier = Modifier.padding(innerPadding)) {
+              when (tabIndex) {
+                0 -> ConnectionScreen(
+                    onConnect = { requestPermissions.launch(blePermissions()) },
+                    onDisconnect = { startBleService(ACTION_DISCONNECT) },
+                    onSignIn = { signIn() },
+                    onSignOut = { signOut() },
+                    companionAssociated = companionAssociated,
+                    onEnableAutoLaunch = { enableAutoLaunch() },
+                    backgroundLocationGranted = backgroundLocationGranted,
+                    onRequestBackgroundLocation = {
+                      requestBackgroundLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    },
+                )
+                1 -> BatteryScreen()
+                2 -> ObdScreen()
+                else -> MeterScreen()
+              }
+            }
+          }
         }
       }
     }
@@ -145,80 +192,5 @@ class MainActivity : ComponentActivity() {
       perms.add(Manifest.permission.POST_NOTIFICATIONS)
     }
     return perms.toTypedArray()
-  }
-}
-
-@Composable
-private fun ConnectionScreen(
-    onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
-    onSignIn: () -> Unit,
-    onSignOut: () -> Unit,
-    companionAssociated: Boolean,
-    onEnableAutoLaunch: () -> Unit,
-    backgroundLocationGranted: Boolean,
-    onRequestBackgroundLocation: () -> Unit,
-) {
-  val state by CarIotState.connState.collectAsStateWithLifecycle()
-  val deviceName by CarIotState.deviceName.collectAsStateWithLifecycle()
-  val measurement by CarIotState.measurement.collectAsStateWithLifecycle()
-  val obdReading by CarIotState.obdReading.collectAsStateWithLifecycle()
-  val userEmail by CarIotState.userEmail.collectAsStateWithLifecycle()
-
-  val label = when (state) {
-    ConnState.DISCONNECTED -> "未接続"
-    ConnState.SCANNING -> "スキャン中..."
-    ConnState.CONNECTING -> "接続中..."
-    ConnState.CONNECTED -> "接続済み: $deviceName"
-  }
-  val isConnected = state == ConnState.CONNECTED
-  val isBusy = state == ConnState.SCANNING || state == ConnState.CONNECTING
-
-  Column(modifier = Modifier.padding(24.dp)) {
-    Text(userEmail?.let { "ログイン: $it" } ?: "未ログイン")
-    Row(modifier = Modifier.padding(top = 8.dp)) {
-      if (userEmail == null) {
-        Button(onClick = onSignIn) { Text("サインイン") }
-      } else {
-        Button(onClick = onSignOut) { Text("サインアウト") }
-      }
-    }
-
-    Text(label, modifier = Modifier.padding(top = 24.dp))
-    Row(modifier = Modifier.padding(top = 12.dp)) {
-      Button(onClick = onConnect, enabled = !isConnected && !isBusy) {
-        Text("接続")
-      }
-      Button(
-          onClick = onDisconnect,
-          enabled = isConnected || isBusy,
-          modifier = Modifier.padding(start = 12.dp),
-      ) {
-        Text(if (isBusy) "中止" else "切断")
-      }
-    }
-    Text("vMain=${measurement.vMain ?: "—"}", modifier = Modifier.padding(top = 16.dp))
-    Text("curr=${measurement.curr ?: "—"}")
-    Text("pwr=${measurement.pwr ?: "—"}")
-    Text("vSub=${measurement.vSub ?: "—"}")
-    Text("OBD: ${obdReading?.let { if (it.valid) "rpm=${it.rpm} speed=${it.speedKmh}" else "応答なし" } ?: "—"}",
-        modifier = Modifier.padding(top = 16.dp))
-
-    Row(modifier = Modifier.padding(top = 24.dp)) {
-      if (companionAssociated) {
-        Text("自動起動: 有効")
-      } else {
-        Button(onClick = onEnableAutoLaunch) { Text("自動起動を有効にする") }
-      }
-    }
-    // 自動起動時に起動するCarIotForegroundServiceはlocation型FGSのため、
-    // ACCESS_BACKGROUND_LOCATIONが無いと起動時にクラッシュする（実機で確認済み、Phase7）。
-    Row(modifier = Modifier.padding(top = 12.dp)) {
-      if (backgroundLocationGranted) {
-        Text("バックグラウンド位置情報: 許可済み")
-      } else {
-        Button(onClick = onRequestBackgroundLocation) { Text("バックグラウンド位置情報を許可する") }
-      }
-    }
   }
 }

@@ -55,6 +55,9 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
+    // タブのアイコン表示（Phase8、NavigationBarItem用）。Bluetooth/BatteryFull等は
+    // material-icons-coreの基本セットに含まれないためextendedを使う
+    implementation("androidx.compose.material:material-icons-extended")
     // BleConnectionManagerの状態(StateFlow)をComposeで購読するために使う
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
