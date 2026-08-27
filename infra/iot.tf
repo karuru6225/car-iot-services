@@ -136,3 +136,31 @@ resource "aws_lambda_permission" "iot_shadow_guard" {
   source_arn    = aws_iot_topic_rule.shadow_guard.arn
 }
 
+
+# ─── IoT Policy: Home Assistant ブリッジ用（購読専用・最小権限）───────────────
+# home_assistant リポジトリの car_iot_bridge が使用する。sensors/+/data(_bin) の
+# Subscribe/Receive のみ許可し、Publish権限は与えない（詳細: home_assistant/CAR_IOT_INTEGRATION_TODO.md）。
+
+resource "aws_iot_policy" "ha_bridge" {
+  name = "${var.project}-ha-bridge"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "iot:Connect"
+        Resource = "arn:aws:iot:${var.aws_region}:*:client/ha-bridge"
+      },
+      {
+        Effect = "Allow"
+        Action = ["iot:Subscribe", "iot:Receive"]
+        Resource = [
+          "arn:aws:iot:${var.aws_region}:*:topicfilter/sensors/*/data",
+          "arn:aws:iot:${var.aws_region}:*:topic/sensors/*/data",
+          "arn:aws:iot:${var.aws_region}:*:topicfilter/sensors/*/data_bin",
+          "arn:aws:iot:${var.aws_region}:*:topic/sensors/*/data_bin",
+        ]
+      },
+    ]
+  })
+}

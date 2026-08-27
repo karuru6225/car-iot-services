@@ -72,3 +72,8 @@ output "cognito_domain" {
   description = "Cognito Hosted UI ドメイン（Google Cloud ConsoleのリダイレクトURI設定に使用。AppAuthのissuerには使えない、cognito_user_pool_idベースのissuer URLを使うこと）"
   value       = local.cognito_domain_base
 }
+
+output "iot_policy_name_ha_bridge" {
+  description = "Home Assistant ブリッジ用 IoT ポリシー名（ops/provision_ha_bridge.ps1 で使用）"
+  value       = aws_iot_policy.ha_bridge.name
+}
