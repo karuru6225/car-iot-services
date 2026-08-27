@@ -27,7 +27,9 @@ android {
         manifestPlaceholders["appAuthRedirectScheme"] = "info.karuru.cariotmobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // CompanionDeviceManager.startObservingDevicePresence()がAPI31必須のため
+        // flutter.minSdkVersion(=24)から明示的に引き上げている（Android 11以下は対象外）。
+        minSdk = 31
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
