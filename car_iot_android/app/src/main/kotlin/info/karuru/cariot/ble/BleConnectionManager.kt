@@ -33,7 +33,12 @@ private const val SCAN_TIMEOUT_MS = 10_000L
 // 状態(接続状態・計測値・OBD値)はCarIotState（プロセス内シングルトン）に直接書き込み、
 // UI(MainActivity)はそちらのStateFlowを購読する。
 @SuppressLint("MissingPermission") // 呼び出し側(CarIotForegroundService)で実行時権限を確認済み前提
-class BleConnectionManager(private val context: Context) {
+class BleConnectionManager(
+    private val context: Context,
+    // Room書き込み・アップロードトリガーの判断は呼び出し側(CarIotForegroundService)に
+    // 持たせ、BleConnectionManagerはBLE通信の責務に留める(docs/car_iot_android_plan.md Phase5)。
+    private val onObdReading: (ObdReading) -> Unit = {},
+) {
   private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
   private val adapter = bluetoothManager.adapter
   private val handler = Handler(Looper.getMainLooper())
@@ -191,7 +196,14 @@ class BleConnectionManager(private val context: Context) {
   private fun onObdChunk(raw: ByteArray) {
     try {
       val combined = obdAssembler.add(raw) ?: return
-      CarIotState.setObdReading(ObdReading.fromBytes(combined))
+      // fromBytes()がnull（バイト数不足等の通信エラー）を返した場合もCarIotStateへは
+      // そのまま反映する(UIは以前の表示のまま据え置き)が、Room書き込み・アップロード
+      // トリガーは有効なreadingが取れた時だけ行う。
+      val reading = ObdReading.fromBytes(combined)
+      CarIotState.setObdReading(reading)
+      if (reading != null) {
+        onObdReading(reading)
+      }
     } catch (e: Exception) {
       Log.e(TAG, "OBDデータ解析エラー", e)
     }
