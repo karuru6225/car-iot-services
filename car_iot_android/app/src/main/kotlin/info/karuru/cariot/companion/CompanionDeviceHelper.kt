@@ -28,7 +28,9 @@ private const val KEY_ASSOCIATION_ID = "association_id"
 // ComponentActivityのregisterForActivityResult()を使うため、Activity生成時（フィールド初期化時）
 // にインスタンス化する必要がある（onCreate()の中で初めて生成してはいけない）。
 class CompanionDeviceHelper(private val activity: ComponentActivity) {
-  private val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  // Activityのコンストラクタ実行時点ではattachBaseContext()未実行でContext系メソッドを
+  // 呼ぶとNPEになるため(実機で確認済み)、実際に使われるまで初期化を遅延させる。
+  private val prefs by lazy { activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
   private var pendingContinuation: CancellableContinuation<Boolean>? = null
 
   private val associateLauncher = activity.registerForActivityResult(
