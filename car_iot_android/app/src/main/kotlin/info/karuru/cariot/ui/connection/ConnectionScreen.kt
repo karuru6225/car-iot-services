@@ -1,12 +1,20 @@
 package info.karuru.cariot.ui.connection
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +31,12 @@ import info.karuru.cariot.ui.theme.AppTheme
 
 // 「接続」タブ。サインイン/アウト・BLE接続状態・自動起動(CDM)・バックグラウンド位置情報の
 // 許可状態・テーマ切り替えを表示する。計測値・OBD値の表示はbattery/obdタブに分離した（Phase8）。
+//
+// デザインレビュー(2026/08)を反映: 「接続」だけを塗りつぶしボタンにし、他は全てOutlinedButton
+// にすることでプライマリアクションの視覚的階層を作る。ミニマルテーマの「アクセントはワンポイント
+// のみ」という設計意図は、これまで全ボタンが塗りつぶしだったため実質守られていなかった
+// （PipSettingsDialogのRowも参照）。セクションをOutlinedCardで区切り、単色の余白が続く
+// レイアウトを解消する。
 @Composable
 fun ConnectionScreen(
     onConnect: () -> Unit,
@@ -52,61 +66,69 @@ fun ConnectionScreen(
   val isConnected = state == ConnState.CONNECTED
   val isBusy = state == ConnState.SCANNING || state == ConnState.CONNECTING
 
-  Column(modifier = Modifier.padding(24.dp)) {
-    Text(userEmail?.let { "ログイン: $it" } ?: "未ログイン")
-    Row(modifier = Modifier.padding(top = 8.dp)) {
+  Column(
+      modifier = Modifier
+          .fillMaxWidth()
+          .verticalScroll(rememberScrollState())
+          .padding(20.dp),
+  ) {
+    SectionCard(title = "アカウント") {
+      Text(userEmail?.let { "ログイン: $it" } ?: "未ログイン")
+      Spacer(Modifier.height(12.dp))
       if (userEmail == null) {
-        Button(onClick = onSignIn) { Text("サインイン") }
+        OutlinedButton(onClick = onSignIn) { Text("サインイン") }
       } else {
-        Button(onClick = onSignOut) { Text("サインアウト") }
+        OutlinedButton(onClick = onSignOut) { Text("サインアウト") }
       }
     }
 
-    Text(label, modifier = Modifier.padding(top = 24.dp))
-    Row(modifier = Modifier.padding(top = 12.dp)) {
-      Button(onClick = onConnect, enabled = !isConnected && !isBusy) {
-        Text("接続")
+    SectionCard(title = "BLE接続") {
+      Text(label)
+      Row(modifier = Modifier.padding(top = 12.dp)) {
+        Button(onClick = onConnect, enabled = !isConnected && !isBusy) {
+          Text("接続")
+        }
+        OutlinedButton(
+            onClick = onDisconnect,
+            enabled = isConnected || isBusy,
+            modifier = Modifier.padding(start = 12.dp),
+        ) {
+          Text(if (isBusy) "中止" else "切断")
+        }
       }
-      Button(
-          onClick = onDisconnect,
-          enabled = isConnected || isBusy,
-          modifier = Modifier.padding(start = 12.dp),
-      ) {
-        Text(if (isBusy) "中止" else "切断")
-      }
-    }
 
-    Row(modifier = Modifier.padding(top = 24.dp)) {
+      Spacer(Modifier.height(16.dp))
       if (companionAssociated) {
         Text("自動起動: 有効")
       } else {
-        Button(onClick = onEnableAutoLaunch) { Text("自動起動を有効にする") }
+        OutlinedButton(onClick = onEnableAutoLaunch) { Text("自動起動を有効にする") }
       }
-    }
-    // 自動起動時に起動するCarIotForegroundServiceはlocation型FGSのため、
-    // ACCESS_BACKGROUND_LOCATIONが無いと起動時にクラッシュする（実機で確認済み、Phase7）。
-    Row(modifier = Modifier.padding(top = 12.dp)) {
+
+      // 自動起動時に起動するCarIotForegroundServiceはlocation型FGSのため、
+      // ACCESS_BACKGROUND_LOCATIONが無いと起動時にクラッシュする（実機で確認済み、Phase7）。
+      Spacer(Modifier.height(12.dp))
       if (backgroundLocationGranted) {
         Text("バックグラウンド位置情報: 許可済み")
       } else {
-        Button(onClick = onRequestBackgroundLocation) { Text("バックグラウンド位置情報を許可する") }
+        OutlinedButton(onClick = onRequestBackgroundLocation) { Text("バックグラウンド位置情報を許可する") }
       }
     }
 
-    Text("テーマ", modifier = Modifier.padding(top = 24.dp))
-    Row(modifier = Modifier.padding(top = 8.dp)) {
-      AppTheme.entries.forEach { theme ->
-        FilterChip(
-            selected = selectedTheme == theme,
-            onClick = { onThemeChange(theme) },
-            label = { Text(theme.label) },
-            modifier = Modifier.padding(end = 8.dp),
-        )
+    SectionCard(title = "テーマ") {
+      Row {
+        AppTheme.entries.forEach { theme ->
+          FilterChip(
+              selected = selectedTheme == theme,
+              onClick = { onThemeChange(theme) },
+              label = { Text(theme.label) },
+              modifier = Modifier.padding(end = 8.dp),
+          )
+        }
       }
     }
 
-    Row(modifier = Modifier.padding(top = 24.dp)) {
-      TextButton(onClick = { showPipDialog = true }) { Text("PiP表示項目を設定") }
+    SectionCard(title = "ピクチャーインピクチャー") {
+      OutlinedButton(onClick = { showPipDialog = true }) { Text("表示項目を設定") }
     }
   }
 
@@ -119,5 +141,24 @@ fun ConnectionScreen(
         },
         onDismiss = { showPipDialog = false },
     )
+  }
+}
+
+@Composable
+private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+  OutlinedCard(
+      modifier = Modifier
+          .fillMaxWidth()
+          .padding(vertical = 8.dp),
+  ) {
+    Column(modifier = Modifier.padding(16.dp)) {
+      Text(
+          title,
+          style = MaterialTheme.typography.titleMedium,
+          color = MaterialTheme.colorScheme.primary,
+      )
+      Spacer(Modifier.height(12.dp))
+      content()
+    }
   }
 }

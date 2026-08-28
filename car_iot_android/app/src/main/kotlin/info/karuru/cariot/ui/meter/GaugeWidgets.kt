@@ -17,16 +17,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // mobile/lib/widgets/meter_tile.dartの4種ゲージ移植。追加ライブラリ不要の既定方針どおり、
 // circular/barはMaterial3標準Widget、digitalはText、sparklineはCanvas自作
 // （docs/car_iot_android_plan.md「UIコンポーネント（ゲージ4種）」参照）。
+//
+// デザインレビュー(2026/08)を反映: 数値表示を全てMaterialTheme.typography.displaySmallベース
+// （テーマごとのフォント・太さ・字間を継承しつつサイズだけウィジェットの器に合わせて調整）にし、
+// レーシング/ミニマルで数字の表情が変わるようにした。
 
 private fun percentOf(value: Float, min: Float, max: Float): Float {
   val range = max - min
@@ -43,7 +45,7 @@ fun CircularGauge(value: Float, min: Float, max: Float, valueText: String, modif
         modifier = Modifier.fillMaxSize(),
         strokeWidth = 8.dp,
     )
-    Text(valueText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    Text(valueText, style = MaterialTheme.typography.displaySmall.copy(fontSize = 15.sp))
   }
 }
 
@@ -58,13 +60,17 @@ fun BarGauge(value: Float, min: Float, max: Float, valueText: String, modifier: 
             .height(16.dp)
             .clip(RoundedCornerShape(4.dp)),
     )
-    Text(valueText, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+    Text(
+        valueText,
+        style = MaterialTheme.typography.displaySmall.copy(fontSize = 15.sp),
+        modifier = Modifier.padding(top = 4.dp),
+    )
   }
 }
 
 @Composable
 fun DigitalGauge(valueText: String, modifier: Modifier = Modifier) {
-  Text(valueText, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = modifier)
+  Text(valueText, style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp), modifier = modifier)
 }
 
 // 履歴2点未満は折れ線が描けないため数値表示にフォールバックする
@@ -78,7 +84,7 @@ fun SparklineGauge(
     modifier: Modifier = Modifier,
 ) {
   if (history.size < 2) {
-    Text(valueText, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = modifier)
+    Text(valueText, style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp), modifier = modifier)
     return
   }
   val lineColor = MaterialTheme.colorScheme.primary
@@ -95,4 +101,3 @@ fun SparklineGauge(
     drawPath(path, color = lineColor, style = Stroke(width = 3f))
   }
 }
-
