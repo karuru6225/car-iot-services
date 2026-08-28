@@ -55,8 +55,10 @@ private fun BatteryTile(item: BatteryItem) {
           color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
       val valueText = item.value?.let { "%.${item.decimals}f".format(it) } ?: "—"
+      // shadcn は数値をアクセント色で塗らず前景色のまま出す。値なしのときだけ
+      // muted-foreground に落として「まだ来ていない」ことを示す。
       val valueColor = if (item.value != null) {
-        MaterialTheme.colorScheme.primary
+        MaterialTheme.colorScheme.onSurface
       } else {
         MaterialTheme.colorScheme.onSurfaceVariant
       }

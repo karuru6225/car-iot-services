@@ -28,6 +28,7 @@ import info.karuru.cariot.obd.ObdMetric
 import info.karuru.cariot.state.CarIotState
 import info.karuru.cariot.ui.pip.PipSettingsDialog
 import info.karuru.cariot.ui.theme.AppTheme
+import info.karuru.cariot.ui.theme.ShadcnButtonShape
 
 // 「接続」タブ。サインイン/アウト・BLE接続状態・自動起動(CDM)・バックグラウンド位置情報の
 // 許可状態・テーマ切り替えを表示する。計測値・OBD値の表示はbattery/obdタブに分離した（Phase8）。
@@ -76,21 +77,22 @@ fun ConnectionScreen(
       Text(userEmail?.let { "ログイン: $it" } ?: "未ログイン")
       Spacer(Modifier.height(12.dp))
       if (userEmail == null) {
-        OutlinedButton(onClick = onSignIn) { Text("サインイン") }
+        OutlinedButton(onClick = onSignIn, shape = ShadcnButtonShape) { Text("サインイン") }
       } else {
-        OutlinedButton(onClick = onSignOut) { Text("サインアウト") }
+        OutlinedButton(onClick = onSignOut, shape = ShadcnButtonShape) { Text("サインアウト") }
       }
     }
 
     SectionCard(title = "BLE接続") {
       Text(label)
       Row(modifier = Modifier.padding(top = 12.dp)) {
-        Button(onClick = onConnect, enabled = !isConnected && !isBusy) {
+        Button(onClick = onConnect, enabled = !isConnected && !isBusy, shape = ShadcnButtonShape) {
           Text("接続")
         }
         OutlinedButton(
             onClick = onDisconnect,
             enabled = isConnected || isBusy,
+            shape = ShadcnButtonShape,
             modifier = Modifier.padding(start = 12.dp),
         ) {
           Text(if (isBusy) "中止" else "切断")
@@ -101,7 +103,9 @@ fun ConnectionScreen(
       if (companionAssociated) {
         Text("自動起動: 有効")
       } else {
-        OutlinedButton(onClick = onEnableAutoLaunch) { Text("自動起動を有効にする") }
+        OutlinedButton(onClick = onEnableAutoLaunch, shape = ShadcnButtonShape) {
+          Text("自動起動を有効にする")
+        }
       }
 
       // 自動起動時に起動するCarIotForegroundServiceはlocation型FGSのため、
@@ -110,7 +114,9 @@ fun ConnectionScreen(
       if (backgroundLocationGranted) {
         Text("バックグラウンド位置情報: 許可済み")
       } else {
-        OutlinedButton(onClick = onRequestBackgroundLocation) { Text("バックグラウンド位置情報を許可する") }
+        OutlinedButton(onClick = onRequestBackgroundLocation, shape = ShadcnButtonShape) {
+          Text("バックグラウンド位置情報を許可する")
+        }
       }
     }
 
@@ -121,6 +127,7 @@ fun ConnectionScreen(
               selected = selectedTheme == theme,
               onClick = { onThemeChange(theme) },
               label = { Text(theme.label) },
+              shape = ShadcnButtonShape,
               modifier = Modifier.padding(end = 8.dp),
           )
         }
@@ -128,7 +135,9 @@ fun ConnectionScreen(
     }
 
     SectionCard(title = "ピクチャーインピクチャー") {
-      OutlinedButton(onClick = { showPipDialog = true }) { Text("表示項目を設定") }
+      OutlinedButton(onClick = { showPipDialog = true }, shape = ShadcnButtonShape) {
+        Text("表示項目を設定")
+      }
     }
   }
 
@@ -152,10 +161,11 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
           .padding(vertical = 8.dp),
   ) {
     Column(modifier = Modifier.padding(16.dp)) {
+      // shadcn の CardTitle は前景色そのまま（アクセント色で着色しない）。
       Text(
           title,
           style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.primary,
+          color = MaterialTheme.colorScheme.onSurface,
       )
       Spacer(Modifier.height(12.dp))
       content()

@@ -22,6 +22,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +48,10 @@ import info.karuru.cariot.ui.meter.MeterScreen
 import info.karuru.cariot.ui.obd.ObdScreen
 import info.karuru.cariot.ui.pip.PipContent
 import info.karuru.cariot.ui.theme.AppTheme
+import info.karuru.cariot.ui.theme.LocalChartColors
+import info.karuru.cariot.ui.theme.ShadcnDarkChartColors
 import info.karuru.cariot.ui.theme.ShadcnDarkColorScheme
+import info.karuru.cariot.ui.theme.ShadcnLightChartColors
 import info.karuru.cariot.ui.theme.ShadcnLightColorScheme
 import info.karuru.cariot.ui.theme.ShadcnShapes
 import info.karuru.cariot.ui.theme.ShadcnTypography
@@ -107,14 +111,19 @@ class MainActivity : ComponentActivity() {
         AppTheme.LIGHT -> ShadcnLightColorScheme
         AppTheme.DARK -> ShadcnDarkColorScheme
       }
+      val chartColors = when (selectedTheme) {
+        AppTheme.LIGHT -> ShadcnLightChartColors
+        AppTheme.DARK -> ShadcnDarkChartColors
+      }
       MaterialTheme(
           colorScheme = colorScheme,
           typography = ShadcnTypography,
           shapes = ShadcnShapes,
       ) {
+        CompositionLocalProvider(LocalChartColors provides chartColors) {
         if (isInPip) {
           PipContent(metrics = pipMetrics)
-          return@MaterialTheme
+          return@CompositionLocalProvider
         }
         Surface {
           var tabIndex by remember { mutableIntStateOf(0) }
@@ -178,6 +187,7 @@ class MainActivity : ComponentActivity() {
               }
             }
           }
+        }
         }
       }
     }

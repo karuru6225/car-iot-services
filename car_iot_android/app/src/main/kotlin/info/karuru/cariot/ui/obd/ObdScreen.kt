@@ -68,7 +68,7 @@ private fun ObdTile(label: String, value: Float, unit: String, decimals: Int) {
       Text(
           if (unit.isEmpty()) valueText else "$valueText $unit",
           style = MaterialTheme.typography.displaySmall.copy(fontSize = 15.sp),
-          color = MaterialTheme.colorScheme.primary,
+          color = MaterialTheme.colorScheme.onSurface,
           modifier = Modifier.padding(top = 2.dp),
       )
     }

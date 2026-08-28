@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import info.karuru.cariot.ui.theme.LocalChartColors
 
 // mobile/lib/widgets/meter_tile.dartの4種ゲージ移植。追加ライブラリ不要の既定方針どおり、
 // circular/barはMaterial3標準Widget、digitalはText、sparklineはCanvas自作
@@ -39,10 +40,13 @@ private fun percentOf(value: Float, min: Float, max: Float): Float {
 @Composable
 fun CircularGauge(value: Float, min: Float, max: Float, valueText: String, modifier: Modifier = Modifier) {
   val pct = percentOf(value, min, max)
+  val chart = LocalChartColors.current
   Box(contentAlignment = Alignment.Center, modifier = modifier.size(84.dp)) {
     CircularProgressIndicator(
         progress = { pct },
         modifier = Modifier.fillMaxSize(),
+        color = chart.chart1,
+        trackColor = chart.track,
         strokeWidth = 8.dp,
     )
     Text(valueText, style = MaterialTheme.typography.displaySmall.copy(fontSize = 15.sp))
@@ -52,6 +56,7 @@ fun CircularGauge(value: Float, min: Float, max: Float, valueText: String, modif
 @Composable
 fun BarGauge(value: Float, min: Float, max: Float, valueText: String, modifier: Modifier = Modifier) {
   val pct = percentOf(value, min, max)
+  val chart = LocalChartColors.current
   Column(modifier = modifier.fillMaxWidth()) {
     LinearProgressIndicator(
         progress = { pct },
@@ -59,6 +64,8 @@ fun BarGauge(value: Float, min: Float, max: Float, valueText: String, modifier: 
             .fillMaxWidth()
             .height(16.dp)
             .clip(RoundedCornerShape(4.dp)),
+        color = chart.chart1,
+        trackColor = chart.track,
     )
     Text(
         valueText,
@@ -87,7 +94,7 @@ fun SparklineGauge(
     Text(valueText, style = MaterialTheme.typography.displaySmall.copy(fontSize = 24.sp), modifier = modifier)
     return
   }
-  val lineColor = MaterialTheme.colorScheme.primary
+  val lineColor = LocalChartColors.current.chart1
   Canvas(modifier = modifier.fillMaxWidth().height(50.dp)) {
     val range = (max - min).takeIf { it != 0f } ?: 1f
     val stepX = size.width / (history.size - 1)
