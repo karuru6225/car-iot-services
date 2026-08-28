@@ -33,7 +33,8 @@ import info.karuru.cariot.state.CarIotState
 fun MeterScreen() {
   val context = LocalContext.current
   val configStore = remember { MeterConfigStore(context) }
-  val slots by remember { mutableStateOf(configStore.load()) }
+  var slots by remember { mutableStateOf(configStore.load()) }
+  var showSettings by remember { mutableStateOf(false) }
   val reading by CarIotState.obdReading.collectAsStateWithLifecycle()
   val history by CarIotState.obdHistory.collectAsStateWithLifecycle()
 
@@ -44,8 +45,7 @@ fun MeterScreen() {
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.End,
     ) {
-      // MeterSettingsSheet接続はステップ7で行う
-      TextButton(onClick = { }) { Text("項目を編集") }
+      TextButton(onClick = { showSettings = true }) { Text("項目を編集") }
     }
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -53,6 +53,18 @@ fun MeterScreen() {
     ) {
       items(slots) { slot -> MeterTile(slot, reading, history[slot.metric] ?: emptyList()) }
     }
+  }
+
+  if (showSettings) {
+    MeterSettingsSheet(
+        slots = slots,
+        onDismiss = { showSettings = false },
+        onSave = { newSlots ->
+          slots = newSlots
+          configStore.save(newSlots)
+          showSettings = false
+        },
+    )
   }
 }
 
