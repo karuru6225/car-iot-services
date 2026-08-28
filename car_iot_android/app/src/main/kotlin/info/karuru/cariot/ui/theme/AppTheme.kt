@@ -1,10 +1,9 @@
 package info.karuru.cariot.ui.theme
 
-// ユーザーが切り替え可能な2種類のテーマ。shadcn/ui の neutral ベーステーマを
-// Material3 に移植したもので、LIGHT=:root 定義、DARK=.dark 定義に対応する。
-// 配色・タイポ・角丸の詳細は Shadcn*ColorScheme.kt / ShadcnTypography.kt /
-// ShadcnShapes.kt を参照。
+// ユーザーが切り替え可能な2種類のテーマ。どちらも車載インストルメントクラスターの
+// 語彙に基づく配色で、NIGHT=夜間のメーター照明、DAY=日中の計器パネルに対応する。
+// 詳細は ClusterColorSchemes.kt を参照。
 enum class AppTheme(val label: String) {
-  LIGHT("ライト"),
-  DARK("ダーク"),
+  NIGHT("ナイト"),
+  DAY("デイ"),
 }

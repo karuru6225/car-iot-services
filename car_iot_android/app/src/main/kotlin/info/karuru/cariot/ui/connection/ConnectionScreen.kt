@@ -28,16 +28,14 @@ import info.karuru.cariot.obd.ObdMetric
 import info.karuru.cariot.state.CarIotState
 import info.karuru.cariot.ui.pip.PipSettingsDialog
 import info.karuru.cariot.ui.theme.AppTheme
-import info.karuru.cariot.ui.theme.ShadcnButtonShape
+import info.karuru.cariot.ui.theme.ClusterButtonShape
 
 // 「接続」タブ。サインイン/アウト・BLE接続状態・自動起動(CDM)・バックグラウンド位置情報の
 // 許可状態・テーマ切り替えを表示する。計測値・OBD値の表示はbattery/obdタブに分離した（Phase8）。
 //
-// デザインレビュー(2026/08)を反映: 「接続」だけを塗りつぶしボタンにし、他は全てOutlinedButton
-// にすることでプライマリアクションの視覚的階層を作る。ミニマルテーマの「アクセントはワンポイント
-// のみ」という設計意図は、これまで全ボタンが塗りつぶしだったため実質守られていなかった
-// （PipSettingsDialogのRowも参照）。セクションをOutlinedCardで区切り、単色の余白が続く
-// レイアウトを解消する。
+// デザイン(2026/08): 「接続」だけを塗りつぶしボタンにし、他は全てOutlinedButtonにして
+// プライマリアクションの視覚的階層を作る。セクションはOutlinedCardで区切り、見出しは
+// 字間を開けた極小テキスト＋アンバーで計器盤のパネル区画名に似せている。
 @Composable
 fun ConnectionScreen(
     onConnect: () -> Unit,
@@ -77,22 +75,22 @@ fun ConnectionScreen(
       Text(userEmail?.let { "ログイン: $it" } ?: "未ログイン")
       Spacer(Modifier.height(12.dp))
       if (userEmail == null) {
-        OutlinedButton(onClick = onSignIn, shape = ShadcnButtonShape) { Text("サインイン") }
+        OutlinedButton(onClick = onSignIn, shape = ClusterButtonShape) { Text("サインイン") }
       } else {
-        OutlinedButton(onClick = onSignOut, shape = ShadcnButtonShape) { Text("サインアウト") }
+        OutlinedButton(onClick = onSignOut, shape = ClusterButtonShape) { Text("サインアウト") }
       }
     }
 
     SectionCard(title = "BLE接続") {
       Text(label)
       Row(modifier = Modifier.padding(top = 12.dp)) {
-        Button(onClick = onConnect, enabled = !isConnected && !isBusy, shape = ShadcnButtonShape) {
+        Button(onClick = onConnect, enabled = !isConnected && !isBusy, shape = ClusterButtonShape) {
           Text("接続")
         }
         OutlinedButton(
             onClick = onDisconnect,
             enabled = isConnected || isBusy,
-            shape = ShadcnButtonShape,
+            shape = ClusterButtonShape,
             modifier = Modifier.padding(start = 12.dp),
         ) {
           Text(if (isBusy) "中止" else "切断")
@@ -103,7 +101,7 @@ fun ConnectionScreen(
       if (companionAssociated) {
         Text("自動起動: 有効")
       } else {
-        OutlinedButton(onClick = onEnableAutoLaunch, shape = ShadcnButtonShape) {
+        OutlinedButton(onClick = onEnableAutoLaunch, shape = ClusterButtonShape) {
           Text("自動起動を有効にする")
         }
       }
@@ -114,7 +112,7 @@ fun ConnectionScreen(
       if (backgroundLocationGranted) {
         Text("バックグラウンド位置情報: 許可済み")
       } else {
-        OutlinedButton(onClick = onRequestBackgroundLocation, shape = ShadcnButtonShape) {
+        OutlinedButton(onClick = onRequestBackgroundLocation, shape = ClusterButtonShape) {
           Text("バックグラウンド位置情報を許可する")
         }
       }
@@ -127,7 +125,7 @@ fun ConnectionScreen(
               selected = selectedTheme == theme,
               onClick = { onThemeChange(theme) },
               label = { Text(theme.label) },
-              shape = ShadcnButtonShape,
+              shape = ClusterButtonShape,
               modifier = Modifier.padding(end = 8.dp),
           )
         }
@@ -135,7 +133,7 @@ fun ConnectionScreen(
     }
 
     SectionCard(title = "ピクチャーインピクチャー") {
-      OutlinedButton(onClick = { showPipDialog = true }, shape = ShadcnButtonShape) {
+      OutlinedButton(onClick = { showPipDialog = true }, shape = ClusterButtonShape) {
         Text("表示項目を設定")
       }
     }
@@ -161,11 +159,10 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
           .padding(vertical = 8.dp),
   ) {
     Column(modifier = Modifier.padding(16.dp)) {
-      // shadcn の CardTitle は前景色そのまま（アクセント色で着色しない）。
       Text(
           title,
           style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.onSurface,
+          color = MaterialTheme.colorScheme.primary,
       )
       Spacer(Modifier.height(12.dp))
       content()

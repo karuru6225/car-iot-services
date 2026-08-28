@@ -58,18 +58,20 @@ fun ObdScreen() {
 @Composable
 private fun ObdTile(label: String, value: Float, unit: String, decimals: Int) {
   OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-    Column(modifier = Modifier.padding(10.dp)) {
+    Column(modifier = Modifier.padding(12.dp)) {
+      // 35項目が並ぶので1項目あたりは小さいが、ラベル(極小・広字間)と数値(等幅)の
+      // 関係は他タブと同じにして、画面をまたいでも読み方が変わらないようにする。
       Text(
           label,
-          style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+          style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.5.sp),
           color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
       val valueText = "%.${decimals}f".format(value)
       Text(
           if (unit.isEmpty()) valueText else "$valueText $unit",
-          style = MaterialTheme.typography.displaySmall.copy(fontSize = 15.sp),
+          style = MaterialTheme.typography.displaySmall.copy(fontSize = 17.sp),
           color = MaterialTheme.colorScheme.onSurface,
-          modifier = Modifier.padding(top = 2.dp),
+          modifier = Modifier.padding(top = 4.dp),
       )
     }
   }

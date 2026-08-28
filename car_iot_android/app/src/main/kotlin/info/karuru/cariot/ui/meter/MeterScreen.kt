@@ -53,7 +53,7 @@ fun MeterScreen() {
       Text(
           "メーター",
           style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.onSurface,
+          color = MaterialTheme.colorScheme.primary,
       )
       TextButton(onClick = { showSettings = true }) { Text("項目を編集") }
     }
@@ -89,17 +89,18 @@ private fun MeterTile(slot: MeterSlot, reading: ObdReading?, history: List<Float
     if (meta.unit.isEmpty()) formatted else "$formatted ${meta.unit}"
   } ?: "—"
 
-  Card(modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp)) {
-    Column(modifier = Modifier.padding(12.dp)) {
+  Card(modifier = Modifier.fillMaxWidth().heightIn(min = 132.dp)) {
+    Column(modifier = Modifier.padding(16.dp)) {
       Text(
           meta.label,
           style = MaterialTheme.typography.labelSmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(bottom = 10.dp),
       )
       when (slot.style) {
-        GaugeStyle.CIRCULAR -> CircularGauge(value ?: meta.min, meta.min, meta.max, valueText)
+        GaugeStyle.CIRCULAR -> CircularGauge(value, meta.min, meta.max, valueText)
         GaugeStyle.DIGITAL -> DigitalGauge(valueText)
-        GaugeStyle.BAR -> BarGauge(value ?: meta.min, meta.min, meta.max, valueText)
+        GaugeStyle.BAR -> BarGauge(value, meta.min, meta.max, valueText)
         GaugeStyle.SPARKLINE -> SparklineGauge(history, meta.min, meta.max, valueText)
       }
     }
