@@ -84,10 +84,16 @@ fun MeterScreen() {
 private fun MeterTile(slot: MeterSlot, reading: ObdReading?, history: List<Float>) {
   val meta = obdMetricMeta.getValue(slot.metric)
   val value = reading?.let { meta.valueOf(it) }
-  val valueText = value?.let {
-    val formatted = "%.${meta.decimals}f".format(it)
-    if (meta.unit.isEmpty()) formatted else "$formatted ${meta.unit}"
-  } ?: "—"
+  // 単位はゲージ側で小さく描くため数値と分けて渡す。値が無いときは書式どおりの
+  // 桁プレースホルダー（BatteryScreenと同じ作法）。
+  val valueText = value?.let { "%.${meta.decimals}f".format(it) }
+      ?: buildString {
+        append("--")
+        if (meta.decimals > 0) {
+          append('.')
+          repeat(meta.decimals) { append('-') }
+        }
+      }
 
   Card(modifier = Modifier.fillMaxWidth().heightIn(min = 132.dp)) {
     Column(modifier = Modifier.padding(16.dp)) {
@@ -98,10 +104,10 @@ private fun MeterTile(slot: MeterSlot, reading: ObdReading?, history: List<Float
           modifier = Modifier.padding(bottom = 10.dp),
       )
       when (slot.style) {
-        GaugeStyle.CIRCULAR -> CircularGauge(value, meta.min, meta.max, valueText)
-        GaugeStyle.DIGITAL -> DigitalGauge(valueText)
-        GaugeStyle.BAR -> BarGauge(value, meta.min, meta.max, valueText)
-        GaugeStyle.SPARKLINE -> SparklineGauge(history, meta.min, meta.max, valueText)
+        GaugeStyle.CIRCULAR -> CircularGauge(value, meta.min, meta.max, valueText, meta.unit)
+        GaugeStyle.DIGITAL -> DigitalGauge(valueText, meta.unit)
+        GaugeStyle.BAR -> BarGauge(value, meta.min, meta.max, valueText, meta.unit)
+        GaugeStyle.SPARKLINE -> SparklineGauge(history, meta.min, meta.max, valueText, meta.unit)
       }
     }
   }

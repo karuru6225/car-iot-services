@@ -2,6 +2,7 @@ package info.karuru.cariot.ui.meter
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -42,35 +44,63 @@ fun CircularGauge(
     min: Float,
     max: Float,
     valueText: String,
+    unit: String,
     modifier: Modifier = Modifier,
 ) {
   val fraction = fractionOrNull(value, min, max)
   val trackColor = MaterialTheme.colorScheme.outline
   val tickColor = MaterialTheme.colorScheme.primary
   Column(modifier = modifier) {
-    Text(valueText, style = MaterialTheme.typography.displaySmall)
-    // 270度スイープの細いアーク。下方向に開いた自動車メーター状の弧にしている。
-    Canvas(modifier = Modifier.padding(top = 8.dp).size(width = 96.dp, height = 30.dp)) {
-      val stroke = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-      val arcSize = androidx.compose.ui.geometry.Size(size.width, size.width * 0.62f)
+    ValueText(valueText, unit)
+    // 上半分だけの180度スイープ。円弧の外接ボックスは正方形(幅×幅)で、その上半分が
+    // 収まる高さのCanvasに描く。ここが合っていないと弧の下側が切れて、
+    // ゲージではなくただの曲線に見えてしまう。
+    val arcWidth = 96.dp
+    Canvas(
+        modifier = Modifier
+            .padding(top = 10.dp)
+            .size(width = arcWidth, height = arcWidth / 2 + 4.dp),
+    ) {
+      val box = androidx.compose.ui.geometry.Size(size.width, size.width)
       drawArc(
           color = trackColor,
-          startAngle = 160f,
-          sweepAngle = 220f,
+          startAngle = 180f,
+          sweepAngle = 180f,
           useCenter = false,
-          size = arcSize,
-          style = stroke,
+          size = box,
+          style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
       )
       if (fraction != null) {
         drawArc(
             color = tickColor,
-            startAngle = 160f + 220f * fraction - 1.5f,
+            startAngle = 180f + 180f * fraction - 1.5f,
             sweepAngle = 3f,
             useCenter = false,
-            size = arcSize,
-            style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round),
+            size = box,
+            style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round),
         )
       }
+    }
+  }
+}
+
+// 数値と単位の関係は全タブで共通にする（数値は大きく、単位は極小でくすませる）。
+// 単位まで同じ大きさで出すと、せっかく作った「ラベル/数値」の落差が崩れる。
+@Composable
+private fun ValueText(valueText: String, unit: String, fontSize: androidx.compose.ui.unit.TextUnit = 26.sp) {
+  Row(verticalAlignment = Alignment.Bottom) {
+    Text(
+        valueText,
+        style = MaterialTheme.typography.displaySmall.copy(fontSize = fontSize),
+        maxLines = 1,
+    )
+    if (unit.isNotEmpty()) {
+      Text(
+          unit,
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(start = 6.dp, bottom = 4.dp),
+      )
     }
   }
 }
@@ -81,17 +111,21 @@ fun BarGauge(
     min: Float,
     max: Float,
     valueText: String,
+    unit: String,
     modifier: Modifier = Modifier,
 ) {
   Column(modifier = modifier.fillMaxWidth()) {
-    Text(valueText, style = MaterialTheme.typography.displaySmall)
+    ValueText(valueText, unit)
     ValueRail(fractionOrNull(value, min, max), modifier = Modifier.padding(top = 10.dp))
   }
 }
 
+// レンジを持たない項目向け。数値だけを大きく出す。
 @Composable
-fun DigitalGauge(valueText: String, modifier: Modifier = Modifier) {
-  Text(valueText, style = MaterialTheme.typography.displayMedium, modifier = modifier)
+fun DigitalGauge(valueText: String, unit: String, modifier: Modifier = Modifier) {
+  Column(modifier = modifier) {
+    ValueText(valueText, unit, fontSize = 34.sp)
+  }
 }
 
 // 履歴2点未満は折れ線が描けないため数値表示にフォールバックする
@@ -102,11 +136,12 @@ fun SparklineGauge(
     min: Float,
     max: Float,
     valueText: String,
+    unit: String,
     modifier: Modifier = Modifier,
 ) {
   val lineColor = MaterialTheme.colorScheme.primary
   Column(modifier = modifier.fillMaxWidth()) {
-    Text(valueText, style = MaterialTheme.typography.displaySmall)
+    ValueText(valueText, unit)
     if (history.size < 2) {
       ValueRail(null, modifier = Modifier.padding(top = 10.dp))
       return@Column
