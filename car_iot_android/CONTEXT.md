@@ -9,7 +9,7 @@
 
 **作業ブランチ**: `feat/car-iot-android`（mainには未マージ）。`mobile/`は当面残す（移植元参照用）。
 
-## 現在の状態（Phase 0〜8完了）
+## 現在の状態（Phase 0〜8完了、Phase 9より先行してテーマ/PiP実装済み）
 
 | Phase | 内容 | 状態 |
 |---|---|---|
@@ -22,9 +22,23 @@
 | 6 | 位置情報 | 完了（実機確認済み、下記参照） |
 | 7 | CDM連携（BLE検知でのkilled状態からの自動起動） | 完了（実機確認済み、下記参照） |
 | 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | 完了（エミュレータ確認済み、下記参照。**実データでのゲージ表示は次回実機接続時の宿題**） |
+| - | テーマ切り替え＋PiP（Phase9より先行実装） | 完了（エミュレータ確認済み、下記参照。**PiPの実データ表示・実機での自動遷移は次回実機接続時の宿題**） |
 | 9 | 仕上げ | 未着手 |
 
 次にやるならPhase 9（仕上げ: アイコン・署名設定等）から。設計は`docs/car_iot_android_plan.md`にまとめてある。
+
+### テーマ切り替え＋PiP実機検証メモ（エミュレータ使用、BLE接続なし）
+
+- テーマ切り替え（レーシング/ミニマル）は`FilterChip`での切り替え・両テーマの配色反映・
+  アプリ再起動後の`SharedPreferences`永続化をエミュレータで確認済み
+- PiP表示項目の選択ダイアログ（`ui/pip/PipSettingsDialog.kt`）は、初期選択
+  （RPM/速度/水温）の表示・追加選択・保存・再起動後の永続化を確認済み
+- PiPの自動遷移（`onUserLeaveHint()`）は**`ConnState.CONNECTED`時のみ**発火する設計だが、
+  エミュレータはBLE接続できないためこの条件が満たせない。検証時は一時的にゲート条件を
+  外した検証用ビルドでホームボタン操作→PiPウィンドウの表示（選択項目のラベル、
+  `reading == null`時の`"—"`表示）を確認し、確認後はゲート付きの本来のコードに戻して
+  ビルド成功を再確認した。**次回実機接続時に、BLE接続中の自動PiP遷移と実データ表示を
+  確認すること**
 
 ### Phase 8後半実機検証メモ（エミュレータ使用、BLE接続なし）
 
@@ -114,11 +128,19 @@ info/karuru/cariot/
 │   └── ObdMetric.kt                # OBD全35項目のlabel/unit/decimals/min/max/valueOf、GaugeStyle・defaultMeterMetrics
 ├── meter/
 │   ├── MeterSlot.kt                # メーター1タイル(項目+ゲージ種別)、MeterSlotJson(TDD済み)
-│   └── MeterConfigStore.kt         # SharedPreferencesへの設定永続化
+│   ├── MeterConfigStore.kt         # SharedPreferencesへの設定永続化
+│   └── PipConfigStore.kt           # PiP表示項目の永続化、PipMetricsJson(TDD済み)
 ├── ui/
-│   ├── connection/ConnectionScreen.kt  # 接続タブ（サインイン/接続/自動起動/位置情報許可）
+│   ├── connection/ConnectionScreen.kt  # 接続タブ（サインイン/接続/自動起動/位置情報許可/テーマ切替/PiP設定）
 │   ├── battery/BatteryScreen.kt        # バッテリータブ（vMain/curr/pwr/vSub）
 │   ├── obd/ObdScreen.kt                # OBDタブ（35項目グリッド表示）
+│   ├── theme/
+│   │   ├── AppTheme.kt              # テーマenum(RACING/MINIMAL)
+│   │   ├── RacingColorScheme.kt / MinimalColorScheme.kt  # 2テーマの配色定義
+│   │   └── ThemeStore.kt            # SharedPreferencesへのテーマ選択永続化
+│   ├── pip/
+│   │   ├── PipContent.kt            # PiPウィンドウ専用の簡易表示(ラベル+値のみ)
+│   │   └── PipSettingsDialog.kt     # PiP表示項目の複数選択ダイアログ
 │   └── meter/
 │       ├── MeterScreen.kt          # メータータブ本体（2列グリッド、設定シート起動）
 │       ├── GaugeWidgets.kt         # ゲージ4種(circular/digital/bar/sparkline)のComposable

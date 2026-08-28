@@ -348,3 +348,63 @@ Flutter版`meter_screen.dart`/`meter_tile.dart`/`meter_settings_sheet.dart`/
 **次回実機接続時にやること**: fakeobd env等でOBDデータを実際に受信させ、4種の
 ゲージ（特にsparklineの折れ線描画とcircular/barのパーセント表示）が正しい値で
 更新されることを確認する。
+
+---
+
+## Phase 9より先行実装: テーマ切り替え＋ピクチャーインピクチャー(PiP)
+
+Phase 8完了後、ロードマップ上はPhase 9（仕上げ）が残っていたが、ユーザーから
+「デザインの改善」「PiP対応」の2つの追加要望があり、これをPhase 9より先に実装した。
+
+### テーマ切り替え
+
+Material3デフォルトのままだった配色を、**「レーシング/モータースポーツ風」と
+「ミニマル・モノクローム」の2テーマをアプリ内で切り替え可能**にする方針で実装した
+（Flutter版のダークテーマ移植ではなく、独自の新規デザインを2種類用意する方向）。
+
+- `ui/theme/AppTheme.kt`: `enum class AppTheme { RACING, MINIMAL }`
+- `ui/theme/RacingColorScheme.kt` / `MinimalColorScheme.kt`: `darkColorScheme()`/
+  `lightColorScheme()`をベースにしたカスタム`ColorScheme`。レーシングは背景`#121212`+
+  プライマリ`#E10600`、ミニマルは背景`#FFFFFF`+プライマリ`#C6FF00`
+- `ui/theme/ThemeStore.kt`: `SharedPreferences`で選択テーマを永続化
+  （`meter/MeterConfigStore.kt`と同じパターン）
+- `MainActivity.kt`の`MaterialTheme(colorScheme = ...)`に配線、接続タブ
+  （`ConnectionScreen.kt`）に`FilterChip`2つの切り替えUIを追加。各画面は既に
+  `MaterialTheme.colorScheme`を参照する実装だったため、個別画面の変更は不要だった
+
+### ピクチャーインピクチャー(PiP)
+
+運転中にアプリを最小化してもBLE接続・受信は`CarIotForegroundService`が継続する
+（Phase3で確立済み）ため、PiPで小さいウィンドウとして値を表示し続けられるようにした。
+表示項目は接続タブで事前に選択する方式にした（AskUserQuestionでの検討の結果、
+「メイン画面で事前にPiP項目を選ぶ」方式を採用）。
+
+- `meter/PipConfigStore.kt`: PiP表示に使う`ObdMetric`のリストを永続化。
+  `ObdMetric`自体は`@Serializable`ではないため、`PipMetricsJson`（TDD済み）で
+  項目名の`String`配列にエンコードし、存在しない項目名はデコード時に無視する
+  （項目の将来的な削除・改名への耐性のため）
+- `ui/pip/PipSettingsDialog.kt`: `ObdMetric`全項目のチェックボックスリストで
+  複数選択するダイアログ。接続タブの「PiP表示項目を設定」ボタンから開く
+- `AndroidManifest.xml`の`MainActivity`に`android:supportsPictureInPicture="true"`、
+  `android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"`
+  を追加（PiPサイズ変更のたびにActivityが再生成されるのを防ぐ）
+- `MainActivity.onUserLeaveHint()`をoverrideし、**BLE接続中(`ConnState.CONNECTED`)
+  のみ**自動的に`enterPictureInPictureMode()`でPiPへ遷移する。未接続時にPiPへ
+  入っても表示するものが無いための判断
+- `ui/pip/PipContent.kt`: PiP専用の簡易表示。選択項目のラベル+値を縦に並べるだけで、
+  ゲージ描画等は行わない
+- 新規ライブラリは追加せず、素のAndroid PiP API（`PictureInPictureParams.Builder`、
+  API26以降）のみで実装した
+
+### エミュレータでの検証について
+
+Phase8同様、実機が無くエミュレータで検証した。テーマ切り替えは表示内容自体が
+検証できる（両テーマの配色反映・切り替え・再起動後の永続化を確認済み）が、PiPの
+自動遷移は`onUserLeaveHint()`のBLE接続中ゲートがあるため、エミュレータ単体では
+`ConnState.CONNECTED`にならず自動発火しない。**検証時は一時的にゲート条件を
+外した検証用ビルドでPiPウィンドウ自体の表示内容（選択項目のラベル、
+`reading == null`時の`"—"`プレースホルダー）を確認し、確認後は元のゲート付き
+コードに戻してビルド成功を再確認する**という手順を踏んだ。
+
+**次回実機接続時にやること**: BLE接続中に実際にホームボタンでPiPへ自動遷移すること、
+PiPウィンドウに実際のOBD値が表示・更新されることを確認する。
