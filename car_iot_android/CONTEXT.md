@@ -23,22 +23,78 @@
 | 7 | CDM連携（BLE検知でのkilled状態からの自動起動） | 完了（実機確認済み、下記参照） |
 | 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | 完了（エミュレータ確認済み、下記参照。**実データでのゲージ表示は次回実機接続時の宿題**） |
 | - | テーマ切り替え＋PiP（Phase9より先行実装） | 完了（エミュレータ確認済み、下記参照。**PiPの実データ表示・実機での自動遷移は次回実機接続時の宿題**） |
+| - | UIデザイン刷新（計器盤テーマ、Phase9より先行実装） | 完了（エミュレータ確認済み、下記参照） |
 | 9 | 仕上げ | 未着手 |
 
 次にやるならPhase 9（仕上げ: アイコン・署名設定等）から。設計は`docs/car_iot_android_plan.md`にまとめてある。
 
+### UIデザイン刷新メモ（2026/08）
+
+配色をレーシング/ミニマル → shadcn/ui(ライト/ダーク) → **計器盤ベースのナイト/デイ**と
+3回作り直した。最終形と、なぜそこに至ったかを残す（同じ回り道を繰り返さないため）。
+
+**採用しなかった2案とその理由**:
+
+- **レーシング/ミニマル**: Material3デフォルトの`ColorScheme`だけ差し替えた版。
+  ウィジェットは標準のままでピル型ボタン・太いProgressIndicatorが残り、
+  「Material3そのまま」の印象を脱していなかった
+- **shadcn/ui(neutral)**: Web管理画面のデザイン言語をそのまま持ち込んだ結果、
+  グレー一色の事務的なUIになり、走行中に読む計器という被写体と噛み合わなかった
+
+**現行（計器盤ベース）の設計判断**:
+
+- **タイポグラフィが設計の核**（`ui/theme/ClusterTypography.kt`）。上記2案はいずれも
+  ラベル11sp・数値22〜30spで差が小さく「数値も出る設定アプリ」に見えていた。
+  実際の計器盤は極小ラベルと巨大数値の落差で出来ているため、
+  ラベル10sp/字間+2.5sp ↔ ヒーロー数値60sp/字間-2sp まで開いた。数値は等幅かつ細字
+  （桁が動かず、大きくしても圧迫感が出ない。太字は使わない）
+- **アクセントは暖色アンバー**（`ui/theme/ClusterColorSchemes.kt`）。夜間の自動車メーター
+  照明が実際にこの色域という被写体由来の語彙で、かつ「黒背景＋鮮やかな1色」という
+  量産されがちな配色を避けられる。NIGHTの地色を純黒でなく青みのある`#06080C`に
+  したのは、クラスターがガラス越しに冷たく沈んで見えることに倣ったもの
+- **`ui/meter/ValueRail.kt`が署名要素**。Material3の`LinearProgressIndicator`/
+  `CircularProgressIndicator`の使用をやめた。あれは「進捗」の表現で、計測値に進捗の
+  概念は無い（電圧は0%から100%へ進行しない）うえ、太い塗り面が数値より目立つ。
+  レンジ内の位置を1dpのヘアラインと2dpのティックだけで示す
+- **バッテリータブはベントー構成**。均等2x2をやめメイン電圧を全幅ヒーローにし、
+  運転中に見たいものをレイアウト自体で示す
+- **無信号時は書式どおりの桁プレースホルダー**（`--.---`）。巨大な文字サイズでは
+  `—`一文字が黒い帯に見えるのと、消灯セグメントを見せるのが計器の作法のため
+- **ボタンの角丸は`ClusterButtonShape`を各所に明示指定**。Material3の`Button`は
+  `Shapes`ではなく`CircleShape`固定なので、テーマ側の`Shapes`差し替えだけでは
+  ピル型のまま変わらない
+
+**Material 3 Expressiveについて**: Androidの現行デザイン言語（2025年5月発表、35種の
+シェイプライブラリとスプリング系モーションが柱）だが、新コンポーネントAPIは
+material3 1.4.0+が必要で本プロジェクトは1.3.2（compose-bom 2025.09.00）。依存追加は
+確認事項のため今回は見送り、既存APIで組んでいる。将来BOMを上げる際に再検討の余地あり。
+
 ### テーマ切り替え＋PiP実機検証メモ（エミュレータ使用、BLE接続なし）
 
-- テーマ切り替え（レーシング/ミニマル）は`FilterChip`での切り替え・両テーマの配色反映・
+- テーマ切り替えは`FilterChip`での切り替え・両テーマの配色反映・
   アプリ再起動後の`SharedPreferences`永続化をエミュレータで確認済み
 - PiP表示項目の選択ダイアログ（`ui/pip/PipSettingsDialog.kt`）は、初期選択
   （RPM/速度/水温）の表示・追加選択・保存・再起動後の永続化を確認済み
 - PiPの自動遷移（`onUserLeaveHint()`）は**`ConnState.CONNECTED`時のみ**発火する設計だが、
   エミュレータはBLE接続できないためこの条件が満たせない。検証時は一時的にゲート条件を
   外した検証用ビルドでホームボタン操作→PiPウィンドウの表示（選択項目のラベル、
-  `reading == null`時の`"—"`表示）を確認し、確認後はゲート付きの本来のコードに戻して
+  値なし時のプレースホルダー）を確認し、確認後はゲート付きの本来のコードに戻して
   ビルド成功を再確認した。**次回実機接続時に、BLE接続中の自動PiP遷移と実データ表示を
   確認すること**
+
+### エミュレータでUIを確認する際のダミー値注入（有効だった手法）
+
+BLE接続できない環境では計測値が常にnullで、プレースホルダー状態しか見られない。
+デザインの良し悪しは実データが入った状態でないと判断できないため、以下を一時的に
+書き換えて確認し、**確認後に必ず`git checkout --`で戻す**運用を取った。
+
+- `state/CarIotState.kt`の`_measurement` / `_obdReading` / `_obdHistory`の初期値
+  （バッテリー値・OBD35項目・スパークライン用の履歴）
+- `meter/MeterConfigStore.kt`の`load()`冒頭で`defaultSlots()`を即returnさせる
+  （保存済み設定に引きずられず、ゲージ4種すべてを一度に確認するため）
+
+戻し忘れ防止として、注入する行には必ず`// TODO: デザイン確認用ダミー値(戻すこと)`を
+付け、撤去後に`grep -rn "デザイン確認用" app/src/`と`git status`の両方で確認している。
 
 ### Phase 8後半実機検証メモ（エミュレータ使用、BLE接続なし）
 
@@ -132,11 +188,13 @@ info/karuru/cariot/
 │   └── PipConfigStore.kt           # PiP表示項目の永続化、PipMetricsJson(TDD済み)
 ├── ui/
 │   ├── connection/ConnectionScreen.kt  # 接続タブ（サインイン/接続/自動起動/位置情報許可/テーマ切替/PiP設定）
-│   ├── battery/BatteryScreen.kt        # バッテリータブ（vMain/curr/pwr/vSub）
+│   ├── battery/BatteryScreen.kt        # バッテリータブ（ヒーロー1＋小タイル3のベントー構成）
 │   ├── obd/ObdScreen.kt                # OBDタブ（35項目グリッド表示）
 │   ├── theme/
-│   │   ├── AppTheme.kt              # テーマenum(RACING/MINIMAL)
-│   │   ├── RacingColorScheme.kt / MinimalColorScheme.kt  # 2テーマの配色定義
+│   │   ├── AppTheme.kt              # テーマenum(NIGHT/DAY)
+│   │   ├── ClusterColorSchemes.kt   # 2テーマの配色定義（計器盤ベース、暖色アンバー）
+│   │   ├── ClusterTypography.kt     # 極小ラベル↔巨大数値の落差を作る型（デザインの核）
+│   │   ├── ClusterShapes.kt         # 角丸スケール＋ClusterButtonShape(ピル型回避)
 │   │   └── ThemeStore.kt            # SharedPreferencesへのテーマ選択永続化
 │   ├── pip/
 │   │   ├── PipContent.kt            # PiPウィンドウ専用の簡易表示(ラベル+値のみ)
@@ -144,6 +202,7 @@ info/karuru/cariot/
 │   └── meter/
 │       ├── MeterScreen.kt          # メータータブ本体（2列グリッド、設定シート起動）
 │       ├── GaugeWidgets.kt         # ゲージ4種(circular/digital/bar/sparkline)のComposable
+│       ├── ValueRail.kt            # 署名要素。レンジ内の位置をヘアライン＋ティックで示す
 │       └── MeterSettingsSheet.kt   # 項目追加/削除/スタイル変更＋JSON インポート/エクスポート
 ├── auth/
 │   ├── SecureStore.kt              # Android Keystore(AES/GCM)直接利用の暗号化ストレージ
