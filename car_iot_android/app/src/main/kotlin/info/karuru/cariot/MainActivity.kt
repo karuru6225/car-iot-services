@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -198,8 +199,22 @@ class MainActivity : ComponentActivity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
         CarIotState.connState.value == ConnState.CONNECTED
     ) {
-      enterPictureInPictureMode(PictureInPictureParams.Builder().build())
+      enterPictureInPictureMode(
+          PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build(),
+      )
     }
+  }
+
+  // アスペクト比を指定しないとシステム既定の横長ウィンドウになり、項目が3つ以上あると
+  // 最終行が下端で見切れる（実機で確認）。1行あたりの高さから必要な縦横比を求めて渡す。
+  // AndroidのPiPは比率を約0.418〜2.39の範囲しか受け付けず、範囲外を渡すと例外になるため
+  // 内側にクランプする。
+  private fun pipAspectRatio(): Rational {
+    val rows = pipMetrics.size.coerceAtLeast(1)
+    val widthDp = 200
+    val heightDp = 16 + rows * 26
+    val ratio = (widthDp.toFloat() / heightDp).coerceIn(0.45f, 2.30f)
+    return Rational((ratio * 100).toInt(), 100)
   }
 
   override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
