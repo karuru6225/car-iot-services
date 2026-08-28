@@ -47,10 +47,10 @@ import info.karuru.cariot.ui.meter.MeterScreen
 import info.karuru.cariot.ui.obd.ObdScreen
 import info.karuru.cariot.ui.pip.PipContent
 import info.karuru.cariot.ui.theme.AppTheme
-import info.karuru.cariot.ui.theme.MinimalColorScheme
-import info.karuru.cariot.ui.theme.MinimalTypography
-import info.karuru.cariot.ui.theme.RacingColorScheme
-import info.karuru.cariot.ui.theme.RacingTypography
+import info.karuru.cariot.ui.theme.ShadcnDarkColorScheme
+import info.karuru.cariot.ui.theme.ShadcnLightColorScheme
+import info.karuru.cariot.ui.theme.ShadcnShapes
+import info.karuru.cariot.ui.theme.ShadcnTypography
 import info.karuru.cariot.ui.theme.ThemeStore
 import kotlinx.coroutines.launch
 
@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
   private var companionAssociated by mutableStateOf(false)
   private var backgroundLocationGranted by mutableStateOf(false)
   private lateinit var themeStore: ThemeStore
-  private var selectedTheme by mutableStateOf(AppTheme.RACING)
+  private var selectedTheme by mutableStateOf(AppTheme.DARK)
   private lateinit var pipConfigStore: PipConfigStore
   private var pipMetrics by mutableStateOf<List<ObdMetric>>(emptyList())
   private var isInPip by mutableStateOf(false)
@@ -102,15 +102,16 @@ class MainActivity : ComponentActivity() {
     }
 
     setContent {
+      // タイポグラフィ・角丸は shadcn の体系として2テーマ共通。差分は配色のみ。
       val colorScheme = when (selectedTheme) {
-        AppTheme.RACING -> RacingColorScheme
-        AppTheme.MINIMAL -> MinimalColorScheme
+        AppTheme.LIGHT -> ShadcnLightColorScheme
+        AppTheme.DARK -> ShadcnDarkColorScheme
       }
-      val typography = when (selectedTheme) {
-        AppTheme.RACING -> RacingTypography
-        AppTheme.MINIMAL -> MinimalTypography
-      }
-      MaterialTheme(colorScheme = colorScheme, typography = typography) {
+      MaterialTheme(
+          colorScheme = colorScheme,
+          typography = ShadcnTypography,
+          shapes = ShadcnShapes,
+      ) {
         if (isInPip) {
           PipContent(metrics = pipMetrics)
           return@MaterialTheme
