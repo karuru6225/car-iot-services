@@ -38,6 +38,13 @@ Admin コンソール（admin.html、admin グループユーザーのみ）
   → PUT /admin/shadow/{id}  → Shadow desired 更新（chg_start_v, chg_stop_v 等）
   → POST /admin/command/{id} → IoT Job 発行（ah_reset / charge_main_batt）
   → PUT /admin/groups/{id}  → Thing Group メンバーシップ変更
+
+Android アプリ（car_iot_android）— 上記 LTE 経路とは独立した第2の経路
+  ESP32-S3 → BLE GATT Notify（計測値・OBD-II）→ スマートフォン
+  → CarIotForegroundService が接続維持（アプリを閉じても受信継続）
+  → Room（pending_obd_reading）に蓄積
+  → CarIotUploadService が API Gateway へバッチ POST（Cognito JWT、Web 管理画面と同じ認証基盤）
+  ※ LTE 経路と違い車内でのリアルタイム表示が主目的。OBD-II データはこちらの経路のみ
 ```
 
 ## MQTT ペイロード形式
