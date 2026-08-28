@@ -257,3 +257,12 @@ val obdMetricMeta: Map<ObdMetric, ObdMetricMeta> = mapOf(
         },
     ),
 )
+
+// メーター画面の初期タイル構成（保存済み設定が無い場合のデフォルト、
+// mobile/lib/models/obd_metric.dartのdefaultMeterMetricsと同じ）。
+val defaultMeterMetrics: List<Pair<ObdMetric, GaugeStyle>> = listOf(
+    ObdMetric.RPM to GaugeStyle.CIRCULAR,
+    ObdMetric.SPEED_KMH to GaugeStyle.DIGITAL,
+    ObdMetric.COOLANT_C to GaugeStyle.BAR,
+    ObdMetric.ECU_VOLTAGE to GaugeStyle.SPARKLINE,
+)
