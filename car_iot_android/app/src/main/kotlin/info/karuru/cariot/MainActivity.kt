@@ -74,6 +74,8 @@ class MainActivity : ComponentActivity() {
   private lateinit var pipConfigStore: PipConfigStore
   private var pipMetrics by mutableStateOf<List<ObdMetric>>(emptyList())
   private var isInPip by mutableStateOf(false)
+  // 自分から画面遷移する場合にPiP自動突入を1回だけ抑止するフラグ(onUserLeaveHint参照)。
+  private var suppressPipOnLeave = false
 
   private val requestPermissions =
       registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -194,8 +196,17 @@ class MainActivity : ComponentActivity() {
 
   // ホームボタン等でアプリを離れる操作を検知し、BLE接続中のみ自動でPiPへ入る
   // （未接続時にPiPへ入っても表示するものが無いため）。
+  //
+  // onUserLeaveHint()はホーム/履歴キーだけでなく、アプリ自身が別のActivityを起動した
+  // ときにも呼ばれる。そのためサインイン（Custom Tabsでブラウザを開く）でもPiPに入り、
+  // ログイン画面にPiPウィンドウが重なってアカウント選択を妨げていた（実機で確認）。
+  // 自分から画面遷移する場合は suppressPipOnLeave を立てて抑止する。
   override fun onUserLeaveHint() {
     super.onUserLeaveHint()
+    if (suppressPipOnLeave) {
+      suppressPipOnLeave = false
+      return
+    }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
         CarIotState.connState.value == ConnState.CONNECTED
     ) {
@@ -240,6 +251,8 @@ class MainActivity : ComponentActivity() {
   }
 
   private fun signIn() {
+    // ブラウザを開くための画面遷移であってアプリを離れる操作ではないので、PiPは抑止する。
+    suppressPipOnLeave = true
     lifecycleScope.launch {
       authLoginFlow.startSignIn()
     }
