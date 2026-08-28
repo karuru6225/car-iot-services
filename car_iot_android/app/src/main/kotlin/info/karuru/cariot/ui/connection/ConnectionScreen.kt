@@ -6,13 +6,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import info.karuru.cariot.ble.ConnState
+import info.karuru.cariot.obd.ObdMetric
 import info.karuru.cariot.state.CarIotState
+import info.karuru.cariot.ui.pip.PipSettingsDialog
 import info.karuru.cariot.ui.theme.AppTheme
 
 // 「接続」タブ。サインイン/アウト・BLE接続状態・自動起動(CDM)・バックグラウンド位置情報の
@@ -29,7 +35,10 @@ fun ConnectionScreen(
     onRequestBackgroundLocation: () -> Unit,
     selectedTheme: AppTheme,
     onThemeChange: (AppTheme) -> Unit,
+    pipMetrics: List<ObdMetric>,
+    onPipMetricsChange: (List<ObdMetric>) -> Unit,
 ) {
+  var showPipDialog by remember { mutableStateOf(false) }
   val state by CarIotState.connState.collectAsStateWithLifecycle()
   val deviceName by CarIotState.deviceName.collectAsStateWithLifecycle()
   val userEmail by CarIotState.userEmail.collectAsStateWithLifecycle()
@@ -95,5 +104,20 @@ fun ConnectionScreen(
         )
       }
     }
+
+    Row(modifier = Modifier.padding(top = 24.dp)) {
+      TextButton(onClick = { showPipDialog = true }) { Text("PiP表示項目を設定") }
+    }
+  }
+
+  if (showPipDialog) {
+    PipSettingsDialog(
+        selected = pipMetrics,
+        onSave = {
+          onPipMetricsChange(it)
+          showPipDialog = false
+        },
+        onDismiss = { showPipDialog = false },
+    )
   }
 }

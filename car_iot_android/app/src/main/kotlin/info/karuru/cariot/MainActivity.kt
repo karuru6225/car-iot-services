@@ -32,6 +32,8 @@ import androidx.lifecycle.lifecycleScope
 import info.karuru.cariot.auth.AuthLoginFlow
 import info.karuru.cariot.auth.AuthStore
 import info.karuru.cariot.companion.CompanionDeviceHelper
+import info.karuru.cariot.meter.PipConfigStore
+import info.karuru.cariot.obd.ObdMetric
 import info.karuru.cariot.service.ACTION_CONNECT
 import info.karuru.cariot.service.ACTION_DISCONNECT
 import info.karuru.cariot.service.CarIotForegroundService
@@ -61,6 +63,8 @@ class MainActivity : ComponentActivity() {
   private var backgroundLocationGranted by mutableStateOf(false)
   private lateinit var themeStore: ThemeStore
   private var selectedTheme by mutableStateOf(AppTheme.RACING)
+  private lateinit var pipConfigStore: PipConfigStore
+  private var pipMetrics by mutableStateOf<List<ObdMetric>>(emptyList())
 
   private val requestPermissions =
       registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -81,6 +85,8 @@ class MainActivity : ComponentActivity() {
     backgroundLocationGranted = hasBackgroundLocationPermission()
     themeStore = ThemeStore(applicationContext)
     selectedTheme = themeStore.load()
+    pipConfigStore = PipConfigStore(applicationContext)
+    pipMetrics = pipConfigStore.load()
 
     // 起動時のセッション復元（mobile/lib/services/auth_service.dartのtryRestoreSession()相当、
     // 実際のトークンリフレッシュはアップロード時に行うのでここでは保存済みemailを表示するだけ）
@@ -143,6 +149,11 @@ class MainActivity : ComponentActivity() {
                     onThemeChange = { theme ->
                       selectedTheme = theme
                       themeStore.save(theme)
+                    },
+                    pipMetrics = pipMetrics,
+                    onPipMetricsChange = { metrics ->
+                      pipMetrics = metrics
+                      pipConfigStore.save(metrics)
                     },
                 )
                 1 -> BatteryScreen()
