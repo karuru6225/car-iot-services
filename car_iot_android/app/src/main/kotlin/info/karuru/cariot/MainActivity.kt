@@ -48,7 +48,9 @@ import info.karuru.cariot.ui.obd.ObdScreen
 import info.karuru.cariot.ui.pip.PipContent
 import info.karuru.cariot.ui.theme.AppTheme
 import info.karuru.cariot.ui.theme.MinimalColorScheme
+import info.karuru.cariot.ui.theme.MinimalTypography
 import info.karuru.cariot.ui.theme.RacingColorScheme
+import info.karuru.cariot.ui.theme.RacingTypography
 import info.karuru.cariot.ui.theme.ThemeStore
 import kotlinx.coroutines.launch
 
@@ -104,7 +106,11 @@ class MainActivity : ComponentActivity() {
         AppTheme.RACING -> RacingColorScheme
         AppTheme.MINIMAL -> MinimalColorScheme
       }
-      MaterialTheme(colorScheme = colorScheme) {
+      val typography = when (selectedTheme) {
+        AppTheme.RACING -> RacingTypography
+        AppTheme.MINIMAL -> MinimalTypography
+      }
+      MaterialTheme(colorScheme = colorScheme, typography = typography) {
         if (isInPip) {
           PipContent(metrics = pipMetrics)
           return@MaterialTheme
