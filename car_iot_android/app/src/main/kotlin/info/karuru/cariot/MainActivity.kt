@@ -40,6 +40,10 @@ import info.karuru.cariot.ui.battery.BatteryScreen
 import info.karuru.cariot.ui.connection.ConnectionScreen
 import info.karuru.cariot.ui.meter.MeterScreen
 import info.karuru.cariot.ui.obd.ObdScreen
+import info.karuru.cariot.ui.theme.AppTheme
+import info.karuru.cariot.ui.theme.MinimalColorScheme
+import info.karuru.cariot.ui.theme.RacingColorScheme
+import info.karuru.cariot.ui.theme.ThemeStore
 import kotlinx.coroutines.launch
 
 // BLE接続・OBD受信の実処理はCarIotForegroundServiceが担当し、ここは状態(CarIotState)の
@@ -55,6 +59,8 @@ class MainActivity : ComponentActivity() {
   private val companionHelper = CompanionDeviceHelper(this)
   private var companionAssociated by mutableStateOf(false)
   private var backgroundLocationGranted by mutableStateOf(false)
+  private lateinit var themeStore: ThemeStore
+  private var selectedTheme by mutableStateOf(AppTheme.RACING)
 
   private val requestPermissions =
       registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -73,6 +79,8 @@ class MainActivity : ComponentActivity() {
     authStore = AuthStore(applicationContext)
     companionAssociated = companionHelper.isAssociated()
     backgroundLocationGranted = hasBackgroundLocationPermission()
+    themeStore = ThemeStore(applicationContext)
+    selectedTheme = themeStore.load()
 
     // 起動時のセッション復元（mobile/lib/services/auth_service.dartのtryRestoreSession()相当、
     // 実際のトークンリフレッシュはアップロード時に行うのでここでは保存済みemailを表示するだけ）
@@ -81,7 +89,11 @@ class MainActivity : ComponentActivity() {
     }
 
     setContent {
-      MaterialTheme {
+      val colorScheme = when (selectedTheme) {
+        AppTheme.RACING -> RacingColorScheme
+        AppTheme.MINIMAL -> MinimalColorScheme
+      }
+      MaterialTheme(colorScheme = colorScheme) {
         Surface {
           var tabIndex by remember { mutableIntStateOf(0) }
           Scaffold(
@@ -126,6 +138,11 @@ class MainActivity : ComponentActivity() {
                     backgroundLocationGranted = backgroundLocationGranted,
                     onRequestBackgroundLocation = {
                       requestBackgroundLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    },
+                    selectedTheme = selectedTheme,
+                    onThemeChange = { theme ->
+                      selectedTheme = theme
+                      themeStore.save(theme)
                     },
                 )
                 1 -> BatteryScreen()
