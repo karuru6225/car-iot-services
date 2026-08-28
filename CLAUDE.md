@@ -33,6 +33,19 @@ adb devices                                                     # 接続確認
 確認する際は計測値が常に null になるため、ダミー値を一時注入する手法を使う（手順と
 戻し忘れ防止の運用は `car_iot_android/CONTEXT.md` 参照）。
 
+### adb 操作の鉄則: 対象アプリ以外に触らない
+
+`pm clear` / `pm uninstall` / `pm disable` / `am force-stop` など**アプリの状態を変える
+adb コマンドは、テスト対象の `info.karuru.cariot` にのみ実行する**。
+
+実機テスト中に Cognito のブラウザセッションだけ切るつもりで
+`adb shell pm clear com.android.chrome` を実行し、ユーザーの Chrome のログイン状態・
+Cookie・初期設定を全消去してしまった失敗がある。他アプリやシステムアプリに対して
+実行が必要に思えた場合は、**実行前に必ずユーザーへ確認する**。
+
+認証セッションを切りたいだけならアプリ側のサインアウトや Cognito Hosted UI の logout
+エンドポイントで足りる。ブラウザのデータ全消去は代替手段ですらない。
+
 ## esp32_iot_gateway ソース構造
 
 3層アーキテクチャ（詳細は `esp32_iot_gateway/ARCHITECTURE.md`）:
