@@ -127,6 +127,10 @@ class CarIotForegroundService : Service() {
   }
 
   private fun onObdReadingReceived(reading: ObdReading) {
+    // メーター画面のsparkline用履歴（Phase8、無応答フレームは積まない）。
+    if (reading.valid) {
+      CarIotState.pushObdHistory(reading)
+    }
     // 位置情報取得の成否とOBD受信は独立させる（権限未許可・GPS未捕捉時はlat/lon=nullのまま
     // 送信され、Lambda側もキーが無ければGPS未取得として扱う、docs/car_iot_android_plan.md）。
     val location = locationTracker.lastLocation
