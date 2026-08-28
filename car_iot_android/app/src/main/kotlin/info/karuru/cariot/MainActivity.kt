@@ -1,8 +1,10 @@
 package info.karuru.cariot
 
 import android.Manifest
+import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -31,6 +33,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import info.karuru.cariot.auth.AuthLoginFlow
 import info.karuru.cariot.auth.AuthStore
+import info.karuru.cariot.ble.ConnState
 import info.karuru.cariot.companion.CompanionDeviceHelper
 import info.karuru.cariot.meter.PipConfigStore
 import info.karuru.cariot.obd.ObdMetric
@@ -42,6 +45,7 @@ import info.karuru.cariot.ui.battery.BatteryScreen
 import info.karuru.cariot.ui.connection.ConnectionScreen
 import info.karuru.cariot.ui.meter.MeterScreen
 import info.karuru.cariot.ui.obd.ObdScreen
+import info.karuru.cariot.ui.pip.PipContent
 import info.karuru.cariot.ui.theme.AppTheme
 import info.karuru.cariot.ui.theme.MinimalColorScheme
 import info.karuru.cariot.ui.theme.RacingColorScheme
@@ -65,6 +69,7 @@ class MainActivity : ComponentActivity() {
   private var selectedTheme by mutableStateOf(AppTheme.RACING)
   private lateinit var pipConfigStore: PipConfigStore
   private var pipMetrics by mutableStateOf<List<ObdMetric>>(emptyList())
+  private var isInPip by mutableStateOf(false)
 
   private val requestPermissions =
       registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -100,6 +105,10 @@ class MainActivity : ComponentActivity() {
         AppTheme.MINIMAL -> MinimalColorScheme
       }
       MaterialTheme(colorScheme = colorScheme) {
+        if (isInPip) {
+          PipContent(metrics = pipMetrics)
+          return@MaterialTheme
+        }
         Surface {
           var tabIndex by remember { mutableIntStateOf(0) }
           Scaffold(
@@ -172,6 +181,22 @@ class MainActivity : ComponentActivity() {
     // システム設定アプリ経由で許可された場合(Android 11+の一般的なフロー)は
     // ActivityResultのコールバックを通らないため、画面復帰のたびに再チェックする。
     backgroundLocationGranted = hasBackgroundLocationPermission()
+  }
+
+  // ホームボタン等でアプリを離れる操作を検知し、BLE接続中のみ自動でPiPへ入る
+  // （未接続時にPiPへ入っても表示するものが無いため）。
+  override fun onUserLeaveHint() {
+    super.onUserLeaveHint()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        CarIotState.connState.value == ConnState.CONNECTED
+    ) {
+      enterPictureInPictureMode(PictureInPictureParams.Builder().build())
+    }
+  }
+
+  override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+    super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+    isInPip = isInPictureInPictureMode
   }
 
   private fun hasBackgroundLocationPermission(): Boolean {
