@@ -1,5 +1,8 @@
 package info.karuru.cariot.ui.meter
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,14 +39,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import info.karuru.cariot.meter.MeterSlot
+import info.karuru.cariot.meter.MeterSlotJson
 import info.karuru.cariot.obd.GaugeStyle
 import info.karuru.cariot.obd.ObdMetric
 import info.karuru.cariot.obd.obdMetricMeta
 
 // メーター項目の追加/削除/スタイル変更を行うボトムシート。mobile/lib/widgets/meter_settings_sheet.dart
-// のうち、ファイルインポート/エクスポート以外の編集UIを移植（インポート/エクスポートは別ステップ）。
+// を移植（JSON形式のインポート/エクスポートも含む）。
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeterSettingsSheet(
@@ -51,9 +56,46 @@ fun MeterSettingsSheet(
     onDismiss: () -> Unit,
     onSave: (List<MeterSlot>) -> Unit,
 ) {
+  val context = LocalContext.current
   var editedSlots by remember { mutableStateOf(slots) }
   var styleDialogIndex by remember { mutableStateOf<Int?>(null) }
   var showAddDialog by remember { mutableStateOf(false) }
+
+  // Android標準のSAF(Storage Access Framework)でファイル選択させる。新規ライブラリ不要
+  // （docs/car_iot_android_plan.md Phase8）。
+  val exportLauncher = rememberLauncherForActivityResult(
+      ActivityResultContracts.CreateDocument("application/json"),
+  ) { uri ->
+    if (uri == null) return@rememberLauncherForActivityResult
+    try {
+      context.contentResolver.openOutputStream(uri)?.use { out ->
+        out.write(MeterSlotJson.encode(editedSlots).toByteArray())
+      }
+      Toast.makeText(context, "エクスポートしました", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+      Toast.makeText(context, "エクスポートに失敗しました", Toast.LENGTH_SHORT).show()
+    }
+  }
+
+  val importLauncher = rememberLauncherForActivityResult(
+      ActivityResultContracts.OpenDocument(),
+  ) { uri ->
+    if (uri == null) return@rememberLauncherForActivityResult
+    val text = try {
+      context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+    } catch (e: Exception) {
+      null
+    }
+    // mobile/lib/services/meter_config_service.dartのimportFromJson()と同じく、
+    // load()と違いデフォルト値へはフォールバックせず失敗をそのまま伝える。
+    val imported = text?.let { MeterSlotJson.decode(it) }
+    if (imported != null) {
+      editedSlots = imported
+      Toast.makeText(context, "インポートしました", Toast.LENGTH_SHORT).show()
+    } else {
+      Toast.makeText(context, "インポートに失敗しました", Toast.LENGTH_SHORT).show()
+    }
+  }
 
   ModalBottomSheet(onDismissRequest = onDismiss) {
     Column(modifier = Modifier.padding(16.dp)) {
@@ -79,6 +121,11 @@ fun MeterSettingsSheet(
       }
 
       TextButton(onClick = { showAddDialog = true }) { Text("項目を追加") }
+
+      Row(modifier = Modifier.fillMaxWidth()) {
+        TextButton(onClick = { exportLauncher.launch("meter_config.json") }) { Text("エクスポート") }
+        TextButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) { Text("インポート") }
+      }
 
       Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         TextButton(onClick = onDismiss) { Text("キャンセル") }
