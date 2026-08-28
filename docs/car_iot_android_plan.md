@@ -308,3 +308,43 @@ Material3デフォルトのままとした。
 UI操作の座標（例:「接続」ボタンの中心）がずれた。`Scaffold`の`innerPadding`を挟んだことで
 コンテンツ開始位置が変わるため、レイアウトを変更した際は`adb shell uiautomator dump`で
 座標を都度取り直すこと（過去に使っていた固定座標を使い回さない）。
+
+---
+
+## Phase 8（後半）: メータータブ（実装内容）
+
+Flutter版`meter_screen.dart`/`meter_tile.dart`/`meter_settings_sheet.dart`/
+`meter_config_service.dart`を移植し、ゲージ4種の描画・項目の追加/削除/スタイル変更・
+設定の永続化・JSON形式のインポート/エクスポートまでフルスコープで実装した。
+
+- **OBD履歴**: `state/CarIotState.kt`に`obdHistory`（直近60件のリングバッファ、
+  `meta.min`/`max`範囲外の値はスキップ）を追加。`CarIotForegroundService`から
+  `reading.valid`の時だけ更新する。Room永続化とは別物でメモリ上にのみ保持する
+  （Phase5で確定していた設計方針どおり）
+- **ゲージ4種**: `ui/meter/GaugeWidgets.kt`。circular/barはMaterial3標準
+  `CircularProgressIndicator`/`LinearProgressIndicator`、digitalは`Text`、
+  sparklineは`Canvas`自作（`drawPath`で折れ線、履歴2点未満は数値表示にフォールバック）。
+  新規ライブラリ追加なしで実装できた
+- **`meter/MeterSlot.kt`**: JSON変換ロジック（`MeterSlotJson`）を永続化層から切り離し
+  TDDで実装。`MeterConfigStore`（`SharedPreferences`）・
+  `MeterSettingsSheet`のエクスポート/インポートの両方から共用する
+- **インポート/エクスポート**: Android標準のSAF
+  （`ActivityResultContracts.CreateDocument`/`OpenDocument`）で実装。
+  `file_picker`のような追加ライブラリは不要だった
+
+### エミュレータでの検証について
+
+このセッションでは実機が無く、Android Studio付属のエミュレータ(AVD、
+`emulator -avd <name>`で起動、`adb devices`で`emulator-5554`のように見える)で検証した。
+エミュレータは物理Bluetoothアダプタを持たずESP32とのBLE接続ができないため、
+**実際のOBDデータでゲージが更新されることは未確認**。確認できたのは以下:
+
+- アプリがクラッシュせず起動し、`reading == null`状態でメータータブが正しく空表示になる
+- 設定シートでの項目削除・スタイル変更・保存が画面に反映される
+- アプリ再起動後も設定（`SharedPreferences`）が保持される
+- JSON形式のエクスポート→インポートの往復が正しく動作する（SAFの標準ファイル
+  ピッカーが開き、保存したファイルを選択して読み込める）
+
+**次回実機接続時にやること**: fakeobd env等でOBDデータを実際に受信させ、4種の
+ゲージ（特にsparklineの折れ線描画とcircular/barのパーセント表示）が正しい値で
+更新されることを確認する。

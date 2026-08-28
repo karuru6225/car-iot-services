@@ -9,7 +9,7 @@
 
 **作業ブランチ**: `feat/car-iot-android`（mainには未マージ）。`mobile/`は当面残す（移植元参照用）。
 
-## 現在の状態（Phase 0〜7完了、Phase 8前半完了）
+## 現在の状態（Phase 0〜8完了）
 
 | Phase | 内容 | 状態 |
 |---|---|---|
@@ -21,10 +21,22 @@
 | 5 | アップロード（Room永続化、dataSyncスロットリング） | 完了（実機確認済み、下記参照） |
 | 6 | 位置情報 | 完了（実機確認済み、下記参照） |
 | 7 | CDM連携（BLE検知でのkilled状態からの自動起動） | 完了（実機確認済み、下記参照） |
-| 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | **前半完了**（タブ構成・バッテリー・OBDタブ実装済み。メーター＝ゲージ4種・設定永続化・インポート/エクスポートは未着手、下記参照） |
+| 8 | 残りのUI（バッテリー/OBD/メータータブ、ゲージ4種） | 完了（エミュレータ確認済み、下記参照。**実データでのゲージ表示は次回実機接続時の宿題**） |
 | 9 | 仕上げ | 未着手 |
 
-次にやるならPhase 8後半（メータータブ）から。設計は`docs/car_iot_android_plan.md`にまとめてある。
+次にやるならPhase 9（仕上げ: アイコン・署名設定等）から。設計は`docs/car_iot_android_plan.md`にまとめてある。
+
+### Phase 8後半実機検証メモ（エミュレータ使用、BLE接続なし）
+
+このセッションは実機が無く、Android StudioのAVD（`Medium_Phone_API_36.1`、
+`~/AppData/Local/Android/Sdk/emulator/emulator.exe -avd <name>`で起動）で検証した。
+エミュレータは物理Bluetoothアダプタを持たずESP32とのBLE接続ができないため、
+**実際のOBDデータでゲージ（特にsparklineの折れ線描画）が更新されることは未確認**。
+確認できたのは: アプリがクラッシュせず起動する、`reading == null`時の空表示、
+設定シートでの項目削除・スタイル変更・保存が画面に反映される、アプリ再起動後も
+`SharedPreferences`の設定が保持される、JSON形式のエクスポート→インポートの往復
+（SAF標準ファイルピッカー）が動作する、の5点。**次回実機接続時に、fakeobd env等で
+OBDデータを受信させてゲージの実データ表示を確認すること**。
 
 ### Phase 8前半実機検証メモ
 
@@ -99,12 +111,18 @@ info/karuru/cariot/
 │   └── BleConnectionManager.kt     # スキャン・接続・Notify購読、CarIotStateに直接書き込む
 ├── obd/
 │   ├── Crc8.kt / ObdReading.kt     # TDD済み（テストはapp/src/test/kotlin/...）
-│   └── ObdMetric.kt                # OBD全35項目のlabel/unit/decimals/min/max/valueOf（OBDタブ用）
+│   └── ObdMetric.kt                # OBD全35項目のlabel/unit/decimals/min/max/valueOf、GaugeStyle・defaultMeterMetrics
+├── meter/
+│   ├── MeterSlot.kt                # メーター1タイル(項目+ゲージ種別)、MeterSlotJson(TDD済み)
+│   └── MeterConfigStore.kt         # SharedPreferencesへの設定永続化
 ├── ui/
 │   ├── connection/ConnectionScreen.kt  # 接続タブ（サインイン/接続/自動起動/位置情報許可）
 │   ├── battery/BatteryScreen.kt        # バッテリータブ（vMain/curr/pwr/vSub）
 │   ├── obd/ObdScreen.kt                # OBDタブ（35項目グリッド表示）
-│   └── meter/MeterScreen.kt            # メータータブ（仮実装、Phase8後半で本実装予定）
+│   └── meter/
+│       ├── MeterScreen.kt          # メータータブ本体（2列グリッド、設定シート起動）
+│       ├── GaugeWidgets.kt         # ゲージ4種(circular/digital/bar/sparkline)のComposable
+│       └── MeterSettingsSheet.kt   # 項目追加/削除/スタイル変更＋JSON インポート/エクスポート
 ├── auth/
 │   ├── SecureStore.kt              # Android Keystore(AES/GCM)直接利用の暗号化ストレージ
 │   ├── AuthStore.kt                # トークン読み書き・リフレッシュ（Activity不要）
