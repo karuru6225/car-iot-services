@@ -120,6 +120,7 @@ AWS CLI の `--` オプションのパースエラーや presigned URL の生成
 - `esp32_iot_gateway/OBD_PID_WIKIPEDIA.md` — OBD-II PID対訳表（辞書的参照資料）
 - `esp32_iot_gateway/BLE_CERTIFICATION.md` — BLE技適・Bluetooth SIG QDID認証の調査ログ（個人利用のため現状維持と結論済み）
 - `esp32_iot_gateway/DUAL_CORE.md` — デュアルコア活用の実装計画（未実装・設計検討のみ）
+- `car_iot_android/DESIGN.md` — **UI を触る前に読む**。デザインの指針、3回作り直した失敗の記録、WCAG 検証とダミー値注入の作法
 - `car_iot_android/CONTEXT.md` — Android アプリの実装状態・実機検証メモ・UIデザインの設計判断
 - `docs/car_iot_android_plan.md` — Android アプリの全体設計・アーキテクチャ方針・フェーズ0〜9のロードマップ
 - `m5atom_power_adc/HARDWARE.md` — PCB 基板設計メモ（BOM・回路・PCB レイアウト）
