@@ -160,14 +160,32 @@ fun SparklineGauge(
       ValueRail(null, modifier = Modifier.padding(top = 10.dp))
       return@Column
     }
+    // 縦軸はメーターのレンジではなく「実際に来ているデータの範囲」に合わせる。
+    // 例えばECU電圧のレンジは10-16Vだが実走行の揺れは13.8-14.4V程度で、レンジ基準だと
+    // グラフ高さの1割しか使わず平坦な直線にしか見えない。ミニグラフは絶対値ではなく
+    // 変化の形を見るためのものなので、データ自身に合わせないと役に立たない
+    // （現在の絶対値はすぐ上に数値で出ている）。
+    //
+    // ただし完全にデータ任せにすると、値がほぼ一定のときに centi ボルト単位の
+    // センサーノイズが画面いっぱいの山脈に化ける。メーターレンジの2%を下限の振れ幅と
+    // して確保し、それ以下の変動は平坦なままにする。
+    val dataMin = history.min()
+    val dataMax = history.max()
+    val minSpan = (max - min) * 0.02f
+    val span = maxOf(dataMax - dataMin, minSpan).takeIf { it > 0f } ?: 1f
+    val center = (dataMin + dataMax) / 2f
+    val lo = center - span / 2f
+
     Canvas(modifier = Modifier.padding(top = 10.dp).fillMaxWidth().height(36.dp)) {
-      val range = (max - min).takeIf { it != 0f } ?: 1f
       val stepX = size.width / (history.size - 1)
+      // 線の太さぶん上下に余白を残さないと、最大値・最小値で線が枠から半分はみ出す。
+      val inset = 2.dp.toPx()
+      val usable = size.height - inset * 2f
       val path = Path()
       history.forEachIndexed { index, v ->
-        val normalized = ((v - min) / range).coerceIn(0f, 1f)
+        val normalized = ((v - lo) / span).coerceIn(0f, 1f)
         val x = index * stepX
-        val y = size.height * (1f - normalized)
+        val y = inset + usable * (1f - normalized)
         if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
       }
       drawPath(path, color = lineColor, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
