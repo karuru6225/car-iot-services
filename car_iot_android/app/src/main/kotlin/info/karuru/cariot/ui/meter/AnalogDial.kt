@@ -15,6 +15,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.cos
@@ -85,6 +87,10 @@ fun AnalogDial(
     max: Float,
     decimals: Int,
     modifier: Modifier = Modifier,
+    // 描画高さ。PiPではウィンドウの大きさに追従させたいので外から渡せるようにしている。
+    height: Dp = 124.dp,
+    // 目盛りの数字の基準サイズ。同上。
+    numeralSize: TextUnit = 9.sp,
 ) {
   val faceColor = MaterialTheme.colorScheme.surfaceContainerHighest
   val bezelColor = MaterialTheme.colorScheme.outline
@@ -100,7 +106,7 @@ fun AnalogDial(
   // 他の文字だけ大きくなって目盛りの数字が取り残される（WCAG 1.4.4 Resize text）。
   // ただし文字盤は直径が決まっているので、際限なく大きくすると目盛りを突き破る。
   // 半径の 16% を上限として頭打ちにする。
-  val numeralBaseSizePx = with(density) { 9.sp.toPx() }
+  val numeralBaseSizePx = with(density) { numeralSize.toPx() }
   val numeralPaint = remember(numeralColor) {
     Paint().apply {
       color = numeralColor.toArgb()
@@ -114,7 +120,7 @@ fun AnalogDial(
   // 実レンジより広い文字盤になることがある（実車の計器と同じ挙動）。
   val scale = remember(min, max) { niceScaleFor(min, max) }
 
-  Canvas(modifier = modifier.fillMaxWidth().height(124.dp)) {
+  Canvas(modifier = modifier.fillMaxWidth().height(height)) {
     val radius = minOf(size.width, size.height * 1.12f) / 2f * 0.90f
     // 毎描画で基準値から計算し直す。前回の値を minOf で潰すと縮小が累積して戻らなくなる。
     numeralPaint.textSize = minOf(numeralBaseSizePx, radius * 0.16f)
