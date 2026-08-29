@@ -32,17 +32,20 @@ private data class BatteryItem(
 
 // 「バッテリー」タブ。mobile/lib/widgets/meas_card.dartの4項目を移植。
 //
-// デザイン刷新(2026/08): 4項目を均等な2x2で並べるのをやめ、メイン電圧を全幅の
-// ヒーロータイルにした。運転中に見たいのは主にメインバッテリーの電圧で、
-// 4つが同格に並んでいると「どれを見ればいいか」が毎回判断になる。
+// デザイン刷新(2026/08): 4項目を均等な2x2で並べるのをやめ、1項目を全幅のヒーロータイルに
+// 上げた。4つが同格に並んでいると「どれを見ればいいか」が毎回判断になるため、
 // レイアウトそのものに優先順位を持たせている。
+//
+// ヒーローは電流。電圧は充放電のどちらでも似た値に留まるのに対し、電流は符号と大きさが
+// そのまま「今どれだけ充電/放電しているか」を表すので、一瞥して状況が分かる項目として
+// 電圧より適している。
 @Composable
 fun BatteryScreen() {
   val measurement by CarIotState.measurement.collectAsStateWithLifecycle()
 
-  val hero = BatteryItem("メイン電圧", measurement.vMain, "V", 3, min = 11f, max = 15f)
+  val hero = BatteryItem("電流", measurement.curr, "A", 3, min = -20f, max = 20f)
   val rest = listOf(
-      BatteryItem("電流", measurement.curr, "A", 3, min = -20f, max = 20f),
+      BatteryItem("メイン電圧", measurement.vMain, "V", 3, min = 11f, max = 15f),
       BatteryItem("電力", measurement.pwr, "W", 2, min = -250f, max = 250f),
       BatteryItem("サブ電圧", measurement.vSub, "V", 3, min = 11f, max = 15f),
   )
