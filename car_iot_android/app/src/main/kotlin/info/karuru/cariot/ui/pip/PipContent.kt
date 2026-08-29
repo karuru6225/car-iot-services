@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -91,11 +92,19 @@ private fun ColumnScope.TextRow(slot: MeterSlot, reading: ObdReading?, modifier:
       verticalAlignment = Alignment.CenterVertically,
   ) {
     PipText(meta.label, MaterialTheme.colorScheme.onSurfaceVariant)
-    val value = formatValue(meta, reading)
-    PipText(
-        if (meta.unit.isEmpty()) value else "$value ${meta.unit}",
-        MaterialTheme.colorScheme.onSurface,
-    )
+    // 単位はラベルと同じ扱い（薄色・小さめ）。数値だけが前景色で立つようにする。
+    Row(verticalAlignment = Alignment.Bottom) {
+      PipText(formatValue(meta, reading), MaterialTheme.colorScheme.onSurface)
+      if (meta.unit.isNotEmpty()) {
+        Text(
+            meta.unit,
+            fontSize = 9.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.padding(start = 3.dp, bottom = 2.dp),
+        )
+      }
+    }
   }
 }
 
@@ -111,22 +120,11 @@ private fun RowScope.GaugeCell(
   val valueText = formatValue(meta, reading)
 
   // ウィンドウの高さはいちばん背の高いセル（アナログダイヤル）に合わせて確保される。
-  // そのため数値だけ・細い線だけのセルは下が大きく余る。余りを持て余さないよう、
-  // 種別ごとに空いた分の使い方を変える:
-  //   ・デジタル数値 … 数値そのものを大きくする（他に描くものが無い）
-  //   ・ミニグラフ   … weight で余りを吸わせ、グラフを縦に伸ばす
-  //   ・バー         … 数値をやや大きくし、レールを上下中央に置く
-  val valueSize = when (slot.style) {
-    GaugeStyle.DIGITAL -> 26.sp
-    GaugeStyle.BAR -> 19.sp
-    else -> 15.sp
-  }
-
-  Column(
-      modifier = modifier,
-      horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.Center,
-  ) {
+  // そのため数値だけ・細い線だけのセルは下が大きく余る。種別ごとに余りの使い道を変える。
+  //
+  // 数値はどの種別でも AutoSizeValueText で出す。桁が枠に収まらないとき既定では黙って
+  // 切り落とされ「別の正しそうな値」に見えるため、縮めて全桁を残す（他画面と同じ作法）。
+  Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
     Text(
         meta.label,
         fontSize = 9.sp,
@@ -134,35 +132,92 @@ private fun RowScope.GaugeCell(
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
-    // 桁が枠に収まらないとき既定では黙って切り落とされ「別の正しそうな値」に見えるため、
-    // 縮小して全桁を残す（他画面と同じ作法）。
+
+    when (slot.style) {
+      // 数値だけのセルは、隣にゲージが並ぶ中で貧相に見えないよう、ゲージ1つ分の面積を
+      // 数値で占める。単位は数値の下へ逃がす——横に並べると数値が幅を分け合うことになり、
+      // 自動縮小が効いて結局小さくなるため。
+      GaugeStyle.DIGITAL -> Column(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.Center,
+      ) {
+        AutoSizeValueText(
+            text = valueText,
+            style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp),
+            color = MaterialTheme.colorScheme.onSurface,
+            minFontSize = 14.sp,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (meta.unit.isNotEmpty()) {
+          Text(
+              meta.unit,
+              fontSize = 9.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+          )
+        }
+      }
+
+      GaugeStyle.CIRCULAR -> {
+        PipValue(valueText, meta.unit, 15.sp)
+        AnalogDial(
+            value = value,
+            min = meta.min,
+            max = meta.max,
+            decimals = meta.decimals,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+      }
+
+      // レールは細いので上寄せだと宙に浮く。余りを数値の下に入れて下端付近まで送り、
+      // 隣のダイヤルの目盛りと同じくらいの高さに来るようにする。
+      GaugeStyle.BAR -> {
+        PipValue(valueText, meta.unit, 22.sp)
+        Spacer(modifier = Modifier.weight(1f))
+        ValueRail(
+            fraction = value?.let { ((it - meta.min) / (meta.max - meta.min)).coerceIn(0f, 1f) },
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+      }
+
+      GaugeStyle.SPARKLINE -> {
+        PipValue(valueText, meta.unit, 15.sp)
+        PipSparkline(
+            history = history,
+            metricMin = meta.min,
+            metricMax = meta.max,
+            modifier = Modifier.weight(1f).padding(top = 6.dp),
+        )
+      }
+    }
+  }
+}
+
+// 数値＋単位。単位はラベルと同じ扱い（9sp・薄色）にして、数値との落差を保つ。
+// 単位まで数値と同じ大きさ・同じ色で出すと、どれが読むべき数字か一瞬迷う。
+@Composable
+private fun PipValue(valueText: String, unit: String, fontSize: androidx.compose.ui.unit.TextUnit) {
+  Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.Center,
+      verticalAlignment = Alignment.Bottom,
+  ) {
     AutoSizeValueText(
-        text = if (meta.unit.isEmpty()) valueText else "$valueText ${meta.unit}",
-        style = MaterialTheme.typography.displaySmall.copy(fontSize = valueSize),
+        text = valueText,
+        style = MaterialTheme.typography.displaySmall.copy(fontSize = fontSize),
         color = MaterialTheme.colorScheme.onSurface,
         minFontSize = 11.sp,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.weight(1f, fill = false),
     )
-    when (slot.style) {
-      GaugeStyle.CIRCULAR -> AnalogDial(
-          value = value,
-          min = meta.min,
-          max = meta.max,
-          decimals = meta.decimals,
-          modifier = Modifier.padding(top = 2.dp),
+    if (unit.isNotEmpty()) {
+      Text(
+          unit,
+          fontSize = 9.sp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          modifier = Modifier.padding(start = 3.dp, bottom = 2.dp),
       )
-      GaugeStyle.BAR -> ValueRail(
-          fraction = value?.let { ((it - meta.min) / (meta.max - meta.min)).coerceIn(0f, 1f) },
-          modifier = Modifier.padding(top = 10.dp),
-      )
-      GaugeStyle.SPARKLINE -> PipSparkline(
-          history = history,
-          metricMin = meta.min,
-          metricMax = meta.max,
-          modifier = Modifier.weight(1f).padding(top = 6.dp),
-      )
-      // デジタル数値は上の数値だけで完結する。
-      GaugeStyle.DIGITAL -> Unit
     }
   }
 }
