@@ -6,4 +6,7 @@ package info.karuru.cariot.ui.theme
 enum class AppTheme(val label: String) {
   NIGHT("ナイト"),
   DAY("デイ"),
+  // 針と目盛りのあるアナログ計器として描くテーマ。NIGHT/DAYとの違いは配色だけでなく
+  // 表示形式そのもの（InstrumentStyle.ANALOG）にある。
+  GAUGE("メーター"),
 }

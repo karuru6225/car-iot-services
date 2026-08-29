@@ -56,6 +56,54 @@ val ClusterNightColorScheme: ColorScheme = darkColorScheme(
     scrim = Color(0xFF000000),
 )
 
+// 3つ目のテーマ。古典的なアナログ計器の語彙——黒い文字盤・白い刻印・赤い針——をそのまま採る。
+//
+// NIGHT も暗色だが、あちらは「暖色アンバーで照らされたガラス越しの表示」で、
+// こちらは「白で刻印された文字盤に赤い針が乗っている」。地色も NIGHT の青黒(#06080C)に対し
+// 中性の黒にして、ガラスではなく成形樹脂のパネルらしい質感に寄せている。
+// 配色以上に差が出るのは形の方で、GAUGE だけ InstrumentStyle.ANALOG になり
+// 主目盛り・副目盛り・目盛りの数字・針を持つダイヤルとして描かれる。
+//
+// primary を針の赤にしているため、塗りボタンや見出しもこの赤になる。計器の中で唯一
+// 彩度を持つ要素が針であるのと同じで、画面内で色が乗る箇所を1つに絞る狙い。
+val GaugePanelColorScheme: ColorScheme = darkColorScheme(
+    primary = Color(0xFFE0342B),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF3A0F0C),
+    onPrimaryContainer = Color(0xFFFFC9C4),
+    secondary = Color(0xFF83838A),
+    onSecondary = Color(0xFF0E0E10),
+    secondaryContainer = Color(0xFF26262A),
+    onSecondaryContainer = Color(0xFFEDEDE8),
+    tertiary = Color(0xFF83838A),
+    onTertiary = Color(0xFF0E0E10),
+    tertiaryContainer = Color(0xFF26262A),
+    onTertiaryContainer = Color(0xFFEDEDE8),
+    background = Color(0xFF0E0E10),
+    onBackground = Color(0xFFEDEDE8),
+    surface = Color(0xFF17171A),
+    onSurface = Color(0xFFEDEDE8),
+    surfaceVariant = Color(0xFF26262A),
+    // 目盛りの刻印に使う色。文字盤の白より一段落とし、数字が主張しすぎないようにする。
+    onSurfaceVariant = Color(0xFF83838A),
+    surfaceContainerLowest = Color(0xFF08080A),
+    surfaceContainerLow = Color(0xFF121214),
+    surfaceContainer = Color(0xFF17171A),
+    surfaceContainerHigh = Color(0xFF1E1E22),
+    surfaceContainerHighest = Color(0xFF26262A),
+    inverseSurface = Color(0xFFEDEDE8),
+    inverseOnSurface = Color(0xFF17171A),
+    inversePrimary = Color(0xFFE0342B),
+    error = Color(0xFFFF7A6E),
+    onError = Color(0xFF1A0300),
+    errorContainer = Color(0xFF3A0F0C),
+    onErrorContainer = Color(0xFFFFC9C4),
+    // ベゼル・目盛りの基準線。金属リングを思わせる中間グレー。
+    outline = Color(0xFF3A3A40),
+    outlineVariant = Color(0xFF212126),
+    scrim = Color(0xFF000000),
+)
+
 val ClusterDayColorScheme: ColorScheme = lightColorScheme(
     primary = Color(0xFFB26A00),
     onPrimary = Color(0xFFFFFFFF),

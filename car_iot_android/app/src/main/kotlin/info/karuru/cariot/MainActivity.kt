@@ -23,6 +23,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,9 @@ import info.karuru.cariot.ui.theme.ClusterNightColorScheme
 import info.karuru.cariot.ui.theme.ClusterDayColorScheme
 import info.karuru.cariot.ui.theme.ClusterShapes
 import info.karuru.cariot.ui.theme.ClusterTypography
+import info.karuru.cariot.ui.theme.GaugePanelColorScheme
+import info.karuru.cariot.ui.theme.InstrumentStyle
+import info.karuru.cariot.ui.theme.LocalInstrumentStyle
 import info.karuru.cariot.ui.theme.ThemeStore
 import kotlinx.coroutines.launch
 
@@ -110,15 +114,22 @@ class MainActivity : ComponentActivity() {
       val colorScheme = when (selectedTheme) {
         AppTheme.DAY -> ClusterDayColorScheme
         AppTheme.NIGHT -> ClusterNightColorScheme
+        AppTheme.GAUGE -> GaugePanelColorScheme
+      }
+      // GAUGEだけは配色に加えて計器の描かれ方も変わる（針と目盛りのアナログ表示）。
+      val instrumentStyle = when (selectedTheme) {
+        AppTheme.GAUGE -> InstrumentStyle.ANALOG
+        else -> InstrumentStyle.FLAT
       }
       MaterialTheme(
           colorScheme = colorScheme,
           typography = ClusterTypography,
           shapes = ClusterShapes,
       ) {
+        CompositionLocalProvider(LocalInstrumentStyle provides instrumentStyle) {
         if (isInPip) {
           PipContent(metrics = pipMetrics)
-          return@MaterialTheme
+          return@CompositionLocalProvider
         }
         Surface {
           var tabIndex by remember { mutableIntStateOf(0) }
@@ -182,6 +193,7 @@ class MainActivity : ComponentActivity() {
               }
             }
           }
+        }
         }
       }
     }

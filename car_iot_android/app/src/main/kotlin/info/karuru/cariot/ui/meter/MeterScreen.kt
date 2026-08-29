@@ -104,7 +104,7 @@ private fun MeterTile(slot: MeterSlot, reading: ObdReading?, history: List<Float
           modifier = Modifier.padding(bottom = 10.dp),
       )
       when (slot.style) {
-        GaugeStyle.CIRCULAR -> CircularGauge(value, meta.min, meta.max, valueText, meta.unit)
+        GaugeStyle.CIRCULAR -> CircularGauge(value, meta.min, meta.max, valueText, meta.unit, meta.decimals)
         GaugeStyle.DIGITAL -> DigitalGauge(valueText, meta.unit)
         GaugeStyle.BAR -> BarGauge(value, meta.min, meta.max, valueText, meta.unit)
         GaugeStyle.SPARKLINE -> SparklineGauge(history, meta.min, meta.max, valueText, meta.unit)

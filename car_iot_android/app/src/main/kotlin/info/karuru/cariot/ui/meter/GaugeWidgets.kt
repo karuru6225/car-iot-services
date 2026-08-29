@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import info.karuru.cariot.ui.theme.InstrumentStyle
+import info.karuru.cariot.ui.theme.LocalInstrumentStyle
 
 // mobile/lib/widgets/meter_tile.dartの4種ゲージ移植。
 //
@@ -45,8 +47,19 @@ fun CircularGauge(
     max: Float,
     valueText: String,
     unit: String,
+    decimals: Int = 0,
     modifier: Modifier = Modifier,
 ) {
+  // GAUGEテーマでは針と目盛りを持つアナログ計器として描く。数値はダイヤルの下に小さく
+  // 添えるだけにして、主役を文字盤に譲る。
+  if (LocalInstrumentStyle.current == InstrumentStyle.ANALOG) {
+    Column(modifier = modifier) {
+      AnalogDial(value = value, min = min, max = max, decimals = decimals)
+      ValueText(valueText, unit, fontSize = 18.sp)
+    }
+    return
+  }
+
   val fraction = fractionOrNull(value, min, max)
   val trackColor = MaterialTheme.colorScheme.outline
   val tickColor = MaterialTheme.colorScheme.primary
