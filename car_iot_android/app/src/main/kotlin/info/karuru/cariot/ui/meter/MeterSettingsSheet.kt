@@ -21,7 +21,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -188,6 +187,7 @@ private fun AddSlotDialog(onAdd: (ObdMetric, GaugeStyle) -> Unit, onDismiss: () 
   var selectedMetric by remember { mutableStateOf(ObdMetric.RPM) }
   var selectedStyle by remember { mutableStateOf(GaugeStyle.CIRCULAR) }
   var metricMenuExpanded by remember { mutableStateOf(false) }
+  var styleMenuExpanded by remember { mutableStateOf(false) }
 
   AlertDialog(
       onDismissRequest = onDismiss,
@@ -202,6 +202,7 @@ private fun AddSlotDialog(onAdd: (ObdMetric, GaugeStyle) -> Unit, onDismiss: () 
                 value = obdMetricMeta.getValue(selectedMetric).label,
                 onValueChange = {},
                 readOnly = true,
+                label = { Text("項目") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = metricMenuExpanded) },
                 modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable),
             )
@@ -221,14 +222,35 @@ private fun AddSlotDialog(onAdd: (ObdMetric, GaugeStyle) -> Unit, onDismiss: () 
             }
           }
           Spacer(Modifier.height(8.dp))
-          Row {
-            GaugeStyle.entries.forEach { style ->
-              FilterChip(
-                  selected = selectedStyle == style,
-                  onClick = { selectedStyle = style },
-                  label = { Text(style.label) },
-                  modifier = Modifier.padding(end = 4.dp),
-              )
+          // ゲージ種別もドロップダウンにする。以前は横1列のチップだったが、日本語ラベル
+          // (サーキュラー/デジタル数値/バー/ミニグラフ)がダイアログ幅を超え、最後の
+          // 「ミニグラフ」が画面外に切れて選べなくなっていた（実機で発覚）。
+          // 上の項目選択と形式を揃えることで、種別がいくつ増えても破綻しない。
+          ExposedDropdownMenuBox(
+              expanded = styleMenuExpanded,
+              onExpandedChange = { styleMenuExpanded = it },
+          ) {
+            TextField(
+                value = selectedStyle.label,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("ゲージ種別") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = styleMenuExpanded) },
+                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable),
+            )
+            ExposedDropdownMenu(
+                expanded = styleMenuExpanded,
+                onDismissRequest = { styleMenuExpanded = false },
+            ) {
+              GaugeStyle.entries.forEach { style ->
+                DropdownMenuItem(
+                    text = { Text(style.label) },
+                    onClick = {
+                      selectedStyle = style
+                      styleMenuExpanded = false
+                    },
+                )
+              }
             }
           }
         }

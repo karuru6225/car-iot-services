@@ -2,6 +2,9 @@ package info.karuru.cariot.ui.connection
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +39,7 @@ import info.karuru.cariot.ui.theme.ClusterButtonShape
 // デザイン(2026/08): 「接続」だけを塗りつぶしボタンにし、他は全てOutlinedButtonにして
 // プライマリアクションの視覚的階層を作る。セクションはOutlinedCardで区切り、見出しは
 // 字間を開けた極小テキストで計器盤のパネル区画名に似せている。
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ConnectionScreen(
     onConnect: () -> Unit,
@@ -119,14 +123,15 @@ fun ConnectionScreen(
     }
 
     SectionCard(title = "テーマ") {
-      Row {
+      // テーマが増えても横1列に詰め込まず折り返す（メーター設定のゲージ種別で
+      // 4つ目が画面外に切れて選べなくなった件と同じ壊れ方を避ける）。
+      FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         AppTheme.entries.forEach { theme ->
           FilterChip(
               selected = selectedTheme == theme,
               onClick = { onThemeChange(theme) },
               label = { Text(theme.label) },
               shape = ClusterButtonShape,
-              modifier = Modifier.padding(end = 8.dp),
           )
         }
       }
