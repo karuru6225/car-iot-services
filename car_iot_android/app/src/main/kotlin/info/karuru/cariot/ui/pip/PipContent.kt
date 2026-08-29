@@ -26,6 +26,7 @@ import info.karuru.cariot.obd.ObdReading
 import info.karuru.cariot.obd.obdMetricMeta
 import info.karuru.cariot.state.CarIotState
 import info.karuru.cariot.ui.meter.AnalogDial
+import info.karuru.cariot.ui.meter.AutoSizeValueText
 import info.karuru.cariot.ui.meter.ValueRail
 
 // PiP(ピクチャーインピクチャー)ウィンドウ専用の表示。
@@ -109,7 +110,23 @@ private fun RowScope.GaugeCell(
   val value = reading?.let { meta.valueOf(it) }
   val valueText = formatValue(meta, reading)
 
-  Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+  // ウィンドウの高さはいちばん背の高いセル（アナログダイヤル）に合わせて確保される。
+  // そのため数値だけ・細い線だけのセルは下が大きく余る。余りを持て余さないよう、
+  // 種別ごとに空いた分の使い方を変える:
+  //   ・デジタル数値 … 数値そのものを大きくする（他に描くものが無い）
+  //   ・ミニグラフ   … weight で余りを吸わせ、グラフを縦に伸ばす
+  //   ・バー         … 数値をやや大きくし、レールを上下中央に置く
+  val valueSize = when (slot.style) {
+    GaugeStyle.DIGITAL -> 26.sp
+    GaugeStyle.BAR -> 19.sp
+    else -> 15.sp
+  }
+
+  Column(
+      modifier = modifier,
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center,
+  ) {
     Text(
         meta.label,
         fontSize = 9.sp,
@@ -117,13 +134,15 @@ private fun RowScope.GaugeCell(
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
-    Text(
-        if (meta.unit.isEmpty()) valueText else "$valueText ${meta.unit}",
-        style = MaterialTheme.typography.displaySmall.copy(fontSize = 15.sp),
+    // 桁が枠に収まらないとき既定では黙って切り落とされ「別の正しそうな値」に見えるため、
+    // 縮小して全桁を残す（他画面と同じ作法）。
+    AutoSizeValueText(
+        text = if (meta.unit.isEmpty()) valueText else "$valueText ${meta.unit}",
+        style = MaterialTheme.typography.displaySmall.copy(fontSize = valueSize),
         color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 1,
+        minFontSize = 11.sp,
+        modifier = Modifier.fillMaxWidth(),
     )
-    // ゲージ本体。PiPでは高さが取れないので、メータータブより一段小さく描く。
     when (slot.style) {
       GaugeStyle.CIRCULAR -> AnalogDial(
           value = value,
@@ -134,10 +153,15 @@ private fun RowScope.GaugeCell(
       )
       GaugeStyle.BAR -> ValueRail(
           fraction = value?.let { ((it - meta.min) / (meta.max - meta.min)).coerceIn(0f, 1f) },
-          modifier = Modifier.padding(top = 6.dp),
+          modifier = Modifier.padding(top = 10.dp),
       )
-      GaugeStyle.SPARKLINE -> PipSparkline(history, modifier = Modifier.padding(top = 6.dp))
-      // DIGITAL は上の数値だけで完結する（ゲージを含む構成の中に混ざった場合）。
+      GaugeStyle.SPARKLINE -> PipSparkline(
+          history = history,
+          metricMin = meta.min,
+          metricMax = meta.max,
+          modifier = Modifier.weight(1f).padding(top = 6.dp),
+      )
+      // デジタル数値は上の数値だけで完結する。
       GaugeStyle.DIGITAL -> Unit
     }
   }
