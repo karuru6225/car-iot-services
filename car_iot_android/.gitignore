@@ -13,3 +13,8 @@ key.properties
 
 # terraform outputの実値が入る（mobile/lib/config.dartと同じ運用、AppConfig.kt.exampleを参照）
 AppConfig.kt
+
+# 実機/エミュレータ検証時の一時ファイル（スクショ・uiautomatorのdump・pullしたDBやS3の抽出物）。
+# GPS座標などの実データを含みうるのでコミットしない。
+scratch_*
+*.apk
