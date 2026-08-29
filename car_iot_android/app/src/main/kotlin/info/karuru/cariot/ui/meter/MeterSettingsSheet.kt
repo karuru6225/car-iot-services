@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -28,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -96,8 +98,12 @@ fun MeterSettingsSheet(
     }
   }
 
-  ModalBottomSheet(onDismissRequest = onDismiss) {
-    Column(modifier = Modifier.padding(16.dp)) {
+  // 既定のModalBottomSheetは半開き(partially expanded)で出るため、内容が折り返しより
+  // 下に伸びて「保存」が初期表示で見切れていた。最初から全開で開く。
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+  ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
       Text("メーター項目を編集", style = MaterialTheme.typography.titleMedium)
       Spacer(Modifier.height(8.dp))
 
