@@ -39,7 +39,8 @@ import info.karuru.cariot.auth.AuthStore
 import info.karuru.cariot.ble.ConnState
 import info.karuru.cariot.companion.CompanionDeviceHelper
 import info.karuru.cariot.meter.PipConfigStore
-import info.karuru.cariot.obd.ObdMetric
+import info.karuru.cariot.meter.MeterSlot
+import info.karuru.cariot.obd.GaugeStyle
 import info.karuru.cariot.service.ACTION_CONNECT
 import info.karuru.cariot.service.ACTION_DISCONNECT
 import info.karuru.cariot.service.CarIotForegroundService
@@ -76,7 +77,7 @@ class MainActivity : ComponentActivity() {
   private lateinit var themeStore: ThemeStore
   private var selectedTheme by mutableStateOf(AppTheme.NIGHT)
   private lateinit var pipConfigStore: PipConfigStore
-  private var pipMetrics by mutableStateOf<List<ObdMetric>>(emptyList())
+  private var pipSlots by mutableStateOf<List<MeterSlot>>(emptyList())
   private var isInPip by mutableStateOf(false)
   // 自分から画面遷移する場合にPiP自動突入を1回だけ抑止するフラグ(onUserLeaveHint参照)。
   private var suppressPipOnLeave = false
@@ -101,7 +102,7 @@ class MainActivity : ComponentActivity() {
     themeStore = ThemeStore(applicationContext)
     selectedTheme = themeStore.load()
     pipConfigStore = PipConfigStore(applicationContext)
-    pipMetrics = pipConfigStore.load()
+    pipSlots = pipConfigStore.load()
 
     // 起動時のセッション復元（mobile/lib/services/auth_service.dartのtryRestoreSession()相当、
     // 実際のトークンリフレッシュはアップロード時に行うのでここでは保存済みemailを表示するだけ）
@@ -128,7 +129,7 @@ class MainActivity : ComponentActivity() {
       ) {
         CompositionLocalProvider(LocalInstrumentStyle provides instrumentStyle) {
         if (isInPip) {
-          PipContent(metrics = pipMetrics)
+          PipContent(slots = pipSlots)
           return@CompositionLocalProvider
         }
         Surface {
@@ -181,10 +182,10 @@ class MainActivity : ComponentActivity() {
                       selectedTheme = theme
                       themeStore.save(theme)
                     },
-                    pipMetrics = pipMetrics,
-                    onPipMetricsChange = { metrics ->
-                      pipMetrics = metrics
-                      pipConfigStore.save(metrics)
+                    pipSlots = pipSlots,
+                    onPipSlotsChange = { slots ->
+                      pipSlots = slots
+                      pipConfigStore.save(slots)
                     },
                 )
                 1 -> BatteryScreen()
@@ -233,9 +234,20 @@ class MainActivity : ComponentActivity() {
   // AndroidのPiPは比率を約0.418〜2.39の範囲しか受け付けず、範囲外を渡すと例外になるため
   // 内側にクランプする。
   private fun pipAspectRatio(): Rational {
-    val rows = pipMetrics.size.coerceAtLeast(1)
-    val widthDp = 200
-    val heightDp = 16 + rows * 26
+    val count = pipSlots.size.coerceAtLeast(1)
+    // PipContent と同じ判定。全部デジタル数値なら縦積み、ゲージを含むなら横並びになるので、
+    // 必要な縦横比が変わる（片方だけ直すとウィンドウと中身がズレる）。
+    val allDigital = pipSlots.isEmpty() || pipSlots.all { it.style == GaugeStyle.DIGITAL }
+    val widthDp: Int
+    val heightDp: Int
+    if (allDigital) {
+      widthDp = 200
+      heightDp = 16 + count * 26
+    } else {
+      // 各セルにラベル・数値・ゲージが縦に積まれるぶん高さが要る。
+      widthDp = 92 * count
+      heightDp = 116
+    }
     val ratio = (widthDp.toFloat() / heightDp).coerceIn(0.45f, 2.30f)
     return Rational((ratio * 100).toInt(), 100)
   }

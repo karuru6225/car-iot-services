@@ -27,9 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import info.karuru.cariot.ble.ConnState
-import info.karuru.cariot.obd.ObdMetric
+import info.karuru.cariot.meter.MeterSlot
 import info.karuru.cariot.state.CarIotState
-import info.karuru.cariot.ui.pip.PipSettingsDialog
+import info.karuru.cariot.ui.meter.MeterSettingsSheet
 import info.karuru.cariot.ui.theme.AppTheme
 import info.karuru.cariot.ui.theme.ClusterButtonShape
 
@@ -52,8 +52,8 @@ fun ConnectionScreen(
     onRequestBackgroundLocation: () -> Unit,
     selectedTheme: AppTheme,
     onThemeChange: (AppTheme) -> Unit,
-    pipMetrics: List<ObdMetric>,
-    onPipMetricsChange: (List<ObdMetric>) -> Unit,
+    pipSlots: List<MeterSlot>,
+    onPipSlotsChange: (List<MeterSlot>) -> Unit,
 ) {
   var showPipDialog by remember { mutableStateOf(false) }
   val state by CarIotState.connState.collectAsStateWithLifecycle()
@@ -145,13 +145,16 @@ fun ConnectionScreen(
   }
 
   if (showPipDialog) {
-    PipSettingsDialog(
-        selected = pipMetrics,
+    // メータータブと同じ編集シートを流用する。項目とゲージ種別の選び方が同一になるので、
+    // PiP専用の操作を覚え直さなくて済む。
+    MeterSettingsSheet(
+        slots = pipSlots,
+        onDismiss = { showPipDialog = false },
         onSave = {
-          onPipMetricsChange(it)
+          onPipSlotsChange(it)
           showPipDialog = false
         },
-        onDismiss = { showPipDialog = false },
+        title = "PiP表示項目を編集",
     )
   }
 }

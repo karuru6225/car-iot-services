@@ -56,6 +56,8 @@ fun MeterSettingsSheet(
     slots: List<MeterSlot>,
     onDismiss: () -> Unit,
     onSave: (List<MeterSlot>) -> Unit,
+    // PiPの表示項目編集にも同じシートを使うため、見出しだけ差し替えられるようにしている。
+    title: String = "メーター項目を編集",
 ) {
   val context = LocalContext.current
   var editedSlots by remember { mutableStateOf(slots) }
@@ -104,7 +106,7 @@ fun MeterSettingsSheet(
 
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
     Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
-      Text("メーター項目を編集", style = MaterialTheme.typography.titleMedium)
+      Text(title, style = MaterialTheme.typography.titleMedium)
       Spacer(Modifier.height(8.dp))
 
       LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
