@@ -12,6 +12,9 @@ import androidx.compose.ui.unit.dp
 import info.karuru.cariot.ui.theme.InstrumentStyle
 import info.karuru.cariot.ui.theme.LocalInstrumentStyle
 
+// （AutoSizeValueText はこのファイル末尾に定義。計測値の表示を全画面で統一するため
+// meter パッケージに置いている。）
+
 // このデザインの署名要素。数値の下に敷く極細のレールで、レンジ内のどこに今の値が
 // あるかだけを示す。
 //

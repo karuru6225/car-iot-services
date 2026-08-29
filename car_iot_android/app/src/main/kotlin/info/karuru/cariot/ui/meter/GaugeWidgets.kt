@@ -102,10 +102,11 @@ fun CircularGauge(
 @Composable
 private fun ValueText(valueText: String, unit: String, fontSize: androidx.compose.ui.unit.TextUnit = 26.sp) {
   Row(verticalAlignment = Alignment.Bottom) {
-    Text(
-        valueText,
+    AutoSizeValueText(
+        text = valueText,
         style = MaterialTheme.typography.displaySmall.copy(fontSize = fontSize),
-        maxLines = 1,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.weight(1f, fill = false),
     )
     if (unit.isNotEmpty()) {
       Text(

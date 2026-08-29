@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import info.karuru.cariot.state.CarIotState
+import info.karuru.cariot.ui.meter.AutoSizeValueText
 import info.karuru.cariot.ui.meter.ValueRail
 
 private data class BatteryItem(
@@ -99,14 +100,16 @@ private fun HeroTile(item: BatteryItem) {
           modifier = Modifier.padding(top = 6.dp),
           verticalAlignment = androidx.compose.ui.Alignment.Bottom,
       ) {
-        Text(
-            item.formatted(),
+        AutoSizeValueText(
+            text = item.formatted(),
             style = MaterialTheme.typography.displayLarge,
             color = if (item.value != null) {
               MaterialTheme.colorScheme.onSurface
             } else {
               MaterialTheme.colorScheme.outline
             },
+            minFontSize = 28.sp,
+            modifier = Modifier.weight(1f, fill = false),
         )
         // 単位は数値に従属する情報なので、極小・くすませてベースラインに沿わせる。
         Text(
@@ -130,17 +133,16 @@ private fun SmallTile(item: BatteryItem, modifier: Modifier = Modifier) {
           style = MaterialTheme.typography.labelSmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
-      // 3列に並ぶぶん1タイルが狭く、小数3桁("12.604")は26spだと折り返してしまう。
-      // 桁を削ると計測値としての情報が落ちるので、文字サイズ側を詰めて1行に収める。
-      Text(
-          item.formatted(),
+      // 3列に並ぶぶん1タイルが狭い。端末のフォントサイズを大きくすると固定サイズでは
+      // 末尾の桁が黙って切れる("12.604"→"12.60")ため、枠に収まるまで縮めて全桁を残す。
+      AutoSizeValueText(
+          text = item.formatted(),
           style = MaterialTheme.typography.displaySmall.copy(fontSize = 20.sp),
           color = if (item.value != null) {
             MaterialTheme.colorScheme.onSurface
           } else {
             MaterialTheme.colorScheme.outline
           },
-          maxLines = 1,
           modifier = Modifier.padding(top = 6.dp),
       )
       ValueRail(item.fraction(), modifier = Modifier.padding(top = 6.dp))

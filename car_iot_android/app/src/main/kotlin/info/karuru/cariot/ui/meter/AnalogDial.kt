@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -94,10 +95,15 @@ fun AnalogDial(
   val density = LocalDensity.current
   // 目盛りの数字用。Canvas に直接描くので android.graphics.Paint を使う。
   // 毎フレーム生成しないよう remember しておく。
-  val numeralPaint = remember(numeralColor, density) {
+  //
+  // 文字サイズは必ず sp で指定する。dp で指定すると端末のフォントサイズ設定を無視し、
+  // 他の文字だけ大きくなって目盛りの数字が取り残される（WCAG 1.4.4 Resize text）。
+  // ただし文字盤は直径が決まっているので、際限なく大きくすると目盛りを突き破る。
+  // 半径の 16% を上限として頭打ちにする。
+  val numeralBaseSizePx = with(density) { 9.sp.toPx() }
+  val numeralPaint = remember(numeralColor) {
     Paint().apply {
       color = numeralColor.toArgb()
-      textSize = with(density) { 8.dp.toPx() }
       textAlign = Paint.Align.CENTER
       isAntiAlias = true
       typeface = android.graphics.Typeface.MONOSPACE
@@ -110,6 +116,8 @@ fun AnalogDial(
 
   Canvas(modifier = modifier.fillMaxWidth().height(124.dp)) {
     val radius = minOf(size.width, size.height * 1.12f) / 2f * 0.90f
+    // 毎描画で基準値から計算し直す。前回の値を minOf で潰すと縮小が累積して戻らなくなる。
+    numeralPaint.textSize = minOf(numeralBaseSizePx, radius * 0.16f)
     // 下が欠けた図形なので、見た目の重心を合わせるためやや上寄りに中心を置く。
     val center = Offset(size.width / 2f, size.height * 0.52f)
 
