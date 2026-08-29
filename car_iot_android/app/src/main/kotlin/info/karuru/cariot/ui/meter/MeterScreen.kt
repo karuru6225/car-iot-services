@@ -53,7 +53,7 @@ fun MeterScreen() {
       Text(
           "メーター",
           style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.primary,
+          color = MaterialTheme.colorScheme.onSurface,
       )
       TextButton(onClick = { showSettings = true }) { Text("項目を編集") }
     }

@@ -57,9 +57,12 @@ fun PipContent(metrics: List<ObdMetric>) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
           PipCell(meta.label, MaterialTheme.colorScheme.onSurfaceVariant)
+          // 値はアクセント色ではなく前景色。他画面と同じ扱いに揃えるのと、
+          // アクセント色を小さな文字に使うとテーマによってはWCAGの4.5:1を満たせないため
+          // （小さいPiPウィンドウでこそ読めないと困る）。
           PipCell(
               if (meta.unit.isEmpty()) valueText else "$valueText ${meta.unit}",
-              MaterialTheme.colorScheme.primary,
+              MaterialTheme.colorScheme.onSurface,
           )
         }
       }

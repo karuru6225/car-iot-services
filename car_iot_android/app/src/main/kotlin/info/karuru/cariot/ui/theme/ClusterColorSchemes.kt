@@ -38,7 +38,7 @@ val ClusterNightColorScheme: ColorScheme = darkColorScheme(
     surface = Color(0xFF0E1218),
     onSurface = Color(0xFFE8EDF4),
     surfaceVariant = Color(0xFF1C2430),
-    onSurfaceVariant = Color(0xFF6B7789),
+    onSurfaceVariant = Color(0xFF838EA0),
     surfaceContainerLowest = Color(0xFF04060A),
     surfaceContainerLow = Color(0xFF0A0E14),
     surfaceContainer = Color(0xFF0E1218),
@@ -51,7 +51,7 @@ val ClusterNightColorScheme: ColorScheme = darkColorScheme(
     onError = Color(0xFF1A0300),
     errorContainer = Color(0xFF3D0F0A),
     onErrorContainer = Color(0xFFFFB4A8),
-    outline = Color(0xFF232C3A),
+    outline = Color(0xFF5C6E8C),
     outlineVariant = Color(0xFF161D27),
     scrim = Color(0xFF000000),
 )
@@ -64,10 +64,10 @@ val ClusterNightColorScheme: ColorScheme = darkColorScheme(
 // 配色以上に差が出るのは形の方で、GAUGE だけ InstrumentStyle.ANALOG になり
 // 主目盛り・副目盛り・目盛りの数字・針を持つダイヤルとして描かれる。
 //
-// primary を針の赤にしているため、塗りボタンや見出しもこの赤になる。計器の中で唯一
-// 彩度を持つ要素が針であるのと同じで、画面内で色が乗る箇所を1つに絞る狙い。
+// primary は針の赤。アクセント色は図形(針・ティック)と塗りボタンに限定し、文字には
+// 使わない(WCAGの文字コントラストを満たせないのと、実際の計器も刻印は白で色が乗るのは針だけ)。
 val GaugePanelColorScheme: ColorScheme = darkColorScheme(
-    primary = Color(0xFFE0342B),
+    primary = Color(0xFFDF2E25),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFF3A0F0C),
     onPrimaryContainer = Color(0xFFFFC9C4),
@@ -85,7 +85,7 @@ val GaugePanelColorScheme: ColorScheme = darkColorScheme(
     onSurface = Color(0xFFEDEDE8),
     surfaceVariant = Color(0xFF26262A),
     // 目盛りの刻印に使う色。文字盤の白より一段落とし、数字が主張しすぎないようにする。
-    onSurfaceVariant = Color(0xFF83838A),
+    onSurfaceVariant = Color(0xFF91919A),
     surfaceContainerLowest = Color(0xFF08080A),
     surfaceContainerLow = Color(0xFF121214),
     surfaceContainer = Color(0xFF17171A),
@@ -99,13 +99,13 @@ val GaugePanelColorScheme: ColorScheme = darkColorScheme(
     errorContainer = Color(0xFF3A0F0C),
     onErrorContainer = Color(0xFFFFC9C4),
     // ベゼル・目盛りの基準線。金属リングを思わせる中間グレー。
-    outline = Color(0xFF3A3A40),
+    outline = Color(0xFF74747F),
     outlineVariant = Color(0xFF212126),
     scrim = Color(0xFF000000),
 )
 
 val ClusterDayColorScheme: ColorScheme = lightColorScheme(
-    primary = Color(0xFFB26A00),
+    primary = Color(0xFFA96500),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFE3BC),
     onPrimaryContainer = Color(0xFF2A1900),
@@ -122,7 +122,7 @@ val ClusterDayColorScheme: ColorScheme = lightColorScheme(
     surface = Color(0xFFF8FAFB),
     onSurface = Color(0xFF0E1218),
     surfaceVariant = Color(0xFFDDE3EA),
-    onSurfaceVariant = Color(0xFF5B6675),
+    onSurfaceVariant = Color(0xFF545F6D),
     surfaceContainerLowest = Color(0xFFFFFFFF),
     surfaceContainerLow = Color(0xFFF8FAFB),
     surfaceContainer = Color(0xFFE7EBF0),
@@ -135,7 +135,10 @@ val ClusterDayColorScheme: ColorScheme = lightColorScheme(
     onError = Color(0xFFFFFFFF),
     errorContainer = Color(0xFFFFDAD5),
     onErrorContainer = Color(0xFF410100),
-    outline = Color(0xFFC8D0DA),
+    // ValueRail の軌道線に使う色。明るい地の上で 1dp のヘアラインを引くため、
+    // 薄いグレー(#C8D0DA)では沈んで見えなかったので濃い灰色まで落としている。
+    // outlineVariant(カードの枠)は薄いままにして、線の主張は計器側だけに寄せる。
+    outline = Color(0xFF6B7480),
     outlineVariant = Color(0xFFDDE3EA),
     scrim = Color(0xFF000000),
 )

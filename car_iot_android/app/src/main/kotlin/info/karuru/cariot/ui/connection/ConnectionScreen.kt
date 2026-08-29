@@ -35,7 +35,7 @@ import info.karuru.cariot.ui.theme.ClusterButtonShape
 //
 // デザイン(2026/08): 「接続」だけを塗りつぶしボタンにし、他は全てOutlinedButtonにして
 // プライマリアクションの視覚的階層を作る。セクションはOutlinedCardで区切り、見出しは
-// 字間を開けた極小テキスト＋アンバーで計器盤のパネル区画名に似せている。
+// 字間を開けた極小テキストで計器盤のパネル区画名に似せている。
 @Composable
 fun ConnectionScreen(
     onConnect: () -> Unit,
@@ -159,10 +159,13 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
           .padding(vertical = 8.dp),
   ) {
     Column(modifier = Modifier.padding(16.dp)) {
+      // 見出しはアクセント色ではなく前景色。小さな文字(11sp)にアクセント色を使うと
+      // テーマによってWCAGの4.5:1を満たせず、実際の計器も区画名は白で刻印されていて
+      // 色が乗るのは針の方であるため。
       Text(
           title,
           style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.primary,
+          color = MaterialTheme.colorScheme.onSurface,
       )
       Spacer(Modifier.height(12.dp))
       content()
