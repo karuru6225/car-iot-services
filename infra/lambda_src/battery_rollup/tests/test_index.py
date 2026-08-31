@@ -15,9 +15,18 @@ def _put_raw_object(dt: datetime, device_id="dev1"):
     _s3().put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=b"{}")
 
 
-def _read_rollup_file(date_str: str):
-    obj = _s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=f"rollup/{date_str}.json")
-    return json.loads(obj["Body"].read())
+def _read_rollup_file(date_str: str, battery_rollup):
+    """NDJSON（改行区切り、1行1レコード）として読み、dictのリストで返す。"""
+    obj = _s3().get_object(Bucket=os.environ["S3_BUCKET"], Key=battery_rollup._rollup_key(date_str))
+    body = obj["Body"].read().decode("utf-8")
+    return [json.loads(line) for line in body.splitlines() if line.strip()]
+
+
+# ---- 0. rollup/のS3キーは year=/month= でパーティション分割される ----
+
+
+def test_rollup_key_partitions_by_year_and_month(battery_rollup):
+    assert battery_rollup._rollup_key("2026-05-15") == "rollup/year=2026/month=05/2026-05-15.json"
 
 
 # ---- 1. JST変換の境界値 ----
@@ -147,7 +156,7 @@ def test_write_rollup_file_overwrites_not_appends(battery_rollup):
     battery_rollup._write_rollup_file("2026-08-29", [{"date": "2026-08-29", "device_id": "dev1", "charge_ah": 1.0, "discharge_ah": 0.0, "row_count": 1}])
     battery_rollup._write_rollup_file("2026-08-29", [{"date": "2026-08-29", "device_id": "dev1", "charge_ah": 9.0, "discharge_ah": 0.0, "row_count": 2}])
 
-    content = _read_rollup_file("2026-08-29")
+    content = _read_rollup_file("2026-08-29", battery_rollup)
     assert len(content) == 1
     assert content[0]["charge_ah"] == 9.0
 
@@ -160,7 +169,7 @@ def test_write_rollup_file_writes_empty_array_and_advances_watermark(battery_rol
 
     battery_rollup._write_rollup_file("2026-08-29", [])
 
-    assert _read_rollup_file("2026-08-29") == []
+    assert _read_rollup_file("2026-08-29", battery_rollup) == []
     assert battery_rollup._latest_rollup_date() == "2026-08-29"
 
 
@@ -170,7 +179,7 @@ def test_handler_writes_empty_file_when_athena_returns_no_rows(battery_rollup, m
     result = battery_rollup.handler({"since": "2026-08-29", "until": "2026-08-29"}, None)
 
     assert result == {"target_dates": ["2026-08-29"], "written": 1}
-    assert _read_rollup_file("2026-08-29") == []
+    assert _read_rollup_file("2026-08-29", battery_rollup) == []
 
 
 # ---- 11. ah が null の行が混在してもクラッシュしない（SQL側のWHERE句で防ぐ） ----
