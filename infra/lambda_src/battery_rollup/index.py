@@ -4,9 +4,16 @@
 目的: Web管理画面（web/index.html）とは別に、別リポジトリclaude-opentelemetryの
 Grafanaダッシュボードが「当日・前日を除く長期間」の日次充電量・放電量を常時表示
 ダッシュボードで見られるようにする。Grafanaの自動リフレッシュのたびにAthenaへ
-オンデマンドで長期間クエリを投げるとコストが期間の伸びに比例して増えるため、
+オンデマンドで生データを長期間クエリするとコストが期間の伸びに比例して増えるため、
 このLambdaが毎日1回、日次集計を先に計算してS3のrollup/prefixへ書き出しておき、
-Grafana（Infinityデータソース経由）はそれを読むだけにする。
+Grafanaは既存のAthenaデータソース経由で集計済みの小さいデータだけを読む
+（Grafana Infinityデータソース経由も検討したが「1クエリ=1URL取得」で複数日を
+束ねて取得できず長期間グラフに向かないため不採用）。
+
+S3キー構造: rollup/year=YYYY/month=MM/YYYY-MM-DD.json（NDJSON、1行1レコード）。
+raw/と同じ発想でyear/monthのHiveパーティション分割をしておき、Grafana側のAthena
+クエリが表示期間に応じてパーティションを絞り込めるようにする
+（infra/battery_rollup.tfのGlueテーブル定義、パーティションプロジェクション使用）。
 
 充放電量の算出方法:
   `ah`（esp32_iot_gateway/src/device/ina228.cpp の readCharge()）はINA228の40bit
@@ -156,9 +163,10 @@ _ROLLUP_FILENAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.json$")
 
 
 def _latest_rollup_date() -> str | None:
-    """rollup/配下のファイル名(YYYY-MM-DD.json)から最新の日付を返す。1日1ファイルの
-    フラット構造なのでtrip_analysisのような年月ドリルダウンは不要、全件走査で足りる
-    （1年でも365件程度）。"""
+    """rollup/配下のファイル名(YYYY-MM-DD.json、year=/month=パーティション配下にある)から
+    最新の日付を返す。ファイル名は常にフルパスの末尾コンポーネントとして取り出せるため、
+    パーティションの有無に関わらずtrip_analysisのような年月ドリルダウンは不要、全件走査で
+    足りる（1年でも365件程度）。"""
     dates = []
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=ROLLUP_PREFIX):
@@ -324,15 +332,28 @@ def _group_by_date(rows: list[dict], target_dates: list[str]) -> dict[str, list[
     return grouped
 
 
+def _rollup_key(date_str: str) -> str:
+    """rollup/year=YYYY/month=MM/YYYY-MM-DD.json 形式のS3キーを返す。年月でHive
+    パーティション分割することで、Grafana側のAthenaクエリが表示期間に応じて
+    year/monthパーティションを絞り込める（infra/battery_rollup.tfのGlueテーブル定義参照）。"""
+    year, month, _day = date_str.split("-")
+    return f"{ROLLUP_PREFIX}year={year}/month={month}/{date_str}.json"
+
+
 def _write_rollup_file(date_str: str, records: list[dict]) -> None:
-    """rollup/{date_str}.jsonへ書き込む。常に全体を上書きする（追記ではない）。
-    結果0件でも空配列で書く。書かないと_latest_rollup_date()ベースのwatermarkが
-    前進せず、データ欠損日を毎回再クエリし続けてしまうため。"""
-    key = f"{ROLLUP_PREFIX}{date_str}.json"
+    """rollup/year=/month=/{date_str}.jsonへ書き込む。常に全体を上書きする（追記ではない）。
+    結果0件でも空ファイルを書く。書かないと_latest_rollup_date()ベースのwatermarkが
+    前進せず、データ欠損日を毎回再クエリし続けてしまうため。
+
+    NDJSON（改行区切り、1行1レコード）で書く。sensor_dataテーブルと同じ
+    org.openx.data.jsonserde.JsonSerDeでAthenaから読むため、JSON配列一括では
+    パースできない（1オブジェクト=1行が前提）。"""
+    key = _rollup_key(date_str)
+    body = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records)
     s3.put_object(
         Bucket=S3_BUCKET,
         Key=key,
-        Body=json.dumps(records, ensure_ascii=False).encode("utf-8"),
+        Body=body.encode("utf-8"),
         ContentType="application/json",
     )
 
