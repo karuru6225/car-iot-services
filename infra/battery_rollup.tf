@@ -33,7 +33,7 @@ resource "aws_lambda_function" "battery_rollup" {
       ATHENA_DATABASE         = local.glue_db_name
       ATHENA_WORKGROUP        = aws_athena_workgroup.main.name
       REPROCESS_LOOKBACK_DAYS = "3"
-      MAX_DAYS_PER_RUN        = "30"
+      MAX_DAYS_PER_RUN        = "90"
       ATHENA_POLL_TIMEOUT_SEC = "600"
     }
   }
