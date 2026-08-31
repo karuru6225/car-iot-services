@@ -33,7 +33,7 @@ resource "aws_lambda_function" "battery_rollup" {
       ATHENA_DATABASE         = local.glue_db_name
       ATHENA_WORKGROUP        = aws_athena_workgroup.main.name
       REPROCESS_LOOKBACK_DAYS = "3"
-      MAX_DAYS_PER_RUN        = "30"
+      MAX_DAYS_PER_RUN        = "90"
       ATHENA_POLL_TIMEOUT_SEC = "600"
     }
   }
@@ -132,6 +132,14 @@ resource "aws_iam_role_policy" "lambda_battery_rollup" {
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject"]
         Resource = "${aws_s3_bucket.main.arn}/rollup/*"
+      },
+      {
+        # Athenaがクエリ結果の出力先バケットを検証する際に使う（prefix条件では
+        # 効かないバケットレベルのアクション。query/index.py・trip_analysis/index.pyの
+        # IAMポリシーにも同様に付与されている）
+        Effect   = "Allow"
+        Action   = "s3:GetBucketLocation"
+        Resource = aws_s3_bucket.main.arn
       },
     ]
   })
