@@ -141,9 +141,10 @@ resource "aws_lambda_permission" "iot_shadow_guard" {
 # 差分計算とノイズ除外（shadow_guardと同じSCHEMA検証）はLambda側で行う。
 
 resource "aws_iot_topic_rule" "shadow_events" {
-  name        = replace("${var.project}_shadow_events", "-", "_")
-  enabled     = true
-  sql         = "SELECT topic(3) AS device_id, current.state.reported AS reported, previous.state.reported AS previous_reported, current.timestamp AS ts FROM '$aws/things/+/shadow/update/documents' WHERE isUndefined(current.state.reported) = false"
+  name    = replace("${var.project}_shadow_events", "-", "_")
+  enabled = true
+  # timestampはcurrent/previousと同じ階層のトップレベルフィールド（current.timestampは存在せず常にNULLになる）
+  sql         = "SELECT topic(3) AS device_id, current.state.reported AS reported, previous.state.reported AS previous_reported, timestamp AS ts FROM '$aws/things/+/shadow/update/documents' WHERE isUndefined(current.state.reported) = false"
   sql_version = "2016-03-23"
 
   lambda {
