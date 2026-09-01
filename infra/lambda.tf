@@ -1,13 +1,14 @@
 locals {
-  ingest_src_dir       = "${path.module}/lambda_src/ingest"
-  query_src_dir        = "${path.module}/lambda_src/query"
-  delete_src_dir       = "${path.module}/lambda_src/delete"
-  labels_src_dir       = "${path.module}/lambda_src/labels"
-  status_src_dir       = "${path.module}/lambda_src/status"
-  admin_src_dir        = "${path.module}/lambda_src/admin"
-  shadow_guard_src_dir = "${path.module}/lambda_src/shadow_guard"
-  compact_src_dir      = "${path.module}/lambda_src/compact"
-  build_dir            = "${path.module}/.build"
+  ingest_src_dir        = "${path.module}/lambda_src/ingest"
+  query_src_dir         = "${path.module}/lambda_src/query"
+  delete_src_dir        = "${path.module}/lambda_src/delete"
+  labels_src_dir        = "${path.module}/lambda_src/labels"
+  status_src_dir        = "${path.module}/lambda_src/status"
+  admin_src_dir         = "${path.module}/lambda_src/admin"
+  shadow_guard_src_dir  = "${path.module}/lambda_src/shadow_guard"
+  shadow_events_src_dir = "${path.module}/lambda_src/shadow_events"
+  compact_src_dir       = "${path.module}/lambda_src/compact"
+  build_dir             = "${path.module}/.build"
 }
 
 data "archive_file" "ingest" {
@@ -56,6 +57,13 @@ data "archive_file" "shadow_guard" {
   type        = "zip"
   source_dir  = local.shadow_guard_src_dir
   output_path = "${local.build_dir}/shadow_guard.zip"
+  excludes    = ["tests"]
+}
+
+data "archive_file" "shadow_events" {
+  type        = "zip"
+  source_dir  = local.shadow_events_src_dir
+  output_path = "${local.build_dir}/shadow_events.zip"
   excludes    = ["tests"]
 }
 
@@ -176,6 +184,24 @@ resource "aws_lambda_function" "shadow_guard" {
   environment {
     variables = {
       IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
+    }
+  }
+}
+
+# ─── shadow_events Lambda（Shadow update/documents → reported変化イベントをDynamoDBに記録） ───
+
+resource "aws_lambda_function" "shadow_events" {
+  function_name    = "${var.project}-shadow-events"
+  filename         = data.archive_file.shadow_events.output_path
+  source_code_hash = data.archive_file.shadow_events.output_base64sha256
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  role             = aws_iam_role.lambda_shadow_events.arn
+  timeout          = 10
+
+  environment {
+    variables = {
+      TABLE_NAME = aws_dynamodb_table.shadow_events.name
     }
   }
 }

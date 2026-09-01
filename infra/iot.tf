@@ -136,3 +136,33 @@ resource "aws_lambda_permission" "iot_shadow_guard" {
   source_arn    = aws_iot_topic_rule.shadow_guard.arn
 }
 
+# ─── Topic Rule: shadow/update/documents → Lambda shadow_events ──────────────
+# reportedフィールドが実際に変化した更新でのみ発行される予約トピック。current/previousの
+# 差分計算とノイズ除外（shadow_guardと同じSCHEMA検証）はLambda側で行う。
+
+resource "aws_iot_topic_rule" "shadow_events" {
+  name        = replace("${var.project}_shadow_events", "-", "_")
+  enabled     = true
+  sql         = "SELECT topic(3) AS device_id, current.state.reported AS reported, previous.state.reported AS previous_reported, current.timestamp AS ts FROM '$aws/things/+/shadow/update/documents' WHERE isUndefined(current.state.reported) = false"
+  sql_version = "2016-03-23"
+
+  lambda {
+    function_arn = aws_lambda_function.shadow_events.arn
+  }
+
+  error_action {
+    cloudwatch_logs {
+      log_group_name = "/aws/iot/${var.project}/rule-errors"
+      role_arn       = aws_iam_role.iot_error_logs.arn
+    }
+  }
+}
+
+resource "aws_lambda_permission" "iot_shadow_events" {
+  statement_id  = "AllowIoTInvokeShadowEvents"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.shadow_events.function_name
+  principal     = "iot.amazonaws.com"
+  source_arn    = aws_iot_topic_rule.shadow_events.arn
+}
+
