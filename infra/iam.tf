@@ -226,6 +226,32 @@ resource "aws_iam_role_policy" "lambda_shadow_guard" {
   })
 }
 
+# ─── Lambda shadow_events 実行ロール（Shadow変化イベントのDynamoDB書き込み） ───
+
+resource "aws_iam_role" "lambda_shadow_events" {
+  name               = "${var.project}-lambda-shadow-events"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "lambda_shadow_events" {
+  role = aws_iam_role.lambda_shadow_events.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "dynamodb:PutItem"
+        Resource = aws_dynamodb_table.shadow_events.arn
+      },
+    ]
+  })
+}
+
 # ─── Lambda delete 実行ロール（S3 削除 + Athena クエリ） ─────────────────────
 
 resource "aws_iam_role" "lambda_delete" {
