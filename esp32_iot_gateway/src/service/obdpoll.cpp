@@ -223,6 +223,65 @@ OBDReading obdPoll()
   return r;
 }
 
+OBDReading obdPollFake()
+{
+  // CAN未接続時のobdPoll()は5グループ×50msタイムアウト+UDS1回×50ms≒300ms程度かかる。
+  // obdPollFake()が即座に返るとonTick()内の処理時間特性が本番と乖離するため、
+  // 同程度delayして他処理（BLE Notify送信・OLED更新等）とのタイミング条件を近づける。
+  delay(300);
+
+  OBDReading r = {};
+  r.ts = time(nullptr);
+  r.valid = true;
+  r.validMask = 0xFFFFFFFFu;
+
+  // アイドリング相当の固定値。obdComputeDerived()が算出するboostKpa/fuelRateLphは
+  // mapKpa/baroKpa/mafGsから自動計算されるためここでは設定しない。
+  // rpmだけランダムに揺らす（car_iot_android側のミニグラフ・スパークライン表示の
+  // 動作確認用、値が完全固定だと折れ線に変化が出ないため）。
+  r.rpm = 800 + random(-50, 51);
+  r.speedKmh = 0;
+  r.loadPct = 20;
+  r.mapKpa = 35;
+  r.baroKpa = 101;
+  r.throttlePct = 15;
+  r.timingDeg = 12.5f;
+  r.ecuVoltage = 14.2f;
+  r.mafGs = 3.5f;
+  r.coolantC = 85;
+
+  r.stftPct = 2.5f;
+  r.ltftPct = -1.0f;
+  r.o2B1s2V = 0.65f;
+  r.o2B1s2TrimPct = 0.0f;
+  r.engineRunTimeSec = 120;
+  r.milDistanceKm = 0;
+  r.o2S1Ratio = 1.0f;
+  r.o2S1Voltage = 2.5f;
+  r.evapPurgePct = 0;
+  r.warmupsSinceCleared = 5;
+  r.distanceSinceClearedKm = 250;
+  r.catalystTempC = 450.0f;
+  r.absoluteLoadPct = 25.0f;
+  r.commandedAfr = 1.0f;
+  r.throttleBPct = 15;
+  r.accelPedalDPct = 10;
+  r.accelPedalEPct = 10;
+  r.fuelType = 1; // ガソリン
+  r.secO2TrimStPct = 0.0f;
+  r.secO2TrimLtPct = 0.0f;
+
+  r.iatC = 25;
+  r.iat2C = 26;
+
+  r.atfTempC = 60;
+  r.atfTempValid = true;
+
+  obdComputeDerived(r); // boostKpa/fuelRateLphを算出
+  logger.printf("[OBD] obdPollFake(): ダミーデータ送出中（DEBUG_FAKE_OBD_DATA有効）\n");
+  return r;
+}
+
 bool obdCheckCanAlive()
 {
   uint8_t pid = 0x0C;

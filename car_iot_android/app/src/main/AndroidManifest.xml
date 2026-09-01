@@ -1,0 +1,107 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- CDM経由でCarIotForegroundService(location型FGS)をバックグラウンドから起動するには
+         ACCESS_BACKGROUND_LOCATIONが必須(無いと起動時にクラッシュすることを実機で確認済み、
+         Phase7)。ACCESS_FINE_LOCATION許可後に別途リクエストする必要がある。 -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- CDM: 端末プレゼンス監視（BLEアドバタイズ検知でアプリをkilled状態から起動するため）と、
+         そのコールバック内からForeground Serviceを起動するための権限（Phase7）。 -->
+    <uses-permission android:name="android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE"/>
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND"/>
+    <uses-feature
+        android:name="android.software.companion_device_setup"
+        android:required="false"/>
+
+    <application
+        android:label="car_iot"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- PiP(ピクチャーインピクチャー)対応。configChangesを指定しないとPiPウィンドウの
+             サイズ変更のたびにActivityが再生成され、CarIotState購読等の状態が失われる。 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:supportsPictureInPicture="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- location型を追加することで、このServiceが稼働中はACCESS_BACKGROUND_LOCATIONなしで
+             位置情報取得が許可される(Android公式仕様、Phase6 docs/car_iot_android_plan.md)。 -->
+        <service
+            android:name=".service.CarIotForegroundService"
+            android:foregroundServiceType="connectedDevice|location"
+            android:exported="false"/>
+
+        <!-- OBDアップロードのみを担当するdataSync型Service。CarIotForegroundServiceからの
+             定期起動・尾流しトリガーで一時的に起動され、送信完了後すぐstopSelf()する
+             (常駐しない、docs/car_iot_android_plan.md)。 -->
+        <service
+            android:name=".service.CarIotUploadService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false"/>
+
+        <!-- CompanionDeviceManagerからESP32のBLEアドバタイズ検知イベントを受け取るService。
+             アプリがkilled状態でもシステムがバインドし起動する（Phase7、CDM連携）。 -->
+        <service
+            android:name=".companion.CarIotCompanionService"
+            android:permission="android.permission.BIND_COMPANION_DEVICE_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.companion.CompanionDeviceService"/>
+            </intent-filter>
+        </service>
+
+        <!-- Cognito Hosted UI(Google連携)からのリダイレクトを受ける。AuthorizationManagementActivity
+             への中継のみ行う薄いActivity（infra/mobile_auth.tfのcallback_urlsと完全一致させること）。 -->
+        <activity
+            android:name=".auth.OAuthRedirectActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="info.karuru.cariotmobile" android:host="oauthredirect"/>
+            </intent-filter>
+        </activity>
+
+        <!-- AuthLoginFlow.startSignIn()のcompletedIntentで指定される、実際のトークン交換を
+             行うActivity。外部からの起動は想定しないためexported=false。 -->
+        <activity
+            android:name=".auth.AuthResultActivity"
+            android:exported="false"/>
+
+        <!-- net.openid:appauthが内蔵するRedirectUriReceiverActivityは使わず自作の
+             OAuthRedirectActivityに一本化する（appAuthRedirectSchemeを設定しないため、
+             このライブラリ内蔵Activityはマージ時に除去する必要がある）。 -->
+        <activity
+            android:name="net.openid.appauth.RedirectUriReceiverActivity"
+            tools:node="remove"/>
+
+        <!-- net.openid:appauthのAuthorizationManagementActivityはデフォルトlaunchMode=singleTaskだが、
+             Android 14+でシステムがActivityを再生成してしまい認可フローが中断される既知の問題がある
+             （実機でCustom Tabsが一瞬開いてすぐ閉じる症状として発覚。
+             https://github.com/openid/AppAuth-Android/issues/977 の回避策を適用）。 -->
+        <activity
+            android:name="net.openid.appauth.AuthorizationManagementActivity"
+            android:exported="false"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboard|keyboardHidden"
+            android:launchMode="singleInstance"
+            tools:replace="android:launchMode"/>
+    </application>
+
+</manifest>

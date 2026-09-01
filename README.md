@@ -21,6 +21,14 @@ ESP32-S3-MINI-1 (esp32_iot_gateway)
   │                                         ↑ CloudFront → Web 管理画面 (index.html)
   ├── Shadow (desired/delta) → デバイス設定変更（充電制御・閾値等）
   └── IoT Jobs → OTA ファームウェア更新
+
+  ※ 上記の LTE 経路とは別に、車内では BLE でスマートフォンと直接つながる
+ESP32-S3-MINI-1 (esp32_iot_gateway)
+        ↓ BLE (GATT Notify: 計測値・OBD-II)
+  Android アプリ (car_iot_android)
+    ├── Foreground Service で接続維持（アプリを閉じても受信継続）
+    ├── Room に蓄積 → API Gateway へバッチアップロード（Cognito 認証）
+    └── バッテリー / OBD / メーター表示・PiP
 ```
 
 ## ハードウェア
@@ -47,6 +55,8 @@ car-iot-services/
 │   ├── RELEASE.md         リリース手順（GitHub Actions）
 │   └── MENU.md            OLED メニュー仕様
 ├── m5atom_iot_gateway/    M5Atom S3 ゲートウェイ（段階的廃止予定）
+├── car_iot_android/       Android アプリ（Kotlin + Jetpack Compose、BLE 受信・アップロード）
+│   └── CONTEXT.md         実装状態・実機検証メモ・UIデザインの設計判断
 ├── m5atom_power_adc/      新 PCB KiCad プロジェクト（電源・ADC・リレー・ESP32-S3 直付け）
 │   ├── HARDWARE.md        ハードウェア設計仕様（BOM・回路・PCB レイアウト）
 │   ├── CIRCUIT.md         回路設計仕様書

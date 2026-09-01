@@ -8,6 +8,12 @@
 │  m5atom_iot_gateway/  (M5Atom S3 — 段階的廃止予定)           │
 │    電圧測定・BLE スキャン → MQTT over TLS → AWS IoT Core      │
 ├──────────────────────────────────────────────────────────────┤
+│  モバイル層                                                    │
+│  car_iot_android/     (Kotlin + Jetpack Compose)             │
+│    esp32_iot_gateway と BLE 接続 → 計測値・OBD-II を受信      │
+│    Foreground Service で常時接続、Room に蓄積                 │
+│    → API GW へバッチアップロード（Cognito 認証、LTE 経路とは別）│
+├──────────────────────────────────────────────────────────────┤
 │  クラウド層 (infra/)                                           │
 │  IoT Core → Topic Rule → Lambda(ingest) → S3(data)           │
 │  IoT Jobs → OTA 更新ジョブ管理 → デバイス → S3(firmware) DL  │

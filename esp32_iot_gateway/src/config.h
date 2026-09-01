@@ -8,6 +8,12 @@
 // 全層から参照可能なここで定義する（コメントアウトがデフォルト）
 // #define DEBUG_SKIP_NETWORK
 
+// デバッグ用: 有効にするとCANバス未接続（OBD2ケーブル未接続）でもobdPoll()の代わりに
+// obdPollFake()（service/obdpoll.cpp）が固定値のダミーOBDReadingをvalid=trueで返す。
+// car_iot_android側のOBDパーサー（有効データでのパース）を実車無しで検証するためのもの。
+// platformio.iniの`esp32-s3-devkitc-1-v1-develop-fakeobd`envのbuild_flagsで有効化する
+// （このファイルを直接編集する必要はない）。
+
 #ifndef GIT_HASH
 #define GIT_HASH "00000000"
 #endif

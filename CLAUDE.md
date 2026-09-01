@@ -1,7 +1,8 @@
 # car-iot-services プロジェクト設定
 
 車載 IoT システム。ESP32-S3 + SIM7080G で車載バッテリー電圧・電流・電力を AWS IoT Core に送信し、Web 管理画面でグラフ表示する。
-アクティブな開発は `esp32_iot_gateway`。`m5atom_iot_gateway` は段階的廃止予定。
+併せて `car_iot_android`（Kotlin + Jetpack Compose）が BLE で ESP32 と直接つながり、計測値・OBD-II データを車内で表示しつつクラウドへアップロードする。
+アクティブな開発は `esp32_iot_gateway` と `car_iot_android`。`m5atom_iot_gateway` は段階的廃止予定。
 
 ## よく使うコマンド
 
@@ -19,6 +20,31 @@ PlatformIO 操作は `/pio` スキルを使う（ビルド・書き込み・シ�
 ```
 
 上記コマンドは `esp32_iot_gateway/` ディレクトリで実行する。
+
+Android アプリ（`car_iot_android/` ディレクトリで実行）:
+
+```bash
+./gradlew.bat assembleDebug testDebugUnitTest --console=plain   # ビルド＋ユニットテスト
+./gradlew.bat installDebug --console=plain                      # 実機/エミュレータへインストール
+adb devices                                                     # 接続確認
+```
+
+エミュレータは物理 Bluetooth アダプタを持たず ESP32 と BLE 接続できない。UI の見た目を
+確認する際は計測値が常に null になるため、ダミー値を一時注入する手法を使う（手順と
+戻し忘れ防止の運用は `car_iot_android/CONTEXT.md` 参照）。
+
+### adb 操作の鉄則: 対象アプリ以外に触らない
+
+`pm clear` / `pm uninstall` / `pm disable` / `am force-stop` など**アプリの状態を変える
+adb コマンドは、テスト対象の `info.karuru.cariot` にのみ実行する**。
+
+実機テスト中に Cognito のブラウザセッションだけ切るつもりで
+`adb shell pm clear com.android.chrome` を実行し、ユーザーの Chrome のログイン状態・
+Cookie・初期設定を全消去してしまった失敗がある。他アプリやシステムアプリに対して
+実行が必要に思えた場合は、**実行前に必ずユーザーへ確認する**。
+
+認証セッションを切りたいだけならアプリ側のサインアウトや Cognito Hosted UI の logout
+エンドポイントで足りる。ブラウザのデータ全消去は代替手段ですらない。
 
 ## esp32_iot_gateway ソース構造
 
@@ -94,6 +120,9 @@ AWS CLI の `--` オプションのパースエラーや presigned URL の生成
 - `esp32_iot_gateway/OBD_PID_WIKIPEDIA.md` — OBD-II PID対訳表（辞書的参照資料）
 - `esp32_iot_gateway/BLE_CERTIFICATION.md` — BLE技適・Bluetooth SIG QDID認証の調査ログ（個人利用のため現状維持と結論済み）
 - `esp32_iot_gateway/DUAL_CORE.md` — デュアルコア活用の実装計画（未実装・設計検討のみ）
+- `car_iot_android/DESIGN.md` — **UI を触る前に読む**。デザインの指針、3回作り直した失敗の記録、WCAG 検証とダミー値注入の作法
+- `car_iot_android/CONTEXT.md` — Android アプリの実装状態・実機検証メモ・UIデザインの設計判断
+- `docs/car_iot_android_plan.md` — Android アプリの全体設計・アーキテクチャ方針・フェーズ0〜9のロードマップ
 - `m5atom_power_adc/HARDWARE.md` — PCB 基板設計メモ（BOM・回路・PCB レイアウト）
 - `m5atom_power_adc/CIRCUIT.md` — 回路仕様（ブロック図・接続図）
 - `test_board/HARDWARE.md` — 電源保持回路・理想ダイオード検証用テストボードの設計メモ
