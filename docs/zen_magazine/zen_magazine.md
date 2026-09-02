@@ -10,6 +10,7 @@
 | ② | [zen_magazine_02_firmware.md](zen_magazine_02_firmware.md) | ファームウェア開発編（計測サイクル・OTA・GHA・キッティング） |
 | ③ | [zen_magazine_03_infra.md](zen_magazine_03_infra.md) | インフラ編（Terraform / Grafana / Shadow / 運用） |
 | ④ | [zen_magazine_04_compaction.md](zen_magazine_04_compaction.md) | S3 コンパクション編（小ファイル問題とコスト削減。単独記事） |
+| ⑤ | [zen_magazine_05_certs.md](zen_magazine_05_certs.md) | 証明書編（GHA で配りたかったら量産の常識にたどり着いた。単独記事） |
 
 画像は配置前。末尾に元の順序で置いてある（各編へ振り分けは執筆時に）。
 
