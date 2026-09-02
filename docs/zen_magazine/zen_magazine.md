@@ -9,6 +9,7 @@
 | ① | [zen_magazine_01_hardware.md](zen_magazine_01_hardware.md) | 基板設計・作成編（動機〜MVP〜回路/PCB〜試作〜再設計〜筐体） |
 | ② | [zen_magazine_02_firmware.md](zen_magazine_02_firmware.md) | ファームウェア開発編（計測サイクル・OTA・GHA・キッティング） |
 | ③ | [zen_magazine_03_infra.md](zen_magazine_03_infra.md) | インフラ編（Terraform / Grafana / Shadow / 運用） |
+| ④ | [zen_magazine_04_compaction.md](zen_magazine_04_compaction.md) | S3 コンパクション編（小ファイル問題とコスト削減。単独記事） |
 
 画像は配置前。末尾に元の順序で置いてある（各編へ振り分けは執筆時に）。
 
