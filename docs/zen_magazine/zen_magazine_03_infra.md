@@ -8,6 +8,7 @@ git の最初の「最低限が一通り動いた」コミットに、既製品�
 この編で言いたいのは次です。
 
 - 測って送る側と受ける側を、同じタイミングで通した
+- デバイスとの接点は **AWS IoT Core** に集約（Topic Rule / Shadow / Jobs）
 - いまのデータ閲覧の本命は `web/index.html` ではなく、**別プロジェクトの EC2＋Docker 上の Grafana**
 - Athena は置き方を雑にするとすぐ高い。パーティションとクエリを意識する
 
@@ -40,14 +41,63 @@ git の最初の「最低限が一通り動いた」コミットに、既製品�
 立ち上げ直後の数日で Cognito や削除 UI なども足しました。
 MVP 機から実データを流し、DeepSleep（数分おき）でも「とりあえず見える」ことを確認できたので、そのあとハードとファーム（①②）に集中できました。
 
-のちに②の OTA／キッティング前提で足したものもあります。
+AWS IoT まわりの詳細は次の章です。
 
-- Device Shadow（設定）
-- IoT Jobs（OTA・コマンド）
-- ファーム配布用の **公開** S3
+---
+
+## AWS IoT でやっていること
+
+デバイスとの接点は、ほぼ **AWS IoT Core** に集約しています。
+Terraform で Policy や Topic Rule を置き、Thing と証明書はキッティングスクリプトで発行、という分担です。
+
+### テレメトリは Topic Rule → Lambda
+
+デバイスは `sensors/{device_id}/data_bin` に MessagePack を publish します（②で短くしたやつ）。
+IoT Core の Topic Rule がこれを拾い、Lambda `ingest` に渡して S3 へ書き込みます。
+
+```sql
+SELECT encode(*,'base64') AS payload, topic(2) AS device_id
+FROM 'sensors/+/data_bin'
+```
+
+バイナリのままだと Rule から Lambda に渡しにくいので、**base64 にしてから渡す**形にしています。
+Lambda 側で decode して S3 にはフルネームの JSON で保存するので、Glue / Athena はいじらなくて済みます。
+
+MVP 当時は JSON トピック `sensors/+/data` もありましたが、いまの本命は `data_bin` です。
+
+### Device Shadow で設定をやりとり
+
+測定値の送信とは別に、デバイス設定は **Device Shadow** で持っています。
+
+- **reported** — デバイスが起動時に現在値を報告（`ah_offset`、充電閾値、`fw_version` など）
+- **desired** — クラウドから更新 → デバイスが次回起床時に delta を受け取り NVS へ適用
+
+車のそばでは OLED メニュー、遠くからは管理画面や Admin API 経由で Shadow を触ります。
+「グラフで眺める」と「閾値を変える」は導線が分かれています（Grafana は後述）。
+
+### IoT Jobs で OTA とコマンド
+
+OTA とリモートコマンド（Ah リセット、充電指示など）は **IoT Jobs** です。
+②で詳しく書きましたが、インフラ側のポイントだけ言うとこうです。
+
+- ジョブはオフライン中もキューに残る → DeepSleep 端末は次の起床時に拾う
+- OTA 配信対象は Thing グループ `ota-target-car-iot-gw` で絞る（キッティング後に手動で追加）
+- ファーム本体は **公開 S3** から HTTPS で落とす（証明書はファームに含めない②の設計）
+
+Jobs は「指示を届ける箱」、実際のバイナリ取得は S3、という分担です。
+
+### 骨格と運用機能は別タイミングで足した
+
+MVP 時点で通したのは **Topic Rule + ingest** だけです。「MQTT で送って S3 に入る」経路の確認が先でした。
+
+そのあと②の OTA／キッティング前提で、次を足しています。
+
+- Device Shadow
+- IoT Jobs
+- ファーム配布用の公開 S3
 - OTA 対象の Thing グループ
 
-「経路が通る骨」と「車載本番の運用機能」は、レイヤが違う、という感じです。
+「データが流れる骨」と「車載本番の運用機能」はレイヤが違う、という感じです。
 
 ---
 
