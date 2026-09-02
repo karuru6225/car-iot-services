@@ -1,6 +1,6 @@
 #include "pubqueue.h"
 #include "mqtt.h"
-#include "logger.h"
+#include "../logger.h"
 #include "../device/lte.h"
 #include "../config.h"
 #include "../domain/telemetry.h"
@@ -8,7 +8,17 @@
 #include <esp_sleep.h>
 #include <stdio.h>
 
-PubQueue queue(false);
+// EN pinリセット（USBモニタ接続時の自動リセット回路含む）・ブラウンアウト・WDT等は
+// Power-On Reset相当としてRTCメモリをクリアするため、RTCメモリのみのバッファでは
+// これらのリセットを挟むと未送信データが失われる。SPIFFSへの書き戻し（save()/load()、
+// FILE_APPENDではなく全体書き直し方式のためlog_storageの既知不具合の影響は受けない）
+// で復元できるようにする。
+//
+// 2026-08-21、実機で"w"オープンが失敗する事象を確認したが、原因はSPIFFS書き込み方式
+// 自体ではなく、無効化されたlogStorageのゴミファイル（log_*.txt 64個、約253KB）が
+// パーティション(448KB)の過半を占有し空き領域を圧迫していたためと判明。
+// mkspiffsでクリーンなイメージに書き戻して解消済み。
+PubQueue queue(true);
 
 // ─── コンストラクタ ───────────────────────────────────────────────────────────
 

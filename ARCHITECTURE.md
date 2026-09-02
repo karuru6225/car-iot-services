@@ -8,6 +8,12 @@
 │  m5atom_iot_gateway/  (M5Atom S3 — 段階的廃止予定)           │
 │    電圧測定・BLE スキャン → MQTT over TLS → AWS IoT Core      │
 ├──────────────────────────────────────────────────────────────┤
+│  モバイル層                                                    │
+│  car_iot_android/     (Kotlin + Jetpack Compose)             │
+│    esp32_iot_gateway と BLE 接続 → 計測値・OBD-II を受信      │
+│    Foreground Service で常時接続、Room に蓄積                 │
+│    → API GW へバッチアップロード（Cognito 認証、LTE 経路とは別）│
+├──────────────────────────────────────────────────────────────┤
 │  クラウド層 (infra/)                                           │
 │  IoT Core → Topic Rule → Lambda(ingest) → S3(data)           │
 │  IoT Jobs → OTA 更新ジョブ管理 → デバイス → S3(firmware) DL  │
@@ -23,11 +29,12 @@ Terraform で管理。主要リソース：
 | リソース | 役割 |
 | --- | --- |
 | AWS IoT Core Thing + Policy | デバイス認証・MQTT エンドポイント（Thing はプロビジョニングスクリプトで作成、証明書は Terraform 管理外） |
-| IoT Thing Group `ota-target-car-iot-gw` | OTA 配信対象デバイスを管理（Console で手動追加） |
+| IoT Thing Group `ota-target-car-iot-gw-v1` / `-v2` | 基板バージョン別のOTA配信対象デバイス管理（`provision_device.ps1`が自動登録） |
 | IoT Topic Rule | MQTT メッセージを Lambda ingest に転送 |
 | AWS IoT Jobs | OTA・コマンド（ah_reset 等）のジョブキュー管理・状態追跡（QUEUED→IN_PROGRESS→SUCCEEDED/FAILED） |
-| Lambda `ingest` | JSON を S3 に保存（パーティション付き） |
+| Lambda `ingest` | JSON を S3 に保存（パーティション付き）。`data_bin`（MsgPack）はmagicバイト・CRC32でパケット破損を検知し、不一致時は`corrupted`バケットへ退避 |
 | S3 バケット（データ用） | `raw/year=/month=/day=/hour=/` 階層構造（非公開） |
+| S3 バケット（破損データ退避用） | CRC32不一致の生バイナリを保存（非公開、30日で自動削除。診断用） |
 | S3 バケット（ファームウェア配布用） | OTA firmware.bin 配置（証明書をファームに含まないため公開可） |
 | Glue Database + Table | S3 データのスキーマ定義・パーティションプロジェクション |
 | Athena Workgroup | SQL クエリ実行 |

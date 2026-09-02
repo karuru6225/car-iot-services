@@ -1,22 +1,56 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <optional>
+
+// デバッグ用: 有効にするとLTE/MQTT等のネットワーク処理を丸ごとスキップする。
+// main.cpp単体のソース内#defineだと他の翻訳単位（service/mode_*.cpp等）に伝播しないため、
+// 全層から参照可能なここで定義する（コメントアウトがデフォルト）
+// #define DEBUG_SKIP_NETWORK
+
+// デバッグ用: 有効にするとCANバス未接続（OBD2ケーブル未接続）でもobdPoll()の代わりに
+// obdPollFake()（service/obdpoll.cpp）が固定値のダミーOBDReadingをvalid=trueで返す。
+// car_iot_android側のOBDパーサー（有効データでのパース）を実車無しで検証するためのもの。
+// platformio.iniの`esp32-s3-devkitc-1-v1-develop-fakeobd`envのbuild_flagsで有効化する
+// （このファイルを直接編集する必要はない）。
 
 #ifndef GIT_HASH
 #define GIT_HASH "00000000"
 #endif
-#define FIRMWARE_VERSION "1.17.0+" GIT_HASH
+
+// FIRMWARE_VERSIONはソースが正。MAJORは基板シリーズ固定（1=v1基板、2=v2基板）。
+// リリース時はここを更新してからタグを打つ（タグはCI発火とGitHub Release表示用、
+// ここの値と一致しないとfirmware-release.ymlが検証エラーで停止する。RELEASE.md参照）
+#if BOARD_VERSION == 1
+#define FIRMWARE_VERSION_BASE "1.24.1" // FIRMWARE_VERSION_V1
+#elif BOARD_VERSION == 2
+#define FIRMWARE_VERSION_BASE "2.2.1" // FIRMWARE_VERSION_V2
+#else
+#error "BOARD_VERSION must be 1 or 2"
+#endif
+
+#define FIRMWARE_VERSION FIRMWARE_VERSION_BASE "+" GIT_HASH
 
 // 動作モード
 enum class OperationMode
 {
   DEEP_SLEEP,
-  CONTINUOUS,
-  ONE_SHOT_CONTINUOUS, // Shadow ble_mode から指定。1サイクル CONTINUOUS → 自動で DEEP_SLEEP
+  CONTINUOUS,       // measure/publish + OBD-II(CAN)ポーリングを1秒間隔で実行
+  TIMED_CONTINUOUS, // Shadow override_next_mode から指定。指定分数が経過するまで CONTINUOUS を繰り返し、期限到達で自動 DEEP_SLEEP
+  LIGHT_SLEEP,      // DEEP_SLEEPの短周期版。LTE/OLED/ADS/INA228を初期化せずCAN/BLEのみ20〜30秒間隔でチェックし、
+                     // 検知したらCONTINUOUSへ、5分境界に到達したら通常のDEEP_SLEEP起床と同じフルサイクルを行う
 };
 
 // DeepSleep
 static const uint32_t SLEEP_INTERVAL_SEC = 300;
+// DeepSleep突入前にBLE接続を待つ最低時間（スマホ側の接続リトライと合わせる。OBD.md参照）
+static const uint32_t BLE_WAKE_WINDOW_SEC = 15;
+
+// LightSleep（DEEP_SLEEPの短周期版）
+static const uint32_t LIGHT_SLEEP_PEEK_INTERVAL_SEC = 20; // CAN/BLEを確認する間隔
+// BLE接続を待つ時間。BLE_WAKE_WINDOW_SEC(15秒)は5分サイクル向けの値なので、
+// 20〜30秒サイクルのLIGHT_SLEEPでそのまま使うと稼働率(duty比)が大きくなりすぎるため短縮する
+static const uint32_t LIGHT_SLEEP_BLE_WAIT_SEC = 5;
 
 // BLE
 static const uint16_t SWITCHBOT_COMPANY_ID = 0x0969;
@@ -84,6 +118,11 @@ void setCharging(bool v);
 // デバッグログ有効フラグ（NVS, デフォルト: false）
 bool getDebugLogEnabled();
 void setDebugLogEnabled(bool enabled);
+
+// 起動時のデフォルト動作モード（NVS, Shadowのdefault_modeから設定）。未設定ならnullopt。
+// 未設定時はこれまで通り、prodはDEEP_SLEEP・developはCONTINUOUS（DEBUG_MODE）にフォールバックする
+std::optional<OperationMode> getDefaultMode();
+void setDefaultMode(OperationMode m);
 
 // メニュー操作で消去するデータを一括クリア（"device" ネームスペースは保持）
 void clearMenuData();

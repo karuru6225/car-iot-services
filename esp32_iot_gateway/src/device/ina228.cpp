@@ -75,11 +75,13 @@ bool Ina228::init()
   //           = 819.2e6 × 208e-6 × 0.375e-3 × 4 ≒ 4096
   // ADCRANGE=1 → ±40.96mV、フルスケール電流 ±109A (I = V/R_shunt = 40.96mV / 0.375mΩ = 109A)
   wr16(0x00, CONFIG);
+  wr16(0x01, ADC_CONFIG);
   wr16(0x02, SHUNT_CAL);
 
   uint16_t cfg = rd16(0x00);
+  uint16_t adcCfg = rd16(0x01);
   uint16_t cal = rd16(0x02);
-  Serial.printf("[INA228] OK  CONFIG=0x%04X  SHUNT_CAL=0x%04X\n", cfg, cal);
+  Serial.printf("[INA228] OK  CONFIG=0x%04X  ADC_CONFIG=0x%04X  SHUNT_CAL=0x%04X\n", cfg, adcCfg, cal);
 
   _initialized = true;
   return true;

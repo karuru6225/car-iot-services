@@ -7,10 +7,12 @@
 #include "../device/ble_peripheral.h"
 #include "../device/ads.h"
 #include "../device/ina228.h"
+#include "../device/can.h"
 #include "../domain/ble_targets.h"
 #include "../domain/sensor_factory.h"
 #include "../config.h"
 #include "../board_pins.h"
+#include "diddscan.h"
 #include <Arduino.h>
 
 // ---- 状態定義 ----
@@ -29,10 +31,40 @@ enum class MenuState
   AH_OFFSET,
   CHG_TIMEOUT,
   CHARGING,
+  MESSAGE,     // 一時メッセージ表示（beginMessage()参照）
   RESTART,
   BLE_PHONE,
   DONE_CONTINUOUS,
+  DONE_LIGHT_SLEEP,
+  DID_SCAN_RUNNING,   // Mode22 DIDスキャン: 全域(0x0000-0xFFFF)総当たり実行中（ブロッキング、BTN1長押しで中断）
+  DID_SCAN_RESULT,    // ヒットしたDID一覧
+  DID_VALUES_RUNNING, // kDidCandidates[]の実値読み取り実行中（ブロッキング、9件のみで即完了）
+  DID_VALUES_RESULT,  // 読み取ったDID実値一覧
 };
+
+// ---- 一時メッセージ表示 ----
+// delay()で表示時間中ボタン監視を止めるのではなく、millis()で経過時間を見ながら
+// MESSAGE状態としてenterMenuMode()の待機ループ（button.read()呼び出し含む）に留まる
+
+static unsigned long s_msgStartMs = 0;
+static unsigned long s_msgDurationMs = 0;
+static MenuState s_msgNext = MenuState::MENU_NAV;
+
+static MenuState beginMessage(const char *title, const char *body, unsigned long durationMs, MenuState next)
+{
+  oledShowMessage(title, body);
+  s_msgDurationMs = durationMs;
+  s_msgNext = next;
+  s_msgStartMs = millis();
+  return MenuState::MESSAGE;
+}
+
+static MenuState tickMessage(ButtonEvent)
+{
+  if (millis() - s_msgStartMs >= s_msgDurationMs)
+    return s_msgNext;
+  return MenuState::MESSAGE;
+}
 
 // ---- 確認ダイアログ定義 ----
 
@@ -40,22 +72,22 @@ struct ConfirmDef
 {
   const char *title;
   const char *message;
-  void (*onConfirm)();
+  MenuState (*onConfirm)();
 };
 
-static void doNvsClear()
+static MenuState doNvsClear()
 {
   clearMenuData();
   oledShowMessage("NVS Cleared", "Restarting...");
-  delay(1500);
+  delay(1500); // 直後にesp_restart()で再起動するため、ボタン監視が止まっても実害はない
   esp_restart();
+  return MenuState::MENU_NAV; // 到達しない（esp_restart()は戻らない）
 }
 
-static void doAhReset()
+static MenuState doAhReset()
 {
   ina228.resetCharge();
-  oledShowMessage("Ah Reset", "Done");
-  delay(1000);
+  return beginMessage("Ah Reset", "Done", 1000, MenuState::MENU_NAV);
 }
 
 // ---- メニュー定義 ----
@@ -75,7 +107,9 @@ static const MenuItem ITEMS[] = {
     {"Battery",      "/",             MenuState::MENU_NAV,        {}},
     {"Sensor View",  "/",             MenuState::SENSOR,          {}},
     {"System",       "/",             MenuState::MENU_NAV,        {}},
-    {"Continuous",   "/",             MenuState::DONE_CONTINUOUS, {}},
+    {"OBD",          "/",             MenuState::MENU_NAV,        {}},
+    {"Continuous",   "/",             MenuState::DONE_CONTINUOUS,  {}},
+    {"Light Sleep",  "/",             MenuState::DONE_LIGHT_SLEEP, {}},
     {"Restart",      "/",             MenuState::RESTART,         {}},
     // path="/BLE Settings"
     {"Register",     "/BLE Settings", MenuState::BLE_SCAN,        {}},
@@ -89,6 +123,9 @@ static const MenuItem ITEMS[] = {
     {"Info",         "/System",       MenuState::SYS_INFO,        {}},
     {"Device QR",    "/System",       MenuState::DEVICE_QR,       {}},
     {"NVS Clear",    "/System",       MenuState::CONFIRM,         {"NVS Clear?", "Keep MQTT host", doNvsClear}},
+    // path="/OBD"
+    {"DID Scan",     "/OBD",          MenuState::DID_SCAN_RUNNING,  {}},
+    {"DID Values",   "/OBD",          MenuState::DID_VALUES_RUNNING, {}},
 
 };
 static const int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
@@ -111,6 +148,13 @@ static int s_bleRemoveTarget = 0;
 // ---- 汎用確認ダイアログの現在の定義 ----
 
 static ConfirmDef s_confirm;
+
+// ---- DIDスキャン（Mode22 UDS）状態 ----
+
+static DidScanResult s_didScanResult;
+static int s_didScanResultCursor = 0;
+static DidValueResult s_didValueResult;
+static int s_didValueResultCursor = 0;
 
 // ---- tick 関数 ----
 
@@ -237,10 +281,9 @@ static MenuState tickBleScanResult(ButtonEvent ev)
   {
     bleTargets.add(s_scanResults[cursor].addr);
     bleTargets.save();
-    oledShowMessage("Registered!", s_scanResults[cursor].addr);
-    delay(1500);
+    MenuState next = beginMessage("Registered!", s_scanResults[cursor].addr, 1500, MenuState::MENU_NAV);
     cursor = 0;
-    return MenuState::MENU_NAV;
+    return next;
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
@@ -300,14 +343,13 @@ static MenuState tickBleRemoveConfirm(ButtonEvent ev)
   }
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
+    needsInit = true;
     if (cursor == 0)
     {
       bleTargets.remove(bleTargets.data[s_bleRemoveTarget]);
       bleTargets.save();
-      oledShowMessage("Deleted!", nullptr);
-      delay(1000);
+      return beginMessage("Deleted!", "", 1000, MenuState::BLE_REMOVE);
     }
-    needsInit = true;
     return MenuState::BLE_REMOVE;
   }
   else if (ev == ButtonEvent::BTN1_LONG)
@@ -372,8 +414,8 @@ static MenuState tickConfirm(ButtonEvent ev)
   }
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
-    if (cursor == 0) s_confirm.onConfirm();
     needsInit = true;
+    if (cursor == 0) return s_confirm.onConfirm();
     return MenuState::MENU_NAV;
   }
   else if (ev == ButtonEvent::BTN1_LONG)
@@ -405,10 +447,8 @@ static MenuState tickAhOffset(ButtonEvent ev)
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
     setAhOffset(edit);
-    oledShowMessage("Ah Offset", "Saved");
-    delay(1000);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Ah Offset", "Saved", 1000, MenuState::MENU_NAV);
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
@@ -445,10 +485,8 @@ static MenuState tickChgTimeout(ButtonEvent ev)
   else if (ev == ButtonEvent::BTN1_SHORT)
   {
     setChgTimeoutMin(CHG_TIMEOUT_OPTS[editIdx]);
-    oledShowMessage("Chg Timeout", "Saved");
-    delay(1000);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Chg Timeout", "Saved", 1000, MenuState::MENU_NAV);
   }
   else if (ev == ButtonEvent::BTN1_LONG)
   {
@@ -473,10 +511,8 @@ static MenuState tickCharging(ButtonEvent ev)
     if (vSub <= vMain) {
       char msg[24];
       snprintf(msg, sizeof(msg), "M:%.2fV S:%.2fV", vMain, vSub);
-      oledShowMessage("Cannot charge:", msg);
-      delay(2000);
       needsInit = true;
-      return MenuState::MENU_NAV;
+      return beginMessage("Cannot charge:", msg, 2000, MenuState::MENU_NAV);
     }
     digitalWrite(boardPins().chgOnPin, HIGH);
     timeoutMs  = getChgTimeoutMin() * 60UL * 1000UL;
@@ -490,10 +526,8 @@ static MenuState tickCharging(ButtonEvent ev)
   // タイムアウト
   if (elapsed >= timeoutMs) {
     digitalWrite(boardPins().chgOnPin, LOW);
-    oledShowMessage("Charge done", "");
-    delay(1500);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Charge done", "", 1500, MenuState::MENU_NAV);
   }
 
   // 2秒ごとに電圧を更新
@@ -508,10 +542,8 @@ static MenuState tickCharging(ButtonEvent ev)
   // どのボタンでも終了
   if (ev != ButtonEvent::NONE) {
     digitalWrite(boardPins().chgOnPin, LOW);
-    oledShowMessage("Charge stopped", "");
-    delay(1000);
     needsInit = true;
-    return MenuState::MENU_NAV;
+    return beginMessage("Charge stopped", "", 1000, MenuState::MENU_NAV);
   }
   return MenuState::CHARGING;
 }
@@ -538,6 +570,130 @@ static MenuState tickBlePhone(ButtonEvent ev)
     return MenuState::MENU_NAV;
   }
   return MenuState::BLE_PHONE;
+}
+
+// ---- DIDスキャン（Mode22 UDS、OBD.md「Mode 22 PID 探索方法論」参照） ----
+
+// didScanRun()から1件処理するごとに呼ばれるコールバック。ボタン監視（BTN1長押しで中断）と
+// OLED進捗表示を兼ねる（スキャンは最大4096件かかりうるためブロッキングのままだと操作不能になる）。
+static bool didScanShouldAbort()
+{
+  static unsigned long lastOledUpdate = 0;
+
+  if (button.read() == ButtonEvent::BTN1_LONG)
+    return true;
+
+  if (millis() - lastOledUpdate >= 200)
+  {
+    lastOledUpdate = millis();
+    char line1[20], line2[20];
+    snprintf(line1, sizeof(line1), "Scan %d/%d",
+             s_didScanResult.scannedCount, s_didScanResult.totalCount);
+    snprintf(line2, sizeof(line2), "Hit:%d BTN1long:stop", s_didScanResult.findingCount);
+    oledShowMessage(line1, line2);
+  }
+  return false;
+}
+
+static MenuState tickDidScanRunning(ButtonEvent)
+{
+  canInit();
+  oledShowMessage("DID Scan", "starting...");
+  didScanRun(0x0000, 0xFFFF, s_didScanResult, didScanShouldAbort);
+  s_didScanResultCursor = 0;
+  return MenuState::DID_SCAN_RESULT;
+}
+
+static MenuState tickDidScanResult(ButtonEvent ev)
+{
+  if (s_didScanResult.findingCount == 0)
+  {
+    oledShowMessage("No hits", "BTN1 long: back");
+    if (ev == ButtonEvent::BTN1_LONG) { canDeinit(); return MenuState::MENU_NAV; }
+    return MenuState::DID_SCAN_RESULT;
+  }
+
+  char items[DidScanResult::MAX_FINDINGS][20];
+  const char *ptrs[DidScanResult::MAX_FINDINGS];
+  for (int i = 0; i < s_didScanResult.findingCount; i++)
+  {
+    const DidScanFinding &f = s_didScanResult.findings[i];
+    if (f.ok)
+      snprintf(items[i], sizeof(items[i]), "0x%04X OK", f.did);
+    else
+      snprintf(items[i], sizeof(items[i]), "0x%04X NRC%02X", f.did, f.nrc);
+    ptrs[i] = items[i];
+  }
+  char title[20];
+  snprintf(title, sizeof(title), "Hits (%d)", s_didScanResult.findingCount);
+  oledShowMenu(title, ptrs, s_didScanResult.findingCount, s_didScanResultCursor);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_didScanResultCursor = (s_didScanResultCursor + 1) % s_didScanResult.findingCount;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    s_didScanResultCursor = 0;
+    canDeinit();
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::DID_SCAN_RESULT;
+}
+
+// kDidCandidates[]（didScanRun()で発見済みのOK系DID）の実値を読む。9件のみで
+// 即完了するためショルダーアボート等は不要（didScanShouldAbort()のような監視は無し）。
+static MenuState tickDidValuesRunning(ButtonEvent)
+{
+  canInit();
+  oledShowMessage("DID Values", "reading...");
+  didReadCandidateValues(s_didValueResult);
+  s_didValueResultCursor = 0;
+  return MenuState::DID_VALUES_RESULT;
+}
+
+static MenuState tickDidValuesResult(ButtonEvent ev)
+{
+  if (s_didValueResult.count == 0)
+  {
+    oledShowMessage("No candidates", "BTN1 long: back");
+    if (ev == ButtonEvent::BTN1_LONG) { canDeinit(); return MenuState::MENU_NAV; }
+    return MenuState::DID_VALUES_RESULT;
+  }
+
+  char items[DidValueResult::MAX_ITEMS][20];
+  const char *ptrs[DidValueResult::MAX_ITEMS];
+  for (int i = 0; i < s_didValueResult.count; i++)
+  {
+    const DidValueReading &v = s_didValueResult.items[i];
+    if (!v.ok)
+    {
+      snprintf(items[i], sizeof(items[i]), "0x%04X no resp", v.did);
+    }
+    else
+    {
+      char hex[2 * sizeof(v.data) + 1] = {0};
+      for (uint8_t b = 0; b < v.len && b < sizeof(v.data); b++)
+        snprintf(hex + b * 2, 3, "%02X", v.data[b]);
+      snprintf(items[i], sizeof(items[i]), "0x%04X:%s", v.did, hex);
+    }
+    ptrs[i] = items[i];
+  }
+  char title[20];
+  snprintf(title, sizeof(title), "Values (%d)", s_didValueResult.count);
+  oledShowMenu(title, ptrs, s_didValueResult.count, s_didValueResultCursor);
+
+  if (ev == ButtonEvent::BTN0_SHORT)
+  {
+    s_didValueResultCursor = (s_didValueResultCursor + 1) % s_didValueResult.count;
+  }
+  else if (ev == ButtonEvent::BTN1_LONG)
+  {
+    s_didValueResultCursor = 0;
+    canDeinit();
+    return MenuState::MENU_NAV;
+  }
+  return MenuState::DID_VALUES_RESULT;
 }
 
 // ---- エントリポイント ----
@@ -569,16 +725,28 @@ OperationMode enterMenuMode()
     case MenuState::AH_OFFSET:          next = tickAhOffset(ev);         break;
     case MenuState::CHG_TIMEOUT:        next = tickChgTimeout(ev);       break;
     case MenuState::CHARGING:           next = tickCharging(ev);         break;
+    case MenuState::MESSAGE:            next = tickMessage(ev);          break;
     case MenuState::BLE_PHONE:          next = tickBlePhone(ev);         break;
+    case MenuState::DID_SCAN_RUNNING:   next = tickDidScanRunning(ev);   break;
+    case MenuState::DID_SCAN_RESULT:    next = tickDidScanResult(ev);    break;
+    case MenuState::DID_VALUES_RUNNING: next = tickDidValuesRunning(ev); break;
+    case MenuState::DID_VALUES_RESULT:  next = tickDidValuesResult(ev);  break;
 
     case MenuState::RESTART:            oledClear(); esp_restart();      break;
     case MenuState::DONE_CONTINUOUS:    break;
+    case MenuState::DONE_LIGHT_SLEEP:   break;
     }
 
     if (next == MenuState::DONE_CONTINUOUS)
     {
       oledClear();
       return OperationMode::CONTINUOUS;
+    }
+
+    if (next == MenuState::DONE_LIGHT_SLEEP)
+    {
+      oledClear();
+      return OperationMode::LIGHT_SLEEP;
     }
 
     if (next != state)

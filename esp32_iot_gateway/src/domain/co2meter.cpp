@@ -1,5 +1,6 @@
 #include "co2meter.h"
 #include "thermometer.h"
+#include <cstring>
 
 Co2MeterData Co2MeterParser::parse(const char *addr, int8_t rssi,
                                     const std::string &mf,

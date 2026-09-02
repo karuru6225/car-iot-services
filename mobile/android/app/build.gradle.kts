@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.car_iot_ble"
+    namespace = "info.karuru.cariot_mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,8 +20,11 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.car_iot_ble"
+        applicationId = "info.karuru.cariot_mobile"
+        // Cognito Hosted UI（Google OAuth）からのリダイレクトを受けるカスタムスキーム。
+        // URIスキームはRFC3986でアンダースコア不可のためapplicationIdとは別文字列。
+        // Cognito App Client の callback_urls・AuthService の redirectUri と完全一致させること。
+        manifestPlaceholders["appAuthRedirectScheme"] = "info.karuru.cariotmobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

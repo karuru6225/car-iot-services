@@ -1,6 +1,6 @@
 #include "mqtt.h"
 #include "../device/lte.h"
-#include "logger.h"
+#include "../logger.h"
 #include "../config.h"
 
 Mqtt mqtt;

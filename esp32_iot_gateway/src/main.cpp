@@ -3,9 +3,26 @@
 // 起動 → (BTN0 長押し) メニュー → LTE 接続 → OTA チェック → loop()
 //
 // loop() の動作モード:
-//   DEEP_SLEEP          : measure() + publish() → DeepSleep（次の5分境界まで、デフォルト本番動作）
-//   CONTINUOUS          : measure() + publish() → 5分待機 → 繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
-//   ONE_SHOT_CONTINUOUS : Shadow ble_mode から指定。1サイクルだけ CONTINUOUS → 自動で DEEP_SLEEP
+//   DEEP_SLEEP          : measure()(非同期BLEスキャン開始+アナログ計測) + publishBattery()
+//                         → DeepSleepModeHandler::run()内でBLEスキャン完了を待って収集・publish → DeepSleep（次の5分境界まで、デフォルト本番動作）
+//   CONTINUOUS          : measure() + publishBattery() → ContinuousModeHandlerBase::continuousLoopCore()の1秒ティックで
+//                         pollBleCollect()（BLEスキャン完了を非ブロッキングで収集）+ OBD-II(CAN)ポーリングを実行 → 5分待機 →
+//                         繰り返し（BTN1 長押しで DEEP_SLEEP に切り替え）
+//   TIMED_CONTINUOUS    : Shadow override_next_mode="timed_continuous"+continuous_duration_min から指定。
+//                         指定分数が経過するまで CONTINUOUS サイクルを繰り返し、期限到達で自動 DEEP_SLEEP
+//                         （BTN1 長押しでも即座に DEEP_SLEEP に切り替え可能）
+//   LIGHT_SLEEP         : DEEP_SLEEPの短周期版（メニューから手動選択）。LTE/OLED/ADS/INA228を初期化せず
+//                         CAN/BLEのみ20〜30秒間隔で確認し、検知したらCONTINUOUSへ昇格、5分境界に到達したら
+//                         通常のDEEP_SLEEP起床と同じフルサイクルを行う。setup()冒頭の lightSleepShortWakeGate()
+//                         （service/mode_light_sleep.cpp）がこの短周期ピークを制御する
+//
+// 動作モードごとの処理は src/service/mode_*.{h,cpp} のハンドラクラスに実装されている。
+// main.cpp は起動シーケンスと loop() の骨格のみを持つ。
+//
+// CAN(GU0)とBLEはsetup()冒頭（OLED/ADS/INA228/LTEより前）で初期化する。LIGHT_SLEEPの短周期
+// ピーク中はここまでしか実行されず、lightSleepShortWakeGate()が検知なしのままdeep sleepへ
+// 戻すため、それ以降の初期化（OLED等）は行われない。CANの停止はDeepSleepModeHandler::run()と
+// LIGHT_SLEEPの各サイクル終了時（LightSleepModeHandler::run()・lightSleepShortWakeGate()）のみ。
 //
 // デバッグモード: #define DEBUG_MODE を有効にするとデフォルトモードが CONTINUOUS になる
 
@@ -15,10 +32,9 @@
 #include "config.h"
 #include "board_pins.h"
 #include "device/lte.h"
-#include "service/logger.h"
+#include "logger.h"
 #include "service/ota.h"
 #include "service/jobs.h"
-#include "service/command.h"
 #include "service/mqtt.h"
 #include "service/monitor.h"
 #include "service/shadow.h"
@@ -30,12 +46,21 @@
 #include "device/ble_scan.h"
 #include "device/ble_peripheral.h"
 #include "device/button.h"
+#include "device/can.h"
 
 #include "domain/ble_targets.h"
 #include "domain/telemetry.h"
 #include "service/menu.h"
 #include "service/pubqueue.h"
 #include "service/log_storage.h"
+
+#include "service/operation_mode.h"
+#include "service/mode_context.h"
+#include "service/mode_common.h"
+#include "service/mode_deep_sleep.h"
+#include "service/mode_continuous.h"
+#include "service/mode_timed_continuous.h"
+#include "service/mode_light_sleep.h"
 
 #ifdef USE_MSGPACK
 static MsgPackTelemetryEncoder g_encoder;
@@ -45,24 +70,18 @@ static JsonTelemetryEncoder g_encoder;
 
 #include <esp_sleep.h>
 #include <driver/gpio.h>
-#include <driver/rtc_io.h>
-
-// #define DEBUG_SKIP_NETWORK
-
-#ifdef DEBUG_MODE
-static OperationMode g_mode = OperationMode::CONTINUOUS;
-#else
-static OperationMode g_mode = OperationMode::DEEP_SLEEP;
-#endif
 
 static esp_sleep_wakeup_cause_t g_wakeupCause = ESP_SLEEP_WAKEUP_UNDEFINED;
-static MeasureResult g_lastResult = {};
-static bool g_bleUpgradedToContinuous = false;
 
 void setup()
 {
   g_wakeupCause = esp_sleep_get_wakeup_cause();
   gpio_hold_dis((gpio_num_t)boardPins().chgOnPin);
+  // LIGHT_SLEEPの短周期ピークはOLED/ADS/INA228初期化より前に(検知なしのまま)deep sleepへ
+  // 戻ることがあるため、hold解除直後にここでOUTPUT化・値の再アサートまで済ませておく
+  // （末尾のrelay0/1/2Pinと違いchgOnPinはenterDeepSleepFor()でholdされるため必須）
+  pinMode(boardPins().chgOnPin, OUTPUT);
+  digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
 
 #if BOARD_VERSION == 2
   // 自己保持回路: C1の遅延時間内にHIGHを再アサートしないと電源が落ちるため最優先で行う
@@ -76,9 +95,38 @@ void setup()
   logger.printf("\n=== esp32_iot_gateway %s 起動 (wakeup=%d) ===\n",
                 FIRMWARE_VERSION, (int)g_wakeupCause);
 
+  // NVSにデフォルトモードが設定されていればそれを使う（Shadowのdefault_modeから設定、
+  // config.cpp参照）。未設定ならこれまで通りprodはDEEP_SLEEP・developはCONTINUOUSにフォールバック
+  if (auto defaultMode = getDefaultMode())
+  {
+    modeCtx.setMode(*defaultMode);
+  }
+#ifdef DEBUG_MODE
+  else
+  {
+    modeCtx.setMode(OperationMode::CONTINUOUS);
+  }
+#endif
+
+  // CANとBLEはOLED/ADS/INA228/LTEより前に初期化する。LIGHT_SLEEPの短周期ピーク中は
+  // lightSleepShortWakeGate()が検知なしのままここでdeep sleepへ戻すため、それ以降の
+  // 初期化（OLED等）を毎回スキップできる
+  if (!canInit()) // CAN通信は起動直後から常時試みる。停止するのはDeepSleep突入時・LIGHT_SLEEPの各サイクル終了時のみ
+    logger.println("[MAIN] CAN 初期化失敗");
+#ifndef DEBUG_SKIP_NETWORK
+  bleScanner.setup();
+  bleTargets.load();
+  blePeripheral.setup();
+  blePeripheral.startAdvertising();
+#endif
+
+  lightSleepShortWakeGate(); // LIGHT_SLEEPの短周期ピーク中はここで検知なしのままdeep sleepへ戻り、戻らないことがある
+
   oledInit();
-  adsInit();
-  ina228.init();
+  if (!adsInit())
+    logger.println("[MAIN] ADS1115 初期化失敗");
+  if (!ina228.init())
+    logger.println("[MAIN] INA228 初期化失敗");
   oledPrint("FW: " FIRMWARE_VERSION);
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
   {
@@ -87,21 +135,14 @@ void setup()
   }
   button.begin();
 
-#ifndef DEBUG_SKIP_NETWORK
-  bleScanner.setup();
-  bleTargets.load();
-  blePeripheral.setup();
-  blePeripheral.startAdvertising();
-#endif
-
   // BTN0 を押しながら起動でメニューモードへ（LTE 未起動のままオフライン動作）
   delay(1300);
   if (button.isDown(0))
   {
     oledPrint("Menu Mode");
-    g_mode = enterMenuMode();
-    if (g_mode == OperationMode::CONTINUOUS && blePeripheral.isConnected())
-      g_bleUpgradedToContinuous = true;
+    modeCtx.setMode(enterMenuMode());
+    if (modeCtx.mode() == OperationMode::CONTINUOUS && blePeripheral.isConnected())
+      modeCtx.setBleUpgradedToContinuous(true);
   }
 
 #ifndef DEBUG_SKIP_NETWORK
@@ -126,175 +167,49 @@ void setup()
 
   // Shadow override_next_mode を確認
   if (auto override = getShadowOverrideMode())
-    g_mode = *override;
+  {
+    modeCtx.setMode(*override);
+    if (*override == OperationMode::TIMED_CONTINUOUS)
+    {
+      if (auto untilTime = getShadowContinuousUntilTime())
+      {
+        modeCtx.setContinuousUntilEpoch(*untilTime);
+        logger.printf("[MAIN] TIMED_CONTINUOUS %ld まで開始\n", (long)*untilTime);
+      }
+      else
+      {
+        // continuous_until_time未指定時のフォールバック（30分後）
+        modeCtx.setContinuousUntilEpoch(time(nullptr) + 30 * 60);
+        logger.println("[MAIN] TIMED_CONTINUOUS continuous_until_time未指定 → デフォルト30分間開始");
+      }
+    }
+  }
 
   oledPrint("Job checking...");
   jobsSetup();
-  JobInfo job;
-  if (jobsGetNext(job))
-  {
-    if (strcmp(job.operation, "ota") == 0)
-      ota.handleJob(job); // 成功時は esp_restart() するため戻らない
-    else
-      commandHandleJob(job);
-  }
+  checkAndHandleJob();
 #endif
 
-  logger.printf("[MAIN] 起動完了 mode=%s\n",
-                g_mode == OperationMode::CONTINUOUS ? "CONTINUOUS" : "DEEP_SLEEP");
+  logger.printf("[MAIN] 起動完了 mode=%s\n", operationModeName(modeCtx.mode()));
 
   if (g_wakeupCause != ESP_SLEEP_WAKEUP_TIMER)
     playMelody(boot);
   pinMode(boardPins().relay0Pin, OUTPUT);
   pinMode(boardPins().relay1Pin, OUTPUT);
   pinMode(boardPins().relay2Pin, OUTPUT);
-  pinMode(boardPins().chgOnPin, OUTPUT);
-  pinMode(boardPins().gu0EnPin, OUTPUT);
   digitalWrite(boardPins().relay0Pin, LOW);
   digitalWrite(boardPins().relay1Pin, LOW);
   digitalWrite(boardPins().relay2Pin, LOW);
-  digitalWrite(boardPins().chgOnPin, isCharging() ? HIGH : LOW);
-  digitalWrite(boardPins().gu0EnPin, HIGH);
-}
+  // chgOnPinのOUTPUT化・値の再アサートはsetup()冒頭（gpio_hold_dis直後）で済ませてある
 
-// BLE 切断 → DEEP_SLEEP に戻す（BLE 接続で昇格した場合のみ）
-static void updateBleReconnectState()
-{
-  if (g_bleUpgradedToContinuous && !blePeripheral.isConnected())
-  {
-    g_mode = OperationMode::DEEP_SLEEP;
-    g_bleUpgradedToContinuous = false;
-  }
-}
-
-// 次の5分境界（UTC）までの秒数を返す。時刻未同期なら SLEEP_INTERVAL_SEC を返す
-static uint32_t secsToNextBoundary()
-{
-  time_t now = time(nullptr);
-  if (now <= 1577836800L) // 2020-01-01以前なら時刻未同期
-    return SLEEP_INTERVAL_SEC;
-  time_t next = ((now / (time_t)SLEEP_INTERVAL_SEC) + 1) * (time_t)SLEEP_INTERVAL_SEC;
-  return (uint32_t)(next - now);
-}
-
-// 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）
-static void updateChargingState()
-{
-  float vMain = g_lastResult.reading.main.voltage;
-  float vSub = g_lastResult.reading.sub.voltage;
-  float startV = getChgStartV();
-  float stopV = getChgStopV();
-  float minDiff = getChgMinDiffV();
-  float diff = vSub - vMain;
-
-  if (vMain >= 10.0f && !isCharging() && vMain < startV && diff >= minDiff)
-  {
-    setCharging(true);
-    digitalWrite(boardPins().chgOnPin, HIGH);
-    logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV diff=%.2fV\n", vMain, startV, diff);
-  }
-  else if (vMain >= 10.0f && isCharging() && (vMain >= stopV || diff < minDiff))
-  {
-    setCharging(false);
-    digitalWrite(boardPins().chgOnPin, LOW);
-    logger.printf("[MAIN] auto charge OFF vMain=%.2fV stopV=%.2fV diff=%.2fV minDiff=%.2fV\n",
-                  vMain, stopV, diff, minDiff);
-  }
-}
-
-// shadow 同期 → LTE 切断 → DeepSleep（戻らない）
-static void enterDeepSleepMode()
-{
-  updateChargingState();
-  shadowPublishConfig();
-  shadowPollDelta();
-  delay(1500); // SIM7080G の TCP 送信バッファをフラッシュさせてから切断
-#ifndef DEBUG_SKIP_NETWORK
-  queue.save();
-  lte.disconnect();
-  lte.radioOff();
-#endif
-  oledClear();
-
-  uint32_t sleepSec = secsToNextBoundary();
-  if (isCharging())
-    gpio_hold_en((gpio_num_t)boardPins().chgOnPin);
-#if BOARD_VERSION == 2
-  gpio_hold_en((gpio_num_t)boardPins().pwrHoldPin);
-#endif
-  rtc_gpio_init(GPIO_NUM_0);
-  rtc_gpio_set_direction(GPIO_NUM_0, RTC_GPIO_MODE_INPUT_ONLY);
-  rtc_gpio_pullup_en(GPIO_NUM_0);
-  rtc_gpio_pulldown_dis(GPIO_NUM_0);
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
-  esp_sleep_enable_timer_wakeup((uint64_t)sleepSec * 1000000ULL);
-  esp_deep_sleep_start();
-}
-
-// 次の5分境界（UTC）まで待機しながらボタン監視・カウントダウン表示・BLE Notify
-static void runContinuousLoop()
-{
-  unsigned long waitMs = (unsigned long)secsToNextBoundary() * 1000UL;
-  unsigned long waitStart = millis();
-  unsigned long lastNotify = 0;
-  int lastRemain = -1;
-
-  while (millis() - waitStart < waitMs)
-  {
-    ButtonEvent ev = button.read();
-    if (ev == ButtonEvent::BTN0_SHORT)
-    {
-      g_mode = enterMenuMode();
-      if (g_mode == OperationMode::CONTINUOUS && blePeripheral.isConnected())
-        g_bleUpgradedToContinuous = true;
-      int curRemain = (int)((waitMs - (millis() - waitStart)) / 1000);
-      oledShowSensorData(g_lastResult.reading);
-      oledUpdateCountdown(curRemain);
-      lastRemain = curRemain;
-    }
-    if (ev == ButtonEvent::BTN1_LONG)
-    {
-      if (g_mode == OperationMode::DEEP_SLEEP)
-      {
-        logger.println("[MAIN] BTN1 長押し → CONTINUOUS モードへ切り替え");
-        oledPrint("Switching continuous...");
-        g_mode = OperationMode::CONTINUOUS;
-      }
-      else if (g_mode == OperationMode::CONTINUOUS)
-      {
-        logger.println("[MAIN] BTN1 長押し → DEEP_SLEEP モードへ切り替え");
-        oledPrint("Switching sleep...");
-        g_mode = OperationMode::DEEP_SLEEP;
-      }
-    }
-
-    int remain = (int)((waitMs - (millis() - waitStart)) / 1000);
-    if (remain != lastRemain)
-    {
-      oledUpdateCountdown(remain);
-      lastRemain = remain;
-    }
-
-    unsigned long now = millis();
-    if (now - lastNotify >= 1000)
-    {
-      lastNotify = now;
-      updateChargingState();
-      blePeripheral.notify(
-          adsReadDiffMain(),
-          ina228.readCurrent(),
-          ina228.readPower(),
-          adsReadDiffSub());
-    }
-
-    delay(50);
-  }
+  modeManager.registerMode(OperationMode::DEEP_SLEEP, &deepSleepMode);
+  modeManager.registerMode(OperationMode::CONTINUOUS, &continuousMode);
+  modeManager.registerMode(OperationMode::TIMED_CONTINUOUS, &timedContinuousMode);
+  modeManager.registerMode(OperationMode::LIGHT_SLEEP, &lightSleepMode);
 }
 
 void loop()
 {
-  updateBleReconnectState();
-
 #ifndef DEBUG_SKIP_NETWORK
   if (!lte.isConnected())
   {
@@ -302,27 +217,18 @@ void loop()
     oledPrint("LTE reconnecting...");
     lte.connect();
   }
-  g_lastResult = measure();
-  publish(g_lastResult);
+  modeCtx.setLastResult(measure());
+  modeCtx.setBlePending(true); // BLE分はpollBleCollect()/DeepSleepModeHandler::run()側で非同期に収集する
+  publishBattery(modeCtx.lastResult().reading);
   queue.flush();
+  // flush()はRTCメモリのみ操作しSPIFFSには触れない。ここでも同期しておかないと、
+  // 圏内復帰でflush()がRTCキューを空にした直後にCONTINUOUSへ昇格した場合、
+  // DeepSleepModeHandler::run()のsave()が呼ばれずSPIFFS上に送信済みデータが
+  // 残り続け、次のリセットでload()が古いデータを重複送信してしまう。
+  queue.save();
   shadowPollDelta();
-  oledShowSensorData(g_lastResult.reading);
+  oledShowSensorData(modeCtx.lastResult().reading);
 #endif
 
-  // BLE 接続 → CONTINUOUS 昇格
-  if (blePeripheral.isConnected() && g_mode == OperationMode::DEEP_SLEEP)
-  {
-    g_mode = OperationMode::CONTINUOUS;
-    g_bleUpgradedToContinuous = true;
-  }
-
-  if (g_mode == OperationMode::DEEP_SLEEP)
-    enterDeepSleepMode(); // 戻らない
-  else if (g_mode == OperationMode::ONE_SHOT_CONTINUOUS)
-  {
-    runContinuousLoop();                // 1サイクル CONTINUOUS（BLE アドバタイズ継続）
-    g_mode = OperationMode::DEEP_SLEEP; // 次ループで DeepSleep へ
-  }
-  else
-    runContinuousLoop();
+  modeManager.runCurrent();
 }

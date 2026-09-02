@@ -1,0 +1,68 @@
+name: ESP32 Domain Tests
+
+on:
+  pull_request:
+    paths: &test_paths
+      - 'esp32_iot_gateway/src/**'
+      - 'esp32_iot_gateway/test/**'
+      - 'esp32_iot_gateway/platformio.ini'
+      - 'esp32_iot_gateway/Dockerfile.test'
+      - 'esp32_iot_gateway/docker-compose.test.yml'
+      - '.github/workflows/esp32-tests.yml'
+  push:
+    branches:
+      - main
+    paths: *test_paths
+
+jobs:
+  native-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: テスト用イメージをビルド（GitHub Actions Cacheでレイヤーキャッシュ）
+        uses: docker/build-push-action@v6
+        with:
+          context: esp32_iot_gateway
+          file: esp32_iot_gateway/Dockerfile.test
+          tags: esp32-domain-test:ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: domain層ユニットテストを実行（native platform）
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/esp32_iot_gateway:/work" \
+            -w /work \
+            esp32-domain-test:ci \
+            pio test -e native
+
+  firmware-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [esp32-s3-devkitc-1-v1-release, esp32-s3-devkitc-1-v2-release]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: PlatformIO キャッシュ
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            esp32_iot_gateway/.pio/libdeps
+          key: pio-${{ hashFiles('esp32_iot_gateway/platformio.ini') }}-${{ matrix.env }}
+
+      - name: PlatformIO インストール
+        run: pip install platformio
+
+      - name: 実機ファームウェアビルド確認（${{ matrix.env }}）
+        run: pio run -e ${{ matrix.env }}
+        working-directory: esp32_iot_gateway

@@ -5,6 +5,9 @@ data "aws_route53_zone" "main" {
 }
 
 # ─── terraform apply 時点の git hash ─────────────────────────────────────────
+# admin.html本体には埋め込まない（version.json という別の小さいオブジェクトに
+# 書き出す。admin.htmlのcontent/etagをリポジトリ全体の変更から切り離すため。
+# 下の aws_s3_object.version_json 参照）
 
 data "external" "git_hash" {
   program = ["git", "log", "-1", "--pretty=format:{\"hash\":\"%h\"}"]
@@ -40,23 +43,41 @@ locals {
     replace(
       replace(
         replace(
-          replace(
-            file("${path.module}/../web/admin.html"),
-            "__TMPL_API_ENDPOINT__",
-            aws_apigatewayv2_stage.main.invoke_url
-          ),
-          "__TMPL_COGNITO_DOMAIN__",
-          local.cognito_domain_base
+          file("${path.module}/../web/admin.html"),
+          "__TMPL_API_ENDPOINT__",
+          aws_apigatewayv2_stage.main.invoke_url
         ),
-        "__TMPL_COGNITO_CLIENT_ID__",
-        aws_cognito_user_pool_client.web.id
+        "__TMPL_COGNITO_DOMAIN__",
+        local.cognito_domain_base
       ),
-      "__TMPL_WEB_ADMIN_URL__",
-      "https://${local.web_domain}/admin.html"
+      "__TMPL_COGNITO_CLIENT_ID__",
+      aws_cognito_user_pool_client.web.id
     ),
-    "__TMPL_GIT_HASH__",
-    data.external.git_hash.result.hash
+    "__TMPL_WEB_ADMIN_URL__",
+    "https://${local.web_domain}/admin.html"
   )
+
+  trip_analysis_html_rendered = replace(
+    replace(
+      replace(
+        replace(
+          file("${path.module}/../web/trip-analysis.html"),
+          "__TMPL_API_ENDPOINT__",
+          aws_apigatewayv2_stage.main.invoke_url
+        ),
+        "__TMPL_COGNITO_DOMAIN__",
+        local.cognito_domain_base
+      ),
+      "__TMPL_COGNITO_CLIENT_ID__",
+      aws_cognito_user_pool_client.web.id
+    ),
+    "__TMPL_WEB_ADMIN_URL__",
+    "https://${local.web_domain}/admin.html"
+  )
+
+  version_json_rendered = jsonencode({
+    commit = data.external.git_hash.result.hash
+  })
 }
 
 # ─── ACM 証明書（CloudFront は us-east-1 必須） ───────────────────────────────
@@ -203,6 +224,27 @@ resource "aws_s3_object" "admin_html" {
   content      = local.admin_html_rendered
   content_type = "text/html"
   etag         = md5(local.admin_html_rendered)
+}
+
+# ─── trip-analysis.html アップロード ─────────────────────────────────────────
+
+resource "aws_s3_object" "trip_analysis_html" {
+  bucket       = aws_s3_bucket.web.id
+  key          = "trip-analysis.html"
+  content      = local.trip_analysis_html_rendered
+  content_type = "text/html"
+  etag         = md5(local.trip_analysis_html_rendered)
+}
+
+# ─── version.json アップロード（git hashのみ、admin.htmlとは独立して都度更新） ─
+# admin.html側は実行時にこれをfetchしてフッターに表示する（web/admin.html参照）
+
+resource "aws_s3_object" "version_json" {
+  bucket       = aws_s3_bucket.web.id
+  key          = "version.json"
+  content      = local.version_json_rendered
+  content_type = "application/json"
+  etag         = md5(local.version_json_rendered)
 }
 
 # ─── Bucket Policy: CloudFront OAC のみ許可 ──────────────────────────────────

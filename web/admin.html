@@ -77,7 +77,8 @@
 <div class="header-row">
   <div>
     <h1>IoT 管理コンソール</h1>
-    <div style="font-size:0.75em; color:#555; margin-top:2px">infra: __TMPL_GIT_HASH__</div>
+    <div style="font-size:0.75em; color:#555; margin-top:2px">infra: <span id="infra-version">-</span></div>
+    <div style="font-size:0.8em; margin-top:4px"><a href="/trip-analysis.html" style="color:#4f8ef7">OBD トリップ分析へ →</a></div>
   </div>
   <div style="display:flex; gap:8px; align-items:center">
     <button class="secondary" id="auto-refresh-btn" onclick="toggleAutoRefresh()">自動更新 ON</button>
@@ -98,6 +99,15 @@ const WEB_URL           = '__TMPL_WEB_ADMIN_URL__';
 
 let idToken    = sessionStorage.getItem('id_token') || '';
 let userGroups = JSON.parse(sessionStorage.getItem('user_groups') || '[]');
+
+// ─── infraバージョン表示 ─────────────────────────────────────────────────────
+// admin.html本体には焼き込まず、実行時にversion.jsonを取得して表示する
+// （admin.html自体のcontent/etagをinfra全体の変更から切り離すため）
+
+fetch('version.json')
+  .then(r => r.json())
+  .then(v => { document.getElementById('infra-version').textContent = v.commit; })
+  .catch(() => {});
 
 // ─── Cognito 認証 ────────────────────────────────────────────────────────────
 
@@ -208,6 +218,8 @@ function deviceCard(d) {
     <div class="kv"><div class="k">最小電圧差</div><div class="v">${s.chg_min_diff_v != null ? s.chg_min_diff_v.toFixed(2) + ' V' : '-'}</div></div>
     <div class="kv"><div class="k">Ah オフセット</div><div class="v">${s.ah_offset != null ? s.ah_offset : '-'}</div></div>
     <div class="kv"><div class="k">デバッグログ</div><div class="v">${s.debug_log != null ? (s.debug_log ? 'on' : 'off') : '-'}</div></div>
+    <div class="kv"><div class="k">Continuous期限</div><div class="v">${s.continuous_until_time != null ? new Date(s.continuous_until_time * 1000).toLocaleString() : '-'}</div></div>
+    <div class="kv"><div class="k">デフォルトモード</div><div class="v">${s.default_mode || '-'}</div></div>
   </div>
 
   <!-- Shadow 編集 -->
@@ -241,8 +253,21 @@ function deviceCard(d) {
         <div class="form-group">
           <label>override_next_mode</label>
           <select id="sv-override-${id}">
-            <option value=""                  ${!s.override_next_mode                           ? 'selected' : ''}>(通常)</option>
-            <option value="one_shot_continuous" ${s.override_next_mode === 'one_shot_continuous' ? 'selected' : ''}>one_shot_continuous</option>
+            <option value=""                 ${!s.override_next_mode                          ? 'selected' : ''}>(通常)</option>
+            <option value="timed_continuous" ${s.override_next_mode === 'timed_continuous'     ? 'selected' : ''}>timed_continuous</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>継続時間（分、timed_continuous時のみ有効。今から何分後まで継続するか）</label>
+          <input type="number" step="1" min="1" max="1440" id="sv-duration-${id}" value="30">
+        </div>
+        <div class="form-group">
+          <label>default_mode（起動時のデフォルトモード。未設定なら従来通りprod=deep_sleep/dev=continuous）</label>
+          <select id="sv-default-mode-${id}">
+            <option value=""             ${!s.default_mode                       ? 'selected' : ''}>(未設定)</option>
+            <option value="deep_sleep"   ${s.default_mode === 'deep_sleep'       ? 'selected' : ''}>deep_sleep</option>
+            <option value="continuous"   ${s.default_mode === 'continuous'       ? 'selected' : ''}>continuous</option>
+            <option value="light_sleep"  ${s.default_mode === 'light_sleep'      ? 'selected' : ''}>light_sleep</option>
           </select>
         </div>
         <div class="form-group">
@@ -290,6 +315,8 @@ function toggleSection(id, btn) {
 // ─── Shadow 保存 ──────────────────────────────────────────────────────────────
 
 async function saveShadow(deviceId) {
+  const overrideMode = document.getElementById(`sv-override-${deviceId}`).value || null;
+  const defaultMode  = document.getElementById(`sv-default-mode-${deviceId}`).value || null;
   const body = {
     chg_start_v:      parseFloat(document.getElementById(`sv-start-${deviceId}`).value),
     chg_stop_v:       parseFloat(document.getElementById(`sv-stop-${deviceId}`).value),
@@ -297,8 +324,13 @@ async function saveShadow(deviceId) {
     ah_offset:        parseInt(document.getElementById(`sv-ah-${deviceId}`).value, 10),
     debug_log:        document.getElementById(`sv-debug-${deviceId}`).value === 'true',
     charging:         document.getElementById(`sv-charging-${deviceId}`).value === 'true',
-    override_next_mode: document.getElementById(`sv-override-${deviceId}`).value || null,
+    override_next_mode: overrideMode,
+    default_mode:      defaultMode,
   };
+  if (overrideMode === 'timed_continuous') {
+    const minutes = parseInt(document.getElementById(`sv-duration-${deviceId}`).value, 10);
+    body.continuous_until_time = Math.floor(Date.now() / 1000) + minutes * 60;
+  }
   const msgEl = document.getElementById(`shadow-msg-${deviceId}`);
   msgEl.textContent = '保存中...';
   msgEl.className   = 'msg';

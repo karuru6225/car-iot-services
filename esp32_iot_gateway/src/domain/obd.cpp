@@ -1,0 +1,489 @@
+#include "obd.h"
+#include <string.h>
+
+// 応答パケットの共通チェック: [0]=0x41(Mode01応答) [1]=PID [2]=A [3]=B ...（PCIバイトはcan.cpp側で剥離済み）
+// 一致すればペイロード先頭（A）へのポインタを payload に返す
+static bool checkHeader(const uint8_t *data, uint8_t dlc, uint8_t pid, uint8_t minDlc, const uint8_t *&payload)
+{
+  if (dlc < minDlc)
+    return false;
+  if (data[0] != 0x41 || data[1] != pid)
+    return false;
+  payload = data + 2;
+  return true;
+}
+
+bool obdDecodeRpm(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x0C, 4, p))
+    return false;
+  out.rpm = (uint16_t)(((uint16_t)p[0] * 256 + p[1]) / 4);
+  return true;
+}
+
+bool obdDecodeSpeed(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x0D, 3, p))
+    return false;
+  out.speedKmh = p[0];
+  return true;
+}
+
+bool obdDecodeLoad(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x04, 3, p))
+    return false;
+  out.loadPct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  return true;
+}
+
+bool obdDecodeMap(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x0B, 3, p))
+    return false;
+  out.mapKpa = p[0];
+  return true;
+}
+
+bool obdDecodeBaro(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x33, 3, p))
+    return false;
+  out.baroKpa = p[0];
+  return true;
+}
+
+bool obdDecodeThrottle(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x11, 3, p))
+    return false;
+  out.throttlePct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  return true;
+}
+
+bool obdDecodeTiming(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x0E, 3, p))
+    return false;
+  out.timingDeg = p[0] / 2.0f - 64.0f;
+  return true;
+}
+
+bool obdDecodeEcuVoltage(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x42, 4, p))
+    return false;
+  out.ecuVoltage = ((uint16_t)p[0] * 256 + p[1]) / 1000.0f;
+  return true;
+}
+
+bool obdDecodeMafAlt(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x66, 5, p))
+    return false;
+  if (!(p[0] & 0x01)) // Sensor1 MAF 非搭載
+    return false;
+  out.mafGs = ((uint16_t)p[1] * 256 + p[2]) / 32.0f;
+  return true;
+}
+
+bool obdDecodeCoolantAlt(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x67, 4, p))
+    return false;
+  if (!(p[0] & 0x01)) // Sensor1 非搭載
+    return false;
+  out.coolantC = (int16_t)p[1] - 40;
+  return true;
+}
+
+bool obdDecodeShortTermFuelTrim(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x06, 3, p))
+    return false;
+  out.stftPct = ((int)p[0] - 128) * 100.0f / 128.0f;
+  return true;
+}
+
+bool obdDecodeLongTermFuelTrim(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x07, 3, p))
+    return false;
+  out.ltftPct = ((int)p[0] - 128) * 100.0f / 128.0f;
+  return true;
+}
+
+bool obdDecodeO2SensorB1S2(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x15, 4, p))
+    return false;
+  out.o2B1s2V = p[0] / 200.0f;
+  out.o2B1s2TrimPct = ((int)p[1] - 128) * 100.0f / 128.0f;
+  return true;
+}
+
+bool obdDecodeEngineRunTime(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x1F, 4, p))
+    return false;
+  out.engineRunTimeSec = (uint16_t)p[0] * 256 + p[1];
+  return true;
+}
+
+bool obdDecodeMilDistance(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x21, 4, p))
+    return false;
+  out.milDistanceKm = (uint16_t)p[0] * 256 + p[1];
+  return true;
+}
+
+bool obdDecodeO2Sensor1WideBand(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x24, 6, p))
+    return false;
+  out.o2S1Ratio = ((uint16_t)p[0] * 256 + p[1]) * 2.0f / 65536.0f;
+  out.o2S1Voltage = ((uint16_t)p[2] * 256 + p[3]) * 8.0f / 65536.0f;
+  return true;
+}
+
+bool obdDecodeEvapPurge(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x2E, 3, p))
+    return false;
+  out.evapPurgePct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  return true;
+}
+
+bool obdDecodeWarmupsSinceCleared(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x30, 3, p))
+    return false;
+  out.warmupsSinceCleared = p[0];
+  return true;
+}
+
+bool obdDecodeDistanceSinceCleared(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x31, 4, p))
+    return false;
+  out.distanceSinceClearedKm = (uint16_t)p[0] * 256 + p[1];
+  return true;
+}
+
+bool obdDecodeCatalystTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x3C, 4, p))
+    return false;
+  out.catalystTempC = ((uint16_t)p[0] * 256 + p[1]) / 10.0f - 40.0f;
+  return true;
+}
+
+bool obdDecodeAbsoluteLoad(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x43, 4, p))
+    return false;
+  out.absoluteLoadPct = ((uint16_t)p[0] * 256 + p[1]) * 100.0f / 255.0f;
+  return true;
+}
+
+bool obdDecodeCommandedAfr(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x44, 4, p))
+    return false;
+  out.commandedAfr = ((uint16_t)p[0] * 256 + p[1]) * 2.0f / 65536.0f;
+  return true;
+}
+
+bool obdDecodeThrottleB(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x47, 3, p))
+    return false;
+  out.throttleBPct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  return true;
+}
+
+bool obdDecodeAccelPedalD(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x49, 3, p))
+    return false;
+  out.accelPedalDPct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  return true;
+}
+
+bool obdDecodeAccelPedalE(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x4A, 3, p))
+    return false;
+  out.accelPedalEPct = (uint8_t)((uint16_t)p[0] * 100 / 255);
+  return true;
+}
+
+bool obdDecodeFuelType(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x51, 3, p))
+    return false;
+  out.fuelType = p[0];
+  return true;
+}
+
+bool obdDecodeSecO2TrimShortTerm(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x55, 3, p))
+    return false;
+  out.secO2TrimStPct = ((int)p[0] - 128) * 100.0f / 128.0f;
+  return true;
+}
+
+bool obdDecodeSecO2TrimLongTerm(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x56, 3, p))
+    return false;
+  out.secO2TrimLtPct = ((int)p[0] - 128) * 100.0f / 128.0f;
+  return true;
+}
+
+bool obdDecodeChargeAirTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkHeader(data, dlc, 0x68, 5, p))
+    return false;
+  bool any = false;
+  if (p[0] & 0x01) // Sensor1 搭載
+  {
+    out.iatC = (int16_t)p[1] - 40;
+    any = true;
+  }
+  if (p[0] & 0x02) // Sensor2 搭載
+  {
+    out.iat2C = (int16_t)p[2] - 40;
+    any = true;
+  }
+  return any;
+}
+
+// UDS(Mode22)応答の共通チェック: [0]=0x62(ReadDataByIdentifier応答) [1]=DID上位 [2]=DID下位 [3]=A ...
+// Mode01のcheckHeader()とはヘッダ形式・PID幅（1バイト→2バイト）が異なるため別関数にする。
+static bool checkUdsHeader(const uint8_t *data, uint8_t dlc, uint16_t did, uint8_t minDlc, const uint8_t *&payload)
+{
+  if (dlc < minDlc)
+    return false;
+  if (data[0] != 0x62 || data[1] != (uint8_t)(did >> 8) || data[2] != (uint8_t)(did & 0xFF))
+    return false;
+  payload = data + 3;
+  return true;
+}
+
+bool obdDecodeAtfTemp(const uint8_t *data, uint8_t dlc, OBDReading &out)
+{
+  const uint8_t *p;
+  if (!checkUdsHeader(data, dlc, 0x2201, 4, p))
+    return false;
+  out.atfTempC = (int16_t)p[0] - 40;
+  return true;
+}
+
+// PID→データ長（PIDバイト自身を除く、A/B/C...の合計バイト数）。多くは上の
+// obdDecode*() の checkHeader() minDlc から算出（minDlc - 2）で正しいが、
+// 0x66/0x67/0x68（マスクバイト+複数センサー枠を持つ拡張PID群）は
+// デコーダが最初のセンサー分しか読まないため minDlc からは実際の応答長が分からない。
+// この3件は実車の生応答（多PIDバッチ応答・0x68単発応答）から実測した値
+// （CONTEXT_ARCHIVE.md参照。0x66=マスク+2センサー×2byte、
+// 0x67=マスク+2センサー×1byte、0x68=マスク+6byte）。kPids（obdpoll.cpp）と
+// 対応するPIDを追加したら、ここにも追記すること（実測せず minDlc から機械的に
+// 決めると同様の齟齬が起きうるので注意）。
+namespace
+{
+struct PidLength
+{
+  uint8_t pid;
+  uint8_t len;
+};
+
+const PidLength kPidLengths[] = {
+    {0x04, 1}, {0x06, 1}, {0x07, 1}, {0x0B, 1}, {0x0C, 2}, {0x0D, 1}, {0x0E, 1},
+    {0x11, 1}, {0x15, 2}, {0x1F, 2}, {0x21, 2}, {0x24, 4}, {0x2E, 1}, {0x30, 1},
+    {0x31, 2}, {0x33, 1}, {0x3C, 2}, {0x42, 2}, {0x43, 2}, {0x44, 2}, {0x47, 1},
+    {0x49, 1}, {0x4A, 1}, {0x51, 1}, {0x55, 1}, {0x56, 1}, {0x66, 5}, {0x67, 3}, {0x68, 7},
+};
+
+bool lookupPidLength(uint8_t pid, uint8_t &lenOut)
+{
+  for (const auto &e : kPidLengths)
+  {
+    if (e.pid == pid)
+    {
+      lenOut = e.len;
+      return true;
+    }
+  }
+  return false;
+}
+} // namespace
+
+bool obdParseMultiResponse(const uint8_t *data, uint8_t dlc, ObdMultiSegmentCb cb, void *ctx,
+                            uint8_t *unknownPidOut)
+{
+  if (dlc < 1 || data[0] != 0x41)
+    return false;
+
+  uint8_t i = 1;
+  while (i < dlc)
+  {
+    uint8_t pid = data[i++];
+    uint8_t len;
+    if (!lookupPidLength(pid, len))
+    {
+      // 未知PID: 以降のセグメント境界が分からないため打ち切り
+      if (unknownPidOut)
+        *unknownPidOut = pid;
+      return true;
+    }
+    if ((uint16_t)i + len > dlc)
+      break; // データ不足（応答が途中で切れている）
+    cb(pid, data + i, len, ctx);
+    i += len;
+  }
+  return false;
+}
+
+void obdReadingToBlePacket(const OBDReading &r, ObdBlePacket &out)
+{
+  out.schemaVersion = OBD_BLE_SCHEMA_VERSION;
+  out.headerLen = (uint8_t)offsetof(ObdBlePacket, rpm);
+  out.extOffset = (uint8_t)sizeof(ObdBlePacket);
+  out.valid = r.valid ? 1 : 0;
+  out.validMask = r.validMask;
+
+  out.rpm = r.rpm;
+  out.speedKmh = r.speedKmh;
+  out.loadPct = r.loadPct;
+  out.mapKpa = r.mapKpa;
+  out.baroKpa = r.baroKpa;
+  out.boostKpa = r.boostKpa;
+  out.throttlePct = r.throttlePct;
+  out.timingDeg = r.timingDeg;
+  out.ecuVoltage = r.ecuVoltage;
+  out.mafGs = r.mafGs;
+  out.coolantC = r.coolantC;
+  out.fuelRateLph = r.fuelRateLph;
+
+  out.stftPct = r.stftPct;
+  out.ltftPct = r.ltftPct;
+  out.o2B1s2V = r.o2B1s2V;
+  out.o2B1s2TrimPct = r.o2B1s2TrimPct;
+  out.engineRunTimeSec = r.engineRunTimeSec;
+  out.milDistanceKm = r.milDistanceKm;
+  out.o2S1Ratio = r.o2S1Ratio;
+  out.o2S1Voltage = r.o2S1Voltage;
+  out.evapPurgePct = r.evapPurgePct;
+  out.warmupsSinceCleared = r.warmupsSinceCleared;
+  out.distanceSinceClearedKm = r.distanceSinceClearedKm;
+  out.catalystTempC = r.catalystTempC;
+  out.absoluteLoadPct = r.absoluteLoadPct;
+  out.commandedAfr = r.commandedAfr;
+  out.throttleBPct = r.throttleBPct;
+  out.accelPedalDPct = r.accelPedalDPct;
+  out.accelPedalEPct = r.accelPedalEPct;
+  out.fuelType = r.fuelType;
+  out.secO2TrimStPct = r.secO2TrimStPct;
+  out.secO2TrimLtPct = r.secO2TrimLtPct;
+
+  out.ts = (uint32_t)r.ts;
+
+  out.iatC = r.iatC;
+  out.iat2C = r.iat2C;
+}
+
+// [fieldId:1][len:1][data:len]を1件書き込む。バッファ不足時は何もせずfalseを返す
+// （呼び出し側はfalseなら以降のフィールドも試さず打ち切る＝残り容量ではもう入らない前提）。
+namespace
+{
+bool writeExtTlv(uint8_t *buf, size_t bufSize, size_t &pos, ObdExtFieldId id, const void *data, uint8_t len)
+{
+  if (pos + 2 + len > bufSize)
+    return false;
+  buf[pos++] = (uint8_t)id;
+  buf[pos++] = len;
+  memcpy(buf + pos, data, len);
+  pos += len;
+  return true;
+}
+} // namespace
+
+size_t obdEncodeExtFields(const OBDReading &r, uint8_t *buf, size_t bufSize)
+{
+  if (bufSize < 1)
+    return 0;
+
+  size_t pos = 1; // buf[0]はextCount。件数確定後にまとめて書く
+  uint8_t count = 0;
+
+  int16_t atfTempC = r.atfTempC;
+  if (writeExtTlv(buf, bufSize, pos, ObdExtFieldId::AtfTempC, &atfTempC, sizeof(atfTempC)))
+    count++;
+
+  uint8_t atfTempValid = r.atfTempValid ? 1 : 0;
+  if (writeExtTlv(buf, bufSize, pos, ObdExtFieldId::AtfTempValid, &atfTempValid, sizeof(atfTempValid)))
+    count++;
+
+  buf[0] = count;
+  return pos;
+}
+
+uint8_t obdCrc8(const uint8_t *data, size_t len)
+{
+  uint8_t crc = 0x00;
+  for (size_t i = 0; i < len; i++)
+  {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; bit++)
+      crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
+  }
+  return crc;
+}
+
+void obdComputeDerived(OBDReading &r)
+{
+  if (!r.valid)
+    return;
+
+  // boost = MAP - Baro（Baro未取得時は標準大気圧101kPaで代用）
+  r.boostKpa = (int8_t)(r.mapKpa - (r.baroKpa > 0 ? r.baroKpa : 101));
+  // 燃費推算（MAFから）: OBD.md 参照。commandedAfr（=λ）を分母に反映し、
+  // 暖機増量中（λ<1）の過小評価を補正する。取得失敗（0）や異常値は
+  // λ=1固定にフォールバックする。
+  if (r.mafGs > 0)
+  {
+    float lambda = (r.commandedAfr > 0.5f && r.commandedAfr < 2.0f) ? r.commandedAfr : 1.0f;
+    r.fuelRateLph = r.mafGs / (14.7f * lambda * 0.745f) * 3.6f;
+  }
+}

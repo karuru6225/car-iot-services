@@ -1,0 +1,309 @@
+package info.karuru.cariot
+
+import android.Manifest
+import android.app.PictureInPictureParams
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.os.Build
+import android.os.Bundle
+import android.util.Rational
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.DashboardCustomize
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import info.karuru.cariot.auth.AuthLoginFlow
+import info.karuru.cariot.auth.AuthStore
+import info.karuru.cariot.ble.ConnState
+import info.karuru.cariot.companion.CompanionDeviceHelper
+import info.karuru.cariot.meter.PipConfigStore
+import info.karuru.cariot.meter.MeterSlot
+import info.karuru.cariot.obd.GaugeStyle
+import info.karuru.cariot.service.ACTION_CONNECT
+import info.karuru.cariot.service.ACTION_DISCONNECT
+import info.karuru.cariot.service.CarIotForegroundService
+import info.karuru.cariot.state.CarIotState
+import info.karuru.cariot.ui.battery.BatteryScreen
+import info.karuru.cariot.ui.connection.ConnectionScreen
+import info.karuru.cariot.ui.meter.MeterScreen
+import info.karuru.cariot.ui.obd.ObdScreen
+import info.karuru.cariot.ui.pip.PipContent
+import info.karuru.cariot.ui.theme.AppTheme
+import info.karuru.cariot.ui.theme.ClusterNightColorScheme
+import info.karuru.cariot.ui.theme.ClusterDayColorScheme
+import info.karuru.cariot.ui.theme.ClusterShapes
+import info.karuru.cariot.ui.theme.ClusterTypography
+import info.karuru.cariot.ui.theme.GaugePanelColorScheme
+import info.karuru.cariot.ui.theme.InstrumentStyle
+import info.karuru.cariot.ui.theme.LocalInstrumentStyle
+import info.karuru.cariot.ui.theme.ThemeStore
+import kotlinx.coroutines.launch
+
+// BLE接続・OBD受信の実処理はCarIotForegroundServiceが担当し、ここは状態(CarIotState)の
+// 表示とコマンド送信だけを行う薄い層（docs/car_iot_android_plan.md Phase 3）。
+// Activityが破棄されてもServiceは動き続けるため、onDestroy()でdisconnect()は呼ばない。
+// 認証（Phase 4）: サインイン自体はブラウザ(Custom Tabs)を開くためActivity起点で行うが、
+// 結果の受け取り・状態更新はOAuthRedirectActivity→CarIotState.userEmail経由で行う。
+class MainActivity : ComponentActivity() {
+  private val authLoginFlow = AuthLoginFlow(this)
+  private lateinit var authStore: AuthStore
+  // registerForActivityResult()をコンストラクタで呼ぶ都合上、Activity生成時（フィールド初期化時）
+  // にインスタンス化する必要がある（CompanionDeviceHelper.kt参照）。
+  private val companionHelper = CompanionDeviceHelper(this)
+  private var companionAssociated by mutableStateOf(false)
+  private var backgroundLocationGranted by mutableStateOf(false)
+  private lateinit var themeStore: ThemeStore
+  private var selectedTheme by mutableStateOf(AppTheme.NIGHT)
+  private lateinit var pipConfigStore: PipConfigStore
+  private var pipSlots by mutableStateOf<List<MeterSlot>>(emptyList())
+  private var isInPip by mutableStateOf(false)
+  // 自分から画面遷移する場合にPiP自動突入を1回だけ抑止するフラグ(onUserLeaveHint参照)。
+  private var suppressPipOnLeave = false
+
+  private val requestPermissions =
+      registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if (granted.values.all { it }) {
+          startBleService(ACTION_CONNECT)
+        }
+      }
+
+  private val requestBackgroundLocation =
+      registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        backgroundLocationGranted = granted
+      }
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    authStore = AuthStore(applicationContext)
+    companionAssociated = companionHelper.isAssociated()
+    backgroundLocationGranted = hasBackgroundLocationPermission()
+    themeStore = ThemeStore(applicationContext)
+    selectedTheme = themeStore.load()
+    pipConfigStore = PipConfigStore(applicationContext)
+    pipSlots = pipConfigStore.load()
+
+    // 起動時のセッション復元（mobile/lib/services/auth_service.dartのtryRestoreSession()相当、
+    // 実際のトークンリフレッシュはアップロード時に行うのでここでは保存済みemailを表示するだけ）
+    if (authStore.hasRefreshToken()) {
+      CarIotState.setUserEmail(authStore.getEmail())
+    }
+
+    setContent {
+      // タイポグラフィ・角丸は計器盤の体系として2テーマ共通。差分は配色のみ。
+      val colorScheme = when (selectedTheme) {
+        AppTheme.DAY -> ClusterDayColorScheme
+        AppTheme.NIGHT -> ClusterNightColorScheme
+        AppTheme.GAUGE -> GaugePanelColorScheme
+      }
+      // GAUGEだけは配色に加えて計器の描かれ方も変わる（針と目盛りのアナログ表示）。
+      val instrumentStyle = when (selectedTheme) {
+        AppTheme.GAUGE -> InstrumentStyle.ANALOG
+        else -> InstrumentStyle.FLAT
+      }
+      MaterialTheme(
+          colorScheme = colorScheme,
+          typography = ClusterTypography,
+          shapes = ClusterShapes,
+      ) {
+        CompositionLocalProvider(LocalInstrumentStyle provides instrumentStyle) {
+        if (isInPip) {
+          PipContent(slots = pipSlots)
+          return@CompositionLocalProvider
+        }
+        Surface {
+          var tabIndex by remember { mutableIntStateOf(0) }
+          Scaffold(
+              bottomBar = {
+                NavigationBar {
+                  NavigationBarItem(
+                      selected = tabIndex == 0,
+                      onClick = { tabIndex = 0 },
+                      icon = { Icon(Icons.Filled.Bluetooth, contentDescription = null) },
+                      label = { Text("接続") },
+                  )
+                  NavigationBarItem(
+                      selected = tabIndex == 1,
+                      onClick = { tabIndex = 1 },
+                      icon = { Icon(Icons.Filled.BatteryFull, contentDescription = null) },
+                      label = { Text("バッテリー") },
+                  )
+                  NavigationBarItem(
+                      selected = tabIndex == 2,
+                      onClick = { tabIndex = 2 },
+                      icon = { Icon(Icons.Filled.Speed, contentDescription = null) },
+                      label = { Text("OBD") },
+                  )
+                  NavigationBarItem(
+                      selected = tabIndex == 3,
+                      onClick = { tabIndex = 3 },
+                      icon = { Icon(Icons.Filled.DashboardCustomize, contentDescription = null) },
+                      label = { Text("メーター") },
+                  )
+                }
+              },
+          ) { innerPadding ->
+            Surface(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+              when (tabIndex) {
+                0 -> ConnectionScreen(
+                    onConnect = { requestPermissions.launch(blePermissions()) },
+                    onDisconnect = { startBleService(ACTION_DISCONNECT) },
+                    onSignIn = { signIn() },
+                    onSignOut = { signOut() },
+                    companionAssociated = companionAssociated,
+                    onEnableAutoLaunch = { enableAutoLaunch() },
+                    backgroundLocationGranted = backgroundLocationGranted,
+                    onRequestBackgroundLocation = {
+                      requestBackgroundLocation.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    },
+                    selectedTheme = selectedTheme,
+                    onThemeChange = { theme ->
+                      selectedTheme = theme
+                      themeStore.save(theme)
+                    },
+                    pipSlots = pipSlots,
+                    onPipSlotsChange = { slots ->
+                      pipSlots = slots
+                      pipConfigStore.save(slots)
+                    },
+                )
+                1 -> BatteryScreen()
+                2 -> ObdScreen()
+                else -> MeterScreen()
+              }
+            }
+          }
+        }
+        }
+      }
+    }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    // システム設定アプリ経由で許可された場合(Android 11+の一般的なフロー)は
+    // ActivityResultのコールバックを通らないため、画面復帰のたびに再チェックする。
+    backgroundLocationGranted = hasBackgroundLocationPermission()
+  }
+
+  // ホームボタン等でアプリを離れる操作を検知し、BLE接続中のみ自動でPiPへ入る
+  // （未接続時にPiPへ入っても表示するものが無いため）。
+  //
+  // onUserLeaveHint()はホーム/履歴キーだけでなく、アプリ自身が別のActivityを起動した
+  // ときにも呼ばれる。そのためサインイン（Custom Tabsでブラウザを開く）でもPiPに入り、
+  // ログイン画面にPiPウィンドウが重なってアカウント選択を妨げていた（実機で確認）。
+  // 自分から画面遷移する場合は suppressPipOnLeave を立てて抑止する。
+  override fun onUserLeaveHint() {
+    super.onUserLeaveHint()
+    if (suppressPipOnLeave) {
+      suppressPipOnLeave = false
+      return
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        CarIotState.connState.value == ConnState.CONNECTED
+    ) {
+      enterPictureInPictureMode(
+          PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build(),
+      )
+    }
+  }
+
+  // アスペクト比を指定しないとシステム既定の横長ウィンドウになり、項目が3つ以上あると
+  // 最終行が下端で見切れる（実機で確認）。1行あたりの高さから必要な縦横比を求めて渡す。
+  // AndroidのPiPは比率を約0.418〜2.39の範囲しか受け付けず、範囲外を渡すと例外になるため
+  // 内側にクランプする。
+  private fun pipAspectRatio(): Rational {
+    val count = pipSlots.size.coerceAtLeast(1)
+    // PipContent と同じ判定。全部デジタル数値なら縦積み、ゲージを含むなら横並びになるので、
+    // 必要な縦横比が変わる（片方だけ直すとウィンドウと中身がズレる）。
+    val allDigital = pipSlots.isEmpty() || pipSlots.all { it.style == GaugeStyle.DIGITAL }
+    val widthDp: Int
+    val heightDp: Int
+    if (allDigital) {
+      widthDp = 200
+      heightDp = 16 + count * 26
+    } else {
+      // 各セルにラベル・数値・ゲージが縦に積まれるぶん高さが要る。
+      widthDp = 92 * count
+      heightDp = 116
+    }
+    val ratio = (widthDp.toFloat() / heightDp).coerceIn(0.45f, 2.30f)
+    return Rational((ratio * 100).toInt(), 100)
+  }
+
+  override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+    super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+    isInPip = isInPictureInPictureMode
+  }
+
+  private fun hasBackgroundLocationPermission(): Boolean {
+    return ContextCompat.checkSelfPermission(
+        this,
+        Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+    ) == PackageManager.PERMISSION_GRANTED
+  }
+
+  // ESP32とのCDM関連付けを行い、アプリがkilled状態でもBLE検知でCarIotForegroundServiceのみ
+  // 自動起動できるようにする（画面は前面に出さない、CarIotCompanionService.kt参照、Phase7）。
+  private fun enableAutoLaunch() {
+    lifecycleScope.launch {
+      if (companionHelper.associate()) {
+        companionAssociated = true
+      }
+    }
+  }
+
+  private fun signIn() {
+    // ブラウザを開くための画面遷移であってアプリを離れる操作ではないので、PiPは抑止する。
+    suppressPipOnLeave = true
+    lifecycleScope.launch {
+      authLoginFlow.startSignIn()
+    }
+  }
+
+  private fun signOut() {
+    authStore.clear()
+    CarIotState.setUserEmail(null)
+  }
+
+  private fun startBleService(action: String) {
+    val intent = Intent(this, CarIotForegroundService::class.java).setAction(action)
+    ContextCompat.startForegroundService(this, intent)
+  }
+
+  private fun blePermissions(): Array<String> {
+    val perms = mutableListOf<String>()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      perms.add(Manifest.permission.BLUETOOTH_SCAN)
+      perms.add(Manifest.permission.BLUETOOTH_CONNECT)
+    }
+    // BLEスキャン自体はneverForLocationフラグにより位置情報権限を必要としないが、
+    // OBDデータへのGPS位置紐付け(Phase6、LocationTracker)のため別途リクエストする。
+    perms.add(Manifest.permission.ACCESS_FINE_LOCATION)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      perms.add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    return perms.toTypedArray()
+  }
+}

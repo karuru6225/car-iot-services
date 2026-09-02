@@ -1,0 +1,22 @@
+FROM python:3.12-slim
+
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --quiet platformio
+
+WORKDIR /work
+
+# native platform・tool-scons・ArduinoJson等のダウンロードをビルド時に済ませておく。
+# docker-compose.test.ymlは実行時に「.」を/workへbind mountして上書きするが、
+# pio pkg installが書き込む先(~/.platformio)は/workの外なのでイメージに焼き込まれたまま残る。
+# platformio.ini / test/lib 以外（src/やtest/test_*/）だけを変更した場合はこのレイヤーが
+# キャッシュされ、`docker compose run`のたびに再ダウンロードしなくなる。
+COPY platformio.ini ./
+COPY test/lib ./test/lib
+RUN pio pkg install -e native
+
+COPY . .
+
+CMD ["pio", "test", "-e", "native"]

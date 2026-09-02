@@ -1,6 +1,6 @@
 #include "command.h"
 #include "jobs.h"
-#include "logger.h"
+#include "../logger.h"
 #include "../device/ina228.h"
 #include "../config.h"
 #include <cstring>

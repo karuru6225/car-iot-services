@@ -1,0 +1,352 @@
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show debugPrint;
+
+// ファーム側 domain/obd.cpp の obdCrc8() と同一アルゴリズム（多項式0x07、初期値0x00）。
+// bytesの先頭len バイトに対するCRC-8を計算する。
+int _crc8(Uint8List bytes, int len) {
+  var crc = 0x00;
+  for (var i = 0; i < len; i++) {
+    crc ^= bytes[i];
+    for (var bit = 0; bit < 8; bit++) {
+      crc = (crc & 0x80) != 0 ? ((crc << 1) ^ 0x07) & 0xFF : (crc << 1) & 0xFF;
+    }
+  }
+  return crc;
+}
+
+// _Readerの読み取りがlimitを超えた際にthrowされる。境界がズレている以上、それ以前に読んだ
+// ボディの値も正しいオフセットで読めている保証がないため、以降の読み取りを続ける意味がない
+// （throttleBPctで境界を超えたのにaccelPedalDPctを読み進めても無意味な値にしかならない）。
+// ObdReading.fromBytes()がこれをキャッチしてnullを返し、読み取りループ自体を即座に打ち切る。
+class _ReaderOverrunException implements Exception {}
+
+// バイト列を先頭から順に読み進めるカーソル。読み取りメソッドを呼ぶたびに内部位置を
+// 自動で進めるため、呼び出し側（ObdReading.fromBytes()）はオフセットを一切書かずに済む。
+// ObdBlePacket（esp32_iot_gateway/src/domain/obd.h）のフィールド宣言順と呼び出し順を
+// 一致させることだけが要件になる。
+class _Reader {
+  final ByteData _d;
+  final Endian _e;
+  int _pos;
+  // 設定されていれば、読み取り後にこの位置を超えた時点で_ReaderOverrunExceptionを投げる。
+  int? _limit;
+
+  _Reader(Uint8List bytes, int start)
+      : _d = ByteData.sublistView(bytes),
+        _e = Endian.little,
+        _pos = start;
+
+  int get pos => _pos;
+
+  void skip(int n) => _pos += n;
+  void seekTo(int pos) => _pos = pos;
+
+  // 以降の読み取りがlimitを超えたら例外を投げて即座に中断する。ボディの型・順序が
+  // ObdBlePacketの実際のレイアウトとズレて、意図せずTLV拡張フィールド領域まで
+  // 読み込んでしまうバグを実行時に検出するためのもの（ヘッダのextOffsetを渡す想定）。
+  void setLimit(int limit) => _limit = limit;
+
+  // 読み取り後のposがlimitを超えていたら例外を投げる（超えていなければ何もしない）。
+  void _checkLimit() {
+    final limit = _limit;
+    if (limit != null && _pos > limit) {
+      debugPrint('[ObdReading] _Reader: 読み取り位置(pos=$_pos)がlimit($limit)を超えました。'
+          'TLV拡張フィールド領域に突入しています。ObdBlePacketのボディ定義とヘッダの'
+          'extOffset計算がズレている可能性があります。以降の読み取りを中断します。');
+      throw _ReaderOverrunException();
+    }
+  }
+
+  int u8() {
+    final v = _d.getUint8(_pos);
+    _pos += 1;
+    _checkLimit();
+    return v;
+  }
+
+  int i8() {
+    final v = _d.getInt8(_pos);
+    _pos += 1;
+    _checkLimit();
+    return v;
+  }
+
+  int u16() {
+    final v = _d.getUint16(_pos, _e);
+    _pos += 2;
+    _checkLimit();
+    return v;
+  }
+
+  int i16() {
+    final v = _d.getInt16(_pos, _e);
+    _pos += 2;
+    _checkLimit();
+    return v;
+  }
+
+  int u32() {
+    final v = _d.getUint32(_pos, _e);
+    _pos += 4;
+    _checkLimit();
+    return v;
+  }
+
+  double f32() {
+    final v = _d.getFloat32(_pos, _e);
+    _pos += 4;
+    _checkLimit();
+    return v;
+  }
+}
+
+// ObdReading（esp32_iot_gateway/src/domain/obd.h の ObdBlePacket）のDart側パース結果。
+// コア構造体（bytes[0..extOffset)）はヘッダ（schemaVersion/headerLen/extOffset/valid/
+// validMask）とボディ（実データ）で構成される。フィールド順・オフセットは ObdBlePacket
+// と完全一致させること。extOffset以降にはTLV拡張フィールド領域が続く（ObdExtFieldId参照）。
+// 新しいセンサー値はこちら側で追加され、コア構造体側のオフセットは変わらない。
+class ObdReading {
+  final int rpm, speedKmh, loadPct, mapKpa, baroKpa, boostKpa, throttlePct;
+  final double timingDeg, ecuVoltage, mafGs;
+  final int coolantC;
+  final double fuelRateLph;
+  final double stftPct, ltftPct, o2B1s2V, o2B1s2TrimPct;
+  final int engineRunTimeSec, milDistanceKm;
+  final double o2S1Ratio, o2S1Voltage;
+  final int evapPurgePct, warmupsSinceCleared, distanceSinceClearedKm;
+  final double catalystTempC, absoluteLoadPct, commandedAfr;
+  final int throttleBPct, accelPedalDPct, accelPedalEPct, fuelType;
+  final double secO2TrimStPct, secO2TrimLtPct;
+  final bool valid;
+  final int ts;
+  final int iatC, iat2C;
+  final int validMask;
+  // 以下はTLV拡張フィールド領域から読み取る（コア構造体には含まれない）
+  final int atfTempC;
+  final bool atfTempValid;
+
+  ObdReading._({
+    required this.rpm, required this.speedKmh, required this.loadPct,
+    required this.mapKpa, required this.baroKpa, required this.boostKpa,
+    required this.throttlePct, required this.timingDeg, required this.ecuVoltage,
+    required this.mafGs, required this.coolantC, required this.fuelRateLph,
+    required this.stftPct, required this.ltftPct, required this.o2B1s2V,
+    required this.o2B1s2TrimPct, required this.engineRunTimeSec,
+    required this.milDistanceKm, required this.o2S1Ratio, required this.o2S1Voltage,
+    required this.evapPurgePct, required this.warmupsSinceCleared,
+    required this.distanceSinceClearedKm, required this.catalystTempC,
+    required this.absoluteLoadPct, required this.commandedAfr,
+    required this.throttleBPct, required this.accelPedalDPct,
+    required this.accelPedalEPct, required this.fuelType,
+    required this.secO2TrimStPct, required this.secO2TrimLtPct,
+    required this.valid, required this.ts,
+    required this.iatC, required this.iat2C,
+    required this.validMask,
+    required this.atfTempC, required this.atfTempValid,
+  });
+
+  // ファーム側 domain/obd.h の ObdExtFieldId と対応させること。
+  static const _extFieldAtfTempC = 1;
+  static const _extFieldAtfTempValid = 2;
+
+  // ファーム側 domain/obd.h の OBD_BLE_SCHEMA_VERSION と対応させること。ボディのレイアウトを
+  // 変えたらファーム側と一緒にインクリメントする。
+  static const _schemaVersion = 1;
+
+  // パース失敗時（バイト数不足）はnullを返す。呼び出し側（ObdChunkAssembler.add()）は
+  // 素通しでnullを返せるようすでにnullableで宣言されている。
+  static ObdReading? fromBytes(Uint8List rawBytes) {
+    // 末尾1バイトはCRC-8（伝送中のビット化け検出用、ファーム側 domain/obd.cpp の obdCrc8() と
+    // 対になる）。CRC不一致はschemaVersion不一致（ソフトウェア側の定義ズレ）とは性質が異なる
+    // 物理的な通信異常のため、以降の処理は一切行わず即座にパースを拒否する。
+    if (rawBytes.isEmpty) return null;
+    final dataLen = rawBytes.length - 1;
+    final receivedCrc = rawBytes[dataLen];
+    final computedCrc = _crc8(rawBytes, dataLen);
+    if (receivedCrc != computedCrc) {
+      debugPrint('[ObdReading] CRC不一致: 受信=0x${receivedCrc.toRadixString(16).padLeft(2, '0')} '
+          '計算=0x${computedCrc.toRadixString(16).padLeft(2, '0')}（伝送中の破損の可能性）');
+      return null;
+    }
+    final bytes = Uint8List.sublistView(rawBytes, 0, dataLen);
+
+    // schemaVersion+headerLenの2バイトだけは常に固定位置という前提（ObdBlePacket参照）。
+    if (bytes.length < 2) return null;
+
+    // ヘッダはObdBlePacketの宣言順どおりに読む（_Readerがオフセットを自動計算する）。
+    // schemaVersionを最初に読むのは、バージョンによって以降のヘッダ・ボディの解釈自体が
+    // 変わりうるため（ObdBlePacketのコメント参照）。
+    final r = _Reader(bytes, 0);
+    final schemaVersion = r.u8();
+    // headerLen/extOffsetによってヘッダの拡張・TLV拡張領域の位置は自己記述化されているため、
+    // schemaVersion不一致が実際に問題になるのは「ボディのレイアウトを直接変えた」場合のみ
+    // （運用ルールとしてボディは増減させない前提のためレアケース）。パース自体を拒否すると
+    // ファーム/アプリの更新タイミングがズレただけで何も表示されなくなるため、ここでは
+    // 警告ログのみ出して読み取りは続行する（値がおかしければログで気づける）。
+    if (schemaVersion != _schemaVersion) {
+      debugPrint(
+          '[ObdReading] schemaVersion不一致: 期待=$_schemaVersion 実際=$schemaVersion（読み取りは続行）');
+    }
+
+    final headerLen = r.u8();
+    if (bytes.length < headerLen) return null;
+
+    final extOffset = r.u8();
+    if (bytes.length < extOffset) return null;
+
+    var valid = r.u8() != 0;
+    final validMask = r.u32();
+
+    // ここまでで今のアプリが知っているヘッダフィールドは読み終えたが、実際の位置が
+    // headerLenと一致するとは限らない（将来ヘッダにフィールドが追加された場合、今のアプリは
+    // それを知らないまま読み進めるとボディの開始位置を見失う）。headerLenへ明示的にシークして
+    // からボディを読むことで、未知のヘッダフィールドが挟まっていても安全にたどり着ける。
+    r.seekTo(headerLen);
+    // ボディの型・順序がObdBlePacketの実際のレイアウトとズレていた場合、cursorがextOffsetを
+    // 超えて拡張フィールド領域に食い込んでしまう。setLimit()で読み取りのたびに検知し、
+    // 超えた時点で_ReaderOverrunExceptionを投げて残りのフィールド読み取りを打ち切らせる
+    // （throttleBPctで境界を超えたのにaccelPedalDPct以降を読み進めても無意味なため）。
+    r.setLimit(extOffset);
+
+    // ボディのデフォルト値。パースに失敗した場合はこれらのまま・valid=falseで返す。
+    // extOffset自体はヘッダの一部として独立に読み取り済みで信頼できるため、ボディが
+    // 壊れていてもTLV拡張領域だけは切り離してパースを試みる（下記参照）。
+    var rpm = 0, speedKmh = 0, loadPct = 0, mapKpa = 0, baroKpa = 0, boostKpa = 0, throttlePct = 0;
+    var timingDeg = 0.0, ecuVoltage = 0.0, mafGs = 0.0;
+    var coolantC = 0;
+    var fuelRateLph = 0.0;
+    var stftPct = 0.0, ltftPct = 0.0, o2B1s2V = 0.0, o2B1s2TrimPct = 0.0;
+    var engineRunTimeSec = 0, milDistanceKm = 0;
+    var o2S1Ratio = 0.0, o2S1Voltage = 0.0;
+    var evapPurgePct = 0, warmupsSinceCleared = 0, distanceSinceClearedKm = 0;
+    var catalystTempC = 0.0, absoluteLoadPct = 0.0, commandedAfr = 0.0;
+    var throttleBPct = 0, accelPedalDPct = 0, accelPedalEPct = 0, fuelType = 0;
+    var secO2TrimStPct = 0.0, secO2TrimLtPct = 0.0;
+    var ts = 0, iatC = 0, iat2C = 0;
+
+    try {
+      // 以降はボディをObdBlePacketのフィールド宣言順どおりに1つずつ読み進める。
+      // オフセットは_Readerが自動計算するため、フィールドの型・呼び出し順さえ
+      // ObdBlePacketと一致させれば足りる（追加・削除時もオフセットの手計算が要らない）。
+      rpm = r.u16();
+      speedKmh = r.u8();
+      loadPct = r.u8();
+      mapKpa = r.u8();
+      baroKpa = r.u8();
+      boostKpa = r.i8();
+      throttlePct = r.u8();
+      timingDeg = r.f32();
+      ecuVoltage = r.f32();
+      mafGs = r.f32();
+      coolantC = r.i16();
+      fuelRateLph = r.f32();
+      stftPct = r.f32();
+      ltftPct = r.f32();
+      o2B1s2V = r.f32();
+      o2B1s2TrimPct = r.f32();
+      engineRunTimeSec = r.u16();
+      milDistanceKm = r.u16();
+      o2S1Ratio = r.f32();
+      o2S1Voltage = r.f32();
+      evapPurgePct = r.u8();
+      warmupsSinceCleared = r.u8();
+      distanceSinceClearedKm = r.u16();
+      catalystTempC = r.f32();
+      absoluteLoadPct = r.f32();
+      commandedAfr = r.f32();
+      throttleBPct = r.u8();
+      accelPedalDPct = r.u8();
+      accelPedalEPct = r.u8();
+      fuelType = r.u8();
+      secO2TrimStPct = r.f32();
+      secO2TrimLtPct = r.f32();
+      ts = r.u32();
+      iatC = r.i16();
+      iat2C = r.i16();
+
+      // ボディを読み終えた時点でちょうどextOffsetに到達しているはず。setLimit()は「超えたら」
+      // しか検知しないため、逆に「読み足りない」（ObdBlePacketに存在するのに読み忘れている
+      // フィールドがある）ケースはここで別途拾う。
+      if (r.pos != extOffset) {
+        debugPrint('[ObdReading] ボディ読み取り完了後の位置(${r.pos})がextOffset($extOffset)と'
+            '一致しません。ObdBlePacketとの定義ズレの可能性があります。');
+        valid = false;
+      }
+    } on _ReaderOverrunException {
+      // 境界がズレている場合、それ以前に読んだボディの値も正しいオフセットで読めている保証が
+      // ない。壊れた値をvalid=trueのまま表示してしまわないよう、ボディ全体を無効扱いにする
+      // （個々のフィールドは上のデフォルト値のまま）。TLV拡張領域は下で独立してパースを試みる。
+      valid = false;
+    }
+
+    // TLV拡張フィールド領域: [extCount:1]([fieldId:1][len:1][data:len])×extCount。
+    // ボディのパース成否に関わらず独立してパースを試みる（extOffsetはヘッダの一部として
+    // 別に読み取り済みで、ボディの内部構造とは無関係に信頼できるため）。
+    // 知らないfieldIdはlen分読み飛ばす。firmware側で新しいフィールドが追加されても、
+    // 対応するcaseを足すだけで済み、他フィールドのオフセット計算には影響しない。
+    var atfTempC = 0;
+    var atfTempValid = false;
+    if (bytes.length > extOffset) {
+      final ext = _Reader(bytes, extOffset);
+      final extCount = ext.u8();
+      for (var i = 0; i < extCount && ext.pos + 2 <= bytes.length; i++) {
+        final fieldId = ext.u8();
+        final len = ext.u8();
+        if (ext.pos + len > bytes.length) break; // データ不足（壊れたパケット）、安全に打ち切り
+        switch (fieldId) {
+          case _extFieldAtfTempC:
+            atfTempC = ext.i16();
+            break;
+          case _extFieldAtfTempValid:
+            atfTempValid = ext.u8() != 0;
+            break;
+          default:
+            ext.skip(len); // 未知のfieldIdはlen分読み飛ばす
+        }
+      }
+    }
+
+    return ObdReading._(
+      rpm: rpm,
+      speedKmh: speedKmh,
+      loadPct: loadPct,
+      mapKpa: mapKpa,
+      baroKpa: baroKpa,
+      boostKpa: boostKpa,
+      throttlePct: throttlePct,
+      timingDeg: timingDeg,
+      ecuVoltage: ecuVoltage,
+      mafGs: mafGs,
+      coolantC: coolantC,
+      fuelRateLph: fuelRateLph,
+      stftPct: stftPct,
+      ltftPct: ltftPct,
+      o2B1s2V: o2B1s2V,
+      o2B1s2TrimPct: o2B1s2TrimPct,
+      engineRunTimeSec: engineRunTimeSec,
+      milDistanceKm: milDistanceKm,
+      o2S1Ratio: o2S1Ratio,
+      o2S1Voltage: o2S1Voltage,
+      evapPurgePct: evapPurgePct,
+      warmupsSinceCleared: warmupsSinceCleared,
+      distanceSinceClearedKm: distanceSinceClearedKm,
+      catalystTempC: catalystTempC,
+      absoluteLoadPct: absoluteLoadPct,
+      commandedAfr: commandedAfr,
+      throttleBPct: throttleBPct,
+      accelPedalDPct: accelPedalDPct,
+      accelPedalEPct: accelPedalEPct,
+      fuelType: fuelType,
+      secO2TrimStPct: secO2TrimStPct,
+      secO2TrimLtPct: secO2TrimLtPct,
+      valid: valid,
+      ts: ts,
+      iatC: iatC,
+      iat2C: iat2C,
+      validMask: validMask,
+      atfTempC: atfTempC,
+      atfTempValid: atfTempValid,
+    );
+  }
+}

@@ -4,6 +4,10 @@ ops/.venv/
 infra/terraform.tfvars
 infra/*.tfplan
 
+# Lambda テスト実行時のPythonキャッシュ
+infra/lambda_src/**/__pycache__/
+infra/lambda_src/**/.pytest_cache/
+
 # 証明書・秘密鍵（実機用、公開禁止）
 m5atom_iot_gateway/src/certs.h
 esp32_iot_gateway/src/provision_config.h
@@ -35,3 +39,6 @@ tools/
 # KiCad 解析キャッシュ（再生成可能）
 m5atom_power_adc/schematic_analysis.json
 m5atom_power_adc/pcb_analysis.json
+
+# OBDトリップAI分析の一時検証（実車の位置情報等を含むため非公開、esp32_iot_gateway/CONTEXT.mdのTODO参照）
+experiments/trip-analysis-ai-poc/

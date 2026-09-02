@@ -4,7 +4,7 @@
 #include "../device/oled.h"
 #include "mqtt.h"
 #include "https.h"
-#include "logger.h"
+#include "../logger.h"
 #include "../config.h"
 #include <esp_ota_ops.h>
 #include <ArduinoJson.h>
@@ -26,7 +26,7 @@ static void gzLog(const char *fmt, ...)
   va_start(args, fmt);
   vsnprintf(buf, sizeof(buf), fmt, args);
   va_end(args);
-  logger.print(buf);
+  logger.printf("%s", buf); // logStorageWrite()にも残すためprintではなくprintfを使う
 }
 
 struct GzStream
@@ -157,6 +157,7 @@ bool Ota::apply(const char *url, const char *jobId)
   if (!partition)
   {
     logger.println("[OTA] 更新パーティションなし");
+    jobsReport(jobId, "FAILED", "no update partition");
     return false;
   }
   logger.printf("[OTA] 書き込み先: %s\n", partition->label);
@@ -174,6 +175,7 @@ bool Ota::apply(const char *url, const char *jobId)
   {
     logger.println("[OTA] ダウンロード失敗");
     oledPrint("OTA DL failed");
+    jobsReport(jobId, "FAILED", "download failed");
     return false;
   }
   logger.printf("[OTA] Phase1(DL): %u ms  %d bytes\n", millis() - t0, dlSize);
@@ -183,6 +185,7 @@ bool Ota::apply(const char *url, const char *jobId)
   if (err != ESP_OK)
   {
     logger.printf("[OTA] begin 失敗: 0x%x\n", err);
+    jobsReport(jobId, "FAILED", "ota begin failed");
     return false;
   }
 
@@ -202,6 +205,7 @@ bool Ota::apply(const char *url, const char *jobId)
     esp_ota_abort(handle);
     oledPrint("OTA write failed");
     lte.deleteFile(tmpFile);
+    jobsReport(jobId, "FAILED", "write failed");
     return false;
   }
 
@@ -210,6 +214,7 @@ bool Ota::apply(const char *url, const char *jobId)
   {
     logger.printf("[OTA] 検証失敗: 0x%x\n", err);
     oledPrint("OTA verify failed");
+    jobsReport(jobId, "FAILED", "verify failed");
     return false;
   }
 
@@ -218,6 +223,7 @@ bool Ota::apply(const char *url, const char *jobId)
   {
     logger.printf("[OTA] boot partition 設定失敗: 0x%x\n", err);
     oledPrint("OTA boot set fail");
+    jobsReport(jobId, "FAILED", "boot partition set failed");
     return false;
   }
 
@@ -287,6 +293,16 @@ void Ota::reportPendingJobResult()
   }
 }
 
+// FIRMWARE_VERSIONは"<base>+<githash>"形式。'+'より前のbase部分だけをjobのversionと
+// 完全一致で比較する（strncmpの前方一致だと短いversion文字列がたまたま前方一致し、
+// 実際にはバージョンが異なるのに「同一」と誤判定される恐れがあった）
+static bool isSameFirmwareVersion(const char *version)
+{
+  const char *plus = strchr(FIRMWARE_VERSION, '+');
+  size_t baseLen = plus ? (size_t)(plus - FIRMWARE_VERSION) : strlen(FIRMWARE_VERSION);
+  return strlen(version) == baseLen && strncmp(FIRMWARE_VERSION, version, baseLen) == 0;
+}
+
 bool Ota::handleJob(const JobInfo &job)
 {
   JsonDocument doc;
@@ -307,9 +323,18 @@ bool Ota::handleJob(const JobInfo &job)
     return false;
   }
 
+  // 基板バージョン不一致ならスキップ（Thing Group誤登録・手動Job作成ミスに対する保険）
+  int boardVer = doc["board_version"] | 0; // 0 = 未指定（後方互換）
+  if (boardVer != 0 && boardVer != getBoardVersion())
+  {
+    logger.printf("[OTA] 基板バージョン不一致 (device=%u, job=%d)、スキップ\n", getBoardVersion(), boardVer);
+    jobsReport(job.id, "FAILED", "board_version mismatch");
+    return false;
+  }
+
   // 同一バージョンならスキップ（force=true の場合は無視）
   bool force = doc["force"] | false;
-  if (!force && version && strncmp(FIRMWARE_VERSION, version, strlen(version)) == 0)
+  if (!force && version && isSameFirmwareVersion(version))
   {
     logger.printf("[OTA] 同一バージョン (%s)、スキップ\n", version);
     jobsReport(job.id, "SUCCEEDED");

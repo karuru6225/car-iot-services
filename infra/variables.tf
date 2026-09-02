@@ -22,3 +22,27 @@ variable "web_subdomain" {
   description = "Web管理画面のサブドメイン（例: iot → iot.example.com）"
   type        = string
 }
+
+variable "google_oauth_client_id" {
+  description = "Google Cloud ConsoleのOAuthクライアントID（Cognito Google IdP連携用）"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_oauth_client_secret" {
+  description = "Google Cloud ConsoleのOAuthクライアントシークレット（Cognito Google IdP連携用）"
+  type        = string
+  sensitive   = true
+}
+
+variable "home_lat" {
+  description = "OBDトリップAIナレーティブ生成で「自宅」判定に使う緯度（HOME_RADIUS_M以内を自宅として匿名化）"
+  type        = number
+  sensitive   = true
+}
+
+variable "home_lon" {
+  description = "OBDトリップAIナレーティブ生成で「自宅」判定に使う経度（HOME_RADIUS_M以内を自宅として匿名化）"
+  type        = number
+  sensitive   = true
+}

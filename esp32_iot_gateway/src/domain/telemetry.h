@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <time.h>
+#include <optional>
 #include <ArduinoJson.h>
 #include "measurement.h"
 #include "thermometer.h"
@@ -9,9 +10,13 @@
 
 // Shadow reported 向けデバイス設定ペイロードを組み立てる
 // clearDesired=true のとき "desired":null を付加して desired をクリアする
-// overrideNextMode: "one_shot_continuous" を渡すと ACK として報告、nullptr で null 報告（通常時）
+// overrideNextMode: "timed_continuous" を渡すと ACK として報告、nullptr で null 報告（通常時）
+// continuousUntilTime: TIMED_CONTINUOUS中の継続期限（絶対UNIX時刻）。std::nulloptでnull報告
+// defaultMode: NVSに設定済みのデフォルトモード名（"light_sleep"等）。nullptrでnull報告（未設定時）
 int buildConfigPayload(char *buf, size_t size, bool clearDesired = false,
-                       const char *overrideNextMode = nullptr);
+                       const char *overrideNextMode = nullptr,
+                       std::optional<time_t> continuousUntilTime = std::nullopt,
+                       const char *defaultMode = nullptr);
 
 // ─── テレメトリエンコーダ（pubqueue が使用） ────────────────────────────────────
 //

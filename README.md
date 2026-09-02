@@ -21,6 +21,14 @@ ESP32-S3-MINI-1 (esp32_iot_gateway)
   │                                         ↑ CloudFront → Web 管理画面 (index.html)
   ├── Shadow (desired/delta) → デバイス設定変更（充電制御・閾値等）
   └── IoT Jobs → OTA ファームウェア更新
+
+  ※ 上記の LTE 経路とは別に、車内では BLE でスマートフォンと直接つながる
+ESP32-S3-MINI-1 (esp32_iot_gateway)
+        ↓ BLE (GATT Notify: 計測値・OBD-II)
+  Android アプリ (car_iot_android)
+    ├── Foreground Service で接続維持（アプリを閉じても受信継続）
+    ├── Room に蓄積 → API Gateway へバッチアップロード（Cognito 認証）
+    └── バッテリー / OBD / メーター表示・PiP
 ```
 
 ## ハードウェア
@@ -47,15 +55,18 @@ car-iot-services/
 │   ├── RELEASE.md         リリース手順（GitHub Actions）
 │   └── MENU.md            OLED メニュー仕様
 ├── m5atom_iot_gateway/    M5Atom S3 ゲートウェイ（段階的廃止予定）
+├── car_iot_android/       Android アプリ（Kotlin + Jetpack Compose、BLE 受信・アップロード）
+│   └── CONTEXT.md         実装状態・実機検証メモ・UIデザインの設計判断
 ├── m5atom_power_adc/      新 PCB KiCad プロジェクト（電源・ADC・リレー・ESP32-S3 直付け）
+│   ├── HARDWARE.md        ハードウェア設計仕様（BOM・回路・PCB レイアウト）
 │   ├── CIRCUIT.md         回路設計仕様書
 │   └── *.kicad_sch        階層シート構成（メイン + GroveUnit / RelayControl / VoltageSense）
 ├── infra/                 クラウドインフラ（Terraform）
 │   ├── manage.ps1         デプロイスクリプト（plan / apply）
 │   └── lambda_src/        Lambda ソースコード
+│       └── TESTING.md     Lambdaユニットテストの実行方法（Docker + moto + pytest）
 ├── ops/                   運用スクリプト
-│   ├── provision_device.ps1 / .sh  ESP32 初回プロビジョニング（証明書発行・SPIFFS 書き込み）
-│   ├── deploy_ota.ps1 / .sh        OTA 手動デプロイ（GitHub Actions 利用推奨）
+│   ├── provision_device.ps1  ESP32 初回プロビジョニング（証明書発行・SPIFFS 書き込み）
 │   ├── gen_certs.ps1      証明書生成
 │   └── send_command.ps1   IoT Jobs コマンド送信
 ├── web/
@@ -66,7 +77,6 @@ car-iot-services/
 ├── rtx830_filter_updater/ RTX830 フィルタ更新スクリプト
 ├── ARCHITECTURE.md
 ├── CONTEXT.md             開発引き継ぎ資料
-├── HARDWARE.md            新 PCB ハードウェア設計仕様
 └── SIM7080G.md            SIM7080G AT コマンドリファレンス
 ```
 
@@ -129,11 +139,11 @@ cd ops
 
 スクリプトが MAC アドレスからデバイス ID（`esp32-gw-xxxxxxxxxxxx`）を生成し、AWS IoT Core に Thing を登録・証明書を発行・SPIFFS に書き込む。基板バージョンは NVS（`device/board_version`）にも書き込まれる。
 
-その後、**AWS IoT Core コンソール → Thing グループ `ota-target-car-iot-gw` → デバイス ID を追加**することで OTA の配信対象になる。グループに入っていないデバイスには OTA ジョブが届かない。
+同時に `-BoardVersion` に応じた Thing グループ（`ota-target-car-iot-gw-v1` または `-v2`）へも自動登録され、OTA の配信対象になる。グループに入っていないデバイスには OTA ジョブが届かない。
 
 ### OTA リリース
 
-`vX.Y.Z` タグを push すると GitHub Actions が自動でビルド・S3 アップロード・IoT Job 作成・GitHub Release を実行する。
+`vX.Y.Z` タグを push すると GitHub Actions が自動でビルド・S3 アップロード・IoT Job 作成・GitHub Release を実行する。MAJOR桁は基板シリーズ固定（1=v1基板、2=v2基板）。`src/config.h` の `FIRMWARE_VERSION_BASE` が正で、タグの数字と一致しないとビルドはエラーで停止する（先に `config.h` を更新してからタグを打つ）。
 
 ```powershell
 git tag v1.2.3

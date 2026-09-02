@@ -1,0 +1,12 @@
+// AppConfig.kt にコピーして実際の値を埋めること（AppConfig.kt は.gitignore対象）。
+// 各値は `cd infra && ./manage.ps1 output -Profile default` で確認できる
+// （mobile/lib/config.dart.exampleと同じ値を使ってよい、Cognito側は同じApp Client
+// を共用する設計。docs/car_iot_android_plan.md参照）。
+package info.karuru.cariot
+
+object AppConfig {
+  const val COGNITO_CLIENT_ID = "<cognito_mobile_client_id>"
+  const val AWS_REGION = "<terraform output時のvar.aws_region、例: ap-northeast-1>"
+  const val COGNITO_USER_POOL_ID = "<cognito_user_pool_id>"
+  const val API_ENDPOINT = "<api_endpoint（末尾スラッシュ無し）>"
+}

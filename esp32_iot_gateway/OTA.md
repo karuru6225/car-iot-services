@@ -67,9 +67,12 @@ OTA 適用
 {
   "operation": "ota",
   "version": "1.2.0",
+  "board_version": 1,
   "url": "https://your-bucket.s3.ap-northeast-1.amazonaws.com/firmware/v1.2.0.bin"
 }
 ```
+
+`board_version`（1 or 2）は基板ハードウェアバージョン。未指定（0扱い）の場合はチェックをスキップする（後方互換）。バージョン文字列のMAJOR桁が恒久的に基板シリーズを表す（1=v1基板、2=v2基板。`RELEASE.md`参照）ため、S3パスに基板別のサブディレクトリは不要（バージョン自体が基板を一意に表す）。
 
 ### デバイス側の MQTT トピック
 
@@ -112,6 +115,8 @@ IN_PROGRESS（更新に publish）
 
 ### AWS 側の操作手順
 
+タグのMAJOR桁（1 or 2）が基板シリーズを表し、対応するThing Groupに配信する（`RELEASE.md`参照。CIでは`firmware-release.yml`が自動実行するため通常手動操作は不要）。
+
 ```bash
 # ジョブドキュメントを S3 にアップロード
 aws s3 cp job.json s3://your-bucket/jobs/v1.2.0.json
@@ -119,10 +124,10 @@ aws s3 cp job.json s3://your-bucket/jobs/v1.2.0.json
 # ファームバイナリをアップロード
 aws s3 cp firmware.bin s3://your-bucket/firmware/v1.2.0.bin
 
-# ジョブを作成
+# ジョブを作成（バージョン1.2.0 = v1基板シリーズなので、v1用Thing Groupを対象にする）
 aws iot create-job \
-  --job-id "ota-v1.2.0" \
-  --targets "arn:aws:iot:ap-northeast-1:{accountId}:thing/{thingName}" \
+  --job-id "ota-v1_2_0" \
+  --targets "arn:aws:iot:ap-northeast-1:{accountId}:thinggroup/ota-target-car-iot-gw-v1" \
   --document-source "https://your-bucket.s3.ap-northeast-1.amazonaws.com/jobs/v1.2.0.json"
 ```
 
@@ -219,6 +224,7 @@ SPIFFS 上の証明書ファイル3本の CRC32 を NVS（`lte/cert_crc`）に�
 | firmware.bin QIO パッチ（extra_scripts + esptool） | 実装済み |
 | AWS IAM Policy（Jobs トピックの publish/subscribe 権限） | 実装済み（infra/iot.tf、terraform apply 要） |
 | reportPendingJobResult() の MQTT リトライ | 実装済み（publish 失敗時は job_id を NVS に残して次回起動時に再試行） |
+| 基板バージョン整合性チェック（`board_version`） | 実装済み（Job doc の `board_version` と NVS `getBoardVersion()` を比較、不一致は FAILED） |
 
 ---
 
@@ -227,4 +233,5 @@ SPIFFS 上の証明書ファイル3本の CRC32 を NVS（`lte/cert_crc`）に�
 - OTA バイナリの最大サイズ: **3840KB**（各スロットのサイズ）
 - factory パーティションなし。完全故障時は物理アクセスで復旧
 - ファームバイナリに秘密情報なし。証明書・デバイス設定はプロビジョニング時に書き込む
-- 共通ファームの OTA 配信が可能（device ID は MAC から生成、cert/設定は SPIFFS/NVS から読む）
+- device ID は MAC から生成、cert/設定は SPIFFS/NVS から読むため、同一基板バージョン内では共通ファームのOTA配信が可能
+- ただし基板バージョン（v1/v2）が異なるとピン配置・回路が異なるため、ファームウェア自体は基板ごとに別ビルド・別OTAパイプラインになる（`RELEASE.md`参照）

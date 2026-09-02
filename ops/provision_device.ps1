@@ -70,6 +70,13 @@ if ($LASTEXITCODE -ne 0 -and ($thingResult -notmatch 'ResourceAlreadyExistsExcep
 }
 Write-Host "Thing: $DeviceId"
 
+# --- 2b. Add to OTA thing group (board-version specific) ---
+
+$OtaGroupName = "ota-target-car-iot-gw-v$BoardVersion"
+Write-Host ">>> Adding to OTA thing group $OtaGroupName..."
+aws iot add-thing-to-thing-group --thing-group-name $OtaGroupName --thing-name $DeviceId
+Write-Host "Added to $OtaGroupName"
+
 # --- 3. Deactivate and detach existing certificates ---
 
 Write-Host ">>> Deactivating existing certificates..."

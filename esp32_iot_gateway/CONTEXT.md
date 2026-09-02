@@ -101,11 +101,12 @@ esp32_iot_gateway/
     │   └── button.h/.cpp              デバウンス・長押し検出（BTN0/BTN1 ピン定数内包、フィードバック音内蔵）
     ├── domain/
     │   ├── measurement.h              計測値構造体（VoltageReading, PowerReading）
-    │   ├── telemetry.h/.cpp           ペイロード JSON 組み立て（Shadow / Thermometer / CO2）
+    │   ├── telemetry.h/.cpp           Shadow設定ペイロード組み立て + ITelemetryEncoder（Json/MsgPack、MsgPackはmagic+CRC32付与）
     │   ├── sensor.h                   BLE センサー共通構造体（SensorBase）
     │   ├── thermometer.h/.cpp         SwitchBot 温湿度計パーサー
     │   ├── co2meter.h/.cpp            SwitchBot CO2センサーパーサー
     │   ├── sensor_factory.h/.cpp      センサー種別振り分け（SensorVariant）
+    │   ├── sensor_filter.h/.cpp       BLE センサー値のメディアンフィルタ（BLE_MEDIAN_FILTER時のみ）
     │   └── ble_targets.h/.cpp         監視対象 BLE アドレスの NVS 永続化
     └── service/
         ├── mqtt.h/.cpp                MQTT publish / subscribe / pollMqtt（device/lte をトランスポートとして使用）
@@ -165,12 +166,26 @@ ESP32-S3-MINI-1
 | `ah` | `ah` | float | 積算電荷量（Ah）= INA228 積算値 + Ah オフセット（NVS） |
 | `ts` | `ts` | int | UNIX タイムスタンプ（秒） |
 
+#### バイナリフレーミング（v1.18.0以降・パケット破損対策）
+
+`sensors/{device_id}/data_bin` の実際の送信バイト列は、上記 MessagePack map をさらに以下でラップする:
+
+```text
+[magic 1B: 0xC1][version 1B][MessagePack本体（上記map）][CRC32 4B（little-endian、magic~本体まで）]
+```
+
+- **背景**: ESP32↔SIM7080G間のUARTにパリティ・CRCが無く、稀に1ビット化けがそのままクラウドまで届く問題があった。Shadow reportedのキー名が化けて大量蓄積する形で発覚（Shadow設定値は本節で後述の通りJSONテキストのため同種の対策は未実装。破損が疑われる場合はDevice Shadowを一度`delete-thing-shadow`すれば次サイクルで自動再構築される）
+- **magic 0xC1**: MessagePack仕様で「未使用」と規定されたバイト値。本体（常にfixmap: `0x80`-`0x8F`始まり）と衝突しないため、`ingest` Lambda はこのバイトの有無だけで新旧フォーマットを自動判別できる（**ファーム/Lambdaのデプロイ順序に依存しない**）
+- **旧フォーマット（v1.17.0以前）**: ヘッダ無し、MessagePack本体のみ。`ingest` Lambda は今後も後方互換としてサポートし続ける
+- **CRC不一致時**: `raw/`（Athenaスキーマ）には保存せず、生バイナリのまま専用バケット（`corrupted`、30日で自動削除）に退避する。`ingest` Lambda のログに `[CORRUPT]` として理由を出力
+- S3保存JSONには検出したフォーマットバージョンを `"ver"`（0=旧形式、1=新形式）として追加する
+
 ### Shadow 設定値（reported / desired）
 
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
 
 ```json
-{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"fw_version":"1.17.0+xxxxxxxx"}}}
+{"state":{"reported":{"ah_offset":200,"chg_start_v":11.70,"chg_stop_v":12.50,"chg_min_diff_v":0.30,"charging":false,"override_next_mode":null,"continuous_until_time":null,"fw_version":"1.24.1+xxxxxxxx"}}}
 ```
 
 クラウドから desired を設定するとデバイスが次回起動時に delta を受け取り NVS に適用する。
@@ -180,10 +195,14 @@ ESP32-S3-MINI-1
 {"state":{"desired":{"chg_start_v":11.5,"chg_stop_v":12.8}}}
 {"state":{"desired":{"chg_min_diff_v":0.5}}}
 {"state":{"desired":{"charging":true}}}
-{"state":{"desired":{"override_next_mode":"one_shot_continuous"}}}
+{"state":{"desired":{"override_next_mode":"timed_continuous","continuous_until_time":1746143700}}}
 ```
 
-`override_next_mode: "one_shot_continuous"` を設定すると、次回起動時に1サイクルだけ CONTINUOUS モードで動作（BLE アドバタイズ継続）し、自動で DEEP_SLEEP に戻る。デバイスが ACK として reported に `"one_shot_continuous"` を送信したタイミングで desired も自動クリアされる。
+`override_next_mode: "timed_continuous"` を `continuous_until_time`（継続期限、絶対UNIXタイムスタンプ）と同時に設定すると、次回起動時からその時刻に達するまで CONTINUOUS サイクルを繰り返し、期限到達後に自動で DEEP_SLEEP に戻る（BTN1 長押しでも即座に DEEP_SLEEP へ切り替え可能）。`continuous_until_time` 未指定時はデフォルト30分後。上限は現在時刻から1440分（24時間）後にクランプされる（無期限化を防ぐ安全策）。管理画面では「今から何分後」を入力し、送信時にJS側で絶対時刻へ変換してPUTする。
+
+`continuous_until_time` は `ah_offset` 等と同様に**TIMED_CONTINUOUS中は継続してreportedに反映され続ける**（`shadowPublishConfig()`が呼ばれるたびに現在の期限を送る）ため、管理画面を開き直しても「今設定されている期限」を確認できる。DEEP_SLEEP等TIMED_CONTINUOUS以外のモードになった時点で自動的に`null`が送られる（期限到達・BTN1長押し・BLE切断のいずれの経路でDEEP_SLEEPに戻っても、次にshadow publishされたタイミングでnullになる）。
+
+デバイスが ACK として reported に `"timed_continuous"` を送信したタイミングで desired も自動クリアされる。`override_next_mode` は `setup()` 時にしか反映されない（稼働中の即時切り替えは非対応）。CONTINUOUS/TIMED_CONTINUOUS中も5分サイクルごとにOTA/コマンドJobsを確認するため（`checkAndHandleJob()`、[main.cpp](esp32_iot_gateway/src/main.cpp)参照）、長時間の継続中でもOTAは通常通り届く。
 
 shadow publish はスリープ直前に1回だけ行う（起動時は行わない）。電源断で状態がズレた場合でも次サイクル（最大5分）で補正される。
 
@@ -222,6 +241,9 @@ shadow publish はスリープ直前に1回だけ行う（起動時は行わな�
 | `ThermometerData` | SwitchBot 温湿度計データ（SensorBase + temp/humidity/battery） |
 | `Co2MeterData` | SwitchBot CO2センサーデータ（ThermometerData + co2） |
 | `SensorVariant` | `std::variant<ThermometerData, Co2MeterData>` |
+| `ITelemetryEncoder` | テレメトリエンコーダ基底クラス（`encodeBattery`/`encodeThermometer`/`encodeCo2`を実装、`serialize`は派生クラスに委譲） |
+| `JsonTelemetryEncoder` | JSON形式エンコーダ（トピック`data`） |
+| `MsgPackTelemetryEncoder` | MessagePack形式エンコーダ（トピック`data_bin`）。`[magic 0xC1][version][本体][CRC32 4B]`でラップ |
 
 ## 重要な設計決定
 
@@ -317,9 +339,9 @@ m5atom_iot_gateway と同一設計。以下の注意事項も継承:
 
 | 定数 | 値 | 用途 |
 | --- | --- | --- |
-| `FIRMWARE_VERSION` | `"1.17.0+" GIT_HASH` | ファームウェアバージョン |
+| `FIRMWARE_VERSION` | `FIRMWARE_VERSION_BASE "+" GIT_HASH` | ファームウェアバージョン。`FIRMWARE_VERSION_BASE`はBOARD_VERSIONで基板シリーズ別に分岐（1=v1基板、2=v2基板）し、ソースが正。gitタグはCI発火・GitHub Release表示用のみ。詳細は`RELEASE.md`参照 |
 | `GIT_HASH` | ビルド時注入（8文字 hex） | `extra_scripts.py` が `-DGIT_HASH` で定義 |
-| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `ONE_SHOT_CONTINUOUS`（動作モード） |
+| `OperationMode` | enum class | `DEEP_SLEEP` / `CONTINUOUS` / `TIMED_CONTINUOUS`（動作モード） |
 | `SLEEP_INTERVAL_SEC` | `300` | DeepSleep 間隔 / CONTINUOUS モード待機間隔（秒） |
 | `CERT_PATH_CA` | `"/certs/ca.crt"` | SPIFFS 上の CA 証明書パス |
 | `CERT_PATH_DEVICE` | `"/certs/device.crt"` | SPIFFS 上のデバイス証明書パス |
@@ -343,8 +365,8 @@ device/lte.h の定数（ピン番号は `board_pins.h` 経由、下記参照）
 ## board_pins.h / 基板バージョン切り替え
 
 ピン番号は `src/board_pins.h` の `BoardPins` 構造体に集約し、`boardPins()` で取得する（`config.h` と同格で全層から参照可）。
-`m5atom_power_adc` の基板バージョン（v1/v2）ごとに `board_pins_v1.cpp` / `board_pins_v2.cpp` が実値を持ち、
-`board_pins.cpp` が `BOARD_VERSION`（`platformio.ini` の `build_flags` で指定、未指定時は `1`）で切り替える。
+`m5atom_power_adc` の基板バージョン（v1/v2）ごとに `board_pins_v1.h` / `board_pins_v2.h` が実値を持ち、
+`board_pins.h` が `BOARD_VERSION`（`platformio.ini` の `build_flags` で指定、未指定時は `1`）に応じて該当ヘッダを `#include` する（選ばれなかった方はコンパイラに一切渡らない）。
 
 | 基板 | gu0x系（未使用） | gu1x系（LTE接続） | Relay0/1/2 | PWR_HOLD | GP2/GP3・GP11/GP12 |
 | --- | --- | --- | --- | --- | --- |
@@ -361,17 +383,13 @@ LTEモジュールは筐体都合で実際には gu1x 系ピン（GPIO7/8/9）�
 | プラットフォーム | espressif32 |
 | ボード | esp32-s3-devkitc-1（ESP32-S3-MINI-1 互換） |
 | C++ 標準 | C++17（`-std=gnu++17`） |
-| env | `esp32-s3-devkitc-1-v1-develop` / `-v2-develop` / `esp32-s3-devkitc-1-release`（デフォルトは `v2-develop`） |
+| env | `esp32-s3-devkitc-1-v1-develop` / `-v2-develop` / `-v1-release` / `-v2-release`（デフォルトは `v2-develop`。release envはOTA配信もv1/v2で別パイプライン、`RELEASE.md`参照） |
 | ビルドフック | `extra_scripts.py`（`pre:`）— git hash を `GIT_HASH` マクロとして注入 |
 | 主要ライブラリ | TinyGSM, ArduinoJson, Adafruit SSD1306, Adafruit GFX, Adafruit ADS1X15, NimBLE-Arduino, QRCode |
 
 ## 作業中・引き継ぎ事項
 
-### ~~TODO: Shadow データを S3/Athena に流す（時系列履歴の保存）~~ **設計変更により対応済み**
-
-Shadow はテレメトリではなく設定値（ah_offset / fw_version）を管理するよう刷新。
-バッテリーテレメトリは `sensors/{device_id}/data`（type=`"battery"`）として送信し既存の ingest パイプラインで S3 に蓄積。
-Shadow の desired / delta による双方向リモート設定変更も実装済み。
+> 実装済み/対応済みになったTODOは `CONTEXT_ARCHIVE.md` に移動している。
 
 ### uzlib 圧縮・解凍 API（実機検証済み）
 
@@ -452,45 +470,6 @@ zlib_finish_block(&comp);             // end-of-block + バイト境界フラッ
 
 ---
 
-### ~~OTA ファームウェアの gzip 圧縮~~ **v1.13.0 で実装済み**
-
-`deploy_ota.ps1 -Compress` で `firmware.bin.gz` を S3 にアップロード。
-`ota.apply()` が URL 末尾 `.gz` を検出し、uzlib ストリーミング解凍しながら書き込む。
-`ota.handleJob()` に `force=true` フラグを追加（バージョン一致でも強制更新）。
-
-**実装ポイント（uzlib ストリーミング）**: `source = NULL` にして `readSourceByte` コールバックを使う。
-コールバック内で `lte.fileReadChunk()` を 4096 バイト単位で同期取得してバッファを補充する。
-`destSize` に出力チャンクサイズを設定し `uzlib_uncompress_chksum()` を繰り返す。
-
-**事前検証テスト（再作成手順）**:
-0x00-0xFF の 256 バイトパターンを gzip 圧縮・S3 PUT・GET・解凍・検証するテスト。
-
-1. 一時 S3 バケットを作成（公開 PUT/GET ポリシー）し `test_data.gz` をアップロード
-2. 以下の Python で gzip ファイルを生成: `data = bytes(range(256)); gzip.open(out,'wb').write(data)`
-3. デバイス側: `TINF_DATA` に `source`/`dest`/`dict` を設定してヘッダパース → 解凍ループ → 検証
-4. gzip ヘッダ: `1F 8B 08 00 00 00 00 00 00 FF` + deflate + CRC32(LE) + size(LE)
-5. 注意: 0x00-0xFF は非圧縮に近く deflate 出力が入力より大きくなる（正常）
-
-### ~~フェーズ 2: AWS IoT からのコマンド受信~~ **AWS IoT Jobs で実装済み**
-
-- `service/jobs.h/.cpp`: Jobs プロトコル層（subscribe / get-next / report）
-- `service/command.h/.cpp`: コマンドディスパッチ（`operation` フィールドで振り分け）
-- 実装済みコマンド: `ah_reset`、`charge_main_batt`（`timeout_sec` 指定、省略時 1200 秒）
-- 未実装コマンド: `relay_on` / `relay_off`（リレーピン定数の整理が必要）
-- 設定変更は Jobs ではなく Shadow desired/delta で行う（`ah_offset`、`chg_start_v`、`chg_stop_v` 等）
-
-### ~~フェーズ 4: 操作ボタン UI~~ **実装済み**
-
-OLED + 2ボタンの設定メニューを実装。詳細は `MENU.md` 参照。
-
-- `service/menu.h/.cpp` — メニューステートマシン本体（`enterMenuMode()` → `OperationMode` を返す）
-- `service/monitor.h/.cpp` — 計測サイクル（`measure()` / `publish()`）
-- `device/button.h/.cpp` — デバウンス・長押し検出（BTN0/BTN1 ピン定数内包、フィードバック音内蔵）
-- BTN0（GPIO26）: カーソル移動 / CONTINUOUS 待機中はメニュー呼び出し
-- BTN1（GPIO33）: 決定 / 長押しで戻る / CONTINUOUS 待機中は DEEP_SLEEP↔CONTINUOUS トグル
-- 起動時に BTN0 を押しながら電源 ON でメニューモードに入る（LTE 未起動）
-- CONTINUOUS 待機中に BTN0 短押しでもメニューを呼び出せる（LTE 接続済みのまま）
-
 ### TODO: INA228 設定メニューの追加（未着手）
 
 INA228 ドライバを `Ina228` クラスに移行済み（`device/ina228.h/.cpp`）。
@@ -517,9 +496,11 @@ INA228 ドライバを `Ina228` クラスに移行済み（`device/ina228.h/.cpp
 | リレーセンシング × 3 | IO10/IO12/IO14 | 外部スイッチ検出、負論理（HIGH = OFF） |
 | ブザー | IO35 | AO3401A ハイサイドスイッチ、LEDC PWM 2700Hz、負論理 |
 
-### TODO: BLE ダッシュボード表示器（未着手）
+### TODO: BLE ダッシュボード表示器（ESP32-S3側は実装済み・CYD側は未着手）
 
-ESP32-S3 を BLE Central として動かし、運転席から視認できる外付けディスプレイに計測値をリアルタイム表示する。
+運転席から視認できる外付けディスプレイに計測値をリアルタイム表示する。ESP32-S3 が BLE Peripheral、外付けディスプレイが BLE Central として動かす。
+
+**現状**: ESP32-S3側のBLE Peripheral（GATT Server）は、当初モバイルアプリ向けに実装済み（`device/ble_peripheral.cpp`）。VoltMain/Curr/Pwr/VoltSub/Temp/Ah/Ts/Lte/Obd の各CharacteristicがNOTIFY対応で、`BlePeripheral::notify()`/`notifyObd()`から計測値を送信できる。この基盤はCYD等のBLE Central側からもそのまま購読可能なはずで、ESP32-S3側の追加実装は原則不要。残っているのはCYD側（BLE Central + TFT描画）のみ。
 
 **ハードウェア候補**:
 
@@ -531,63 +512,10 @@ ESP32-S3 を BLE Central として動かし、運転席から視認できる外�
 - バッテリー電圧 / 電流 / 電力（INA228 計測値）
 - 接続状態（BLE / LTE）
 
-**実装方針**:
+**実装方針（CYD側）**:
 
-- ESP32-S3 側: NimBLE で BLE Peripheral（GATT Server）を追加。計測値を Notify で送信
-- CYD 側: NimBLE で BLE Central（GATT Client）を実装。受信データを TFT に描画
-- 既存の LTE / MQTT 処理とは非同期で動作させる（`millis()` ベースで一定周期送信）
-
-### ~~TODO: スマホ BLE 連携~~ **本番実装完了**
-
-ESP32-S3 を BLE Peripheral として動かし、スマホから設定・監視を行う。
-
-**方針**: Flutter アプリ（iOS / Android 両対応）。`mobile/` ディレクトリに実装済み。
-
-**実装順序**:
-
-1. ~~**接続検証**~~（完了）
-2. ~~**計測値ダッシュボード**~~（完了）
-3. ~~**設定 Read/Write**~~（完了）
-4. ~~**本番実装**~~（完了）: `device/ble_peripheral.h/.cpp` として本体に組み込み
-5. ~~**DeepSleep + GPIO0 EXT0 wakeup 登録**~~（完了）
-
-#### 本番 GATT 構成
-
-デバイス名: `car-iot-ble`、スキャンフィルタ: 計測サービス UUID
-
-**計測サービス** — Notify のみ、全値 float32 (little-endian)、認証不要
-
-| Characteristic | UUID | 型 | 内容 |
-| -------------- | ---- | -- | ---- |
-| 計測サービス | `f3a8b2c1-d4e5-4f6a-7b8c-9d0e1f2a3b4c` | — | Service |
-| メイン電圧 | `f3a8b2c2-...` | float32 | V（adsReadDiffMain） |
-| 電流 | `f3a8b2c3-...` | float32 | A（ina228.readCurrent） |
-| 電力 | `f3a8b2c4-...` | float32 | W（ina228.readPower） |
-| サブ電圧 | `f3a8b2c5-...` | float32 | V（adsReadDiffSub） |
-
-**設定サービス** — READ_AUTHEN / WRITE_AUTHEN（MITM ペアリング後のみ R/W 可）
-
-| Characteristic | UUID | 型 | 内容 |
-| -------------- | ---- | -- | ---- |
-| 設定サービス | `f3a8b2d1-d4e5-4f6a-7b8c-9d0e1f2a3b4c` | — | Service |
-| Ah オフセット | `f3a8b2d2-...` | int32 | Ah（`getAhOffset` / `setAhOffset`） |
-| 充電タイムアウト | `f3a8b2d3-...` | uint32 | 分（`getChgTimeoutMin` / `setChgTimeoutMin`） |
-| 充電開始電圧 | `f3a8b2d4-...` | float32 | V（`getChgStartV` / `setChgStartV`） |
-| 充電停止電圧 | `f3a8b2d5-...` | float32 | V（`getChgStopV` / `setChgStopV`） |
-
-#### 動作フロー
-
-- 通常起動: setup() で BLE アドバタイズ開始（認証なし接続 → 計測 Notify のみ）
-- スマホ接続 → CONTINUOUS モードに昇格（5分おきに measure + publish + notify）
-- スマホ切断 → DEEP_SLEEP に戻る（手動 CONTINUOUS の場合は維持）
-- DeepSleep 前に `rtc_gpio_pullup_en(GPIO_NUM_0)` + `esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0)` を登録済み。BOOT ボタン押下で DeepSleep から即時復帰できる
-
-#### Phone メニュー（ペアリング）
-
-- OLED メニュー「Phone」を選択 → 6桁の Passkey を OLED に表示
-- スマホ側でコードを入力してペアリング → CONTINUOUS モードに移行
-- ボンディング情報は NVS に保存（`MAX_BONDS=1`：再ペアリングで上書き）
-- ペアリング後は次回から自動接続 + 設定 R/W 可能
+- CYD 側: NimBLE で BLE Central（GATT Client）を実装。既存の `device/ble_peripheral.cpp` のMEAS_SERVICE_UUID経由で受信し、TFT に描画
+- 既存の LTE / MQTT 処理とは非同期で動作させる（`millis()` ベースで一定周期受信）
 
 ### TODO: ULP による低電圧アラート起動（未着手）
 
@@ -608,43 +536,17 @@ ULP RISC-V コプロセッサで DeepSleep 中もバッテリー電圧を監視�
 
 **閾値（案）**: ADC raw 値 1800 ≈ 11V（要キャリブレーション）
 
-### ~~TODO: 通信量削減 Phase 1（フィールド名短縮）~~ **実装済み**
+### TODO: corrupted バケットの破損データをCRC32ブルートフォースで訂正（未着手）
 
-MQTT 通信経路上のフィールド名を短縮し、送信バイト数を削減した（MQTT フレーミング込み ~156 bytes → ~132 bytes）。
+これまで観測した破損は一貫して1パケットにつき1ビットだけ反転するパターン（Shadow reportedで化けたキー名も元のキーと1〜2ビットしか違わない）。この特性を利用し、**ファーム変更・ペイロード増量なしで既存のCRC32だけを使った訂正**が可能。
 
-**設計方針**: 短縮名は通信ドライバ層（`domain/telemetry.cpp`）のみに閉じ込める。`ingest` Lambda で受信時にフルネームへ展開して S3 に保存するため、Glue / Athena / Web は変更不要。
+**方式**: `corrupted` バケットに退避された生バイナリ（`raw`）に対し、`raw[:-4]`（magic+version+本体）の全ビット位置を1つずつ反転させて再計算し、末尾4バイトのCRC32と一致する候補を探す。ペイロードは高々500〜700ビット程度なので探索コストは無視できるレベル。候補が一意に一致すれば、CRC32が偶然一致する確率（候補数 × 2^-32 ≈ 10^-7）はほぼゼロなのでその訂正はほぼ確実に正しい。2ビット以上の破損だった場合は一致候補が見つからず、現状通り「訂正不可・`corrupted`に残る」に自然にフォールバックする（誤訂正のリスクなし）。
 
-**フィールド名マッピング**（通信上の短縮名 → S3 保存名）:
+**実装方針（案）**:
 
-| 通信上 | S3/内部 | 通信上 | S3/内部 |
-| --- | --- | --- | --- |
-| `t` | `type` | `a` | `addr` |
-| `m` | `main` | `h` | `humidity` |
-| `s` | `sub` | `bt` | `battery` |
-| `i` | `current` | `rs` | `rssi` |
-| `p` | `power` | `tp` | `temp` |
-
-`ah` / `ts` / `co2` / `mf` / `fw` は変更なし。
-
-### ~~TODO: 通信量削減 Phase 2（MessagePack 化）~~ **v1.15.0 で実装完了**
-
-**実装内容**:
-
-- `domain/telemetry.h/.cpp`: `ITelemetryEncoder` 基底クラス（Template Method）+ `JsonTelemetryEncoder` / `MsgPackTelemetryEncoder`
-- `service/mqtt.h/.cpp`: `publish(topic, uint8_t*, size_t)` でバイナリ送信（`SerialAT.write()` 使用）
-- `service/pubqueue`: エンコーダを DI で切り替え。MsgPack 時はトピック `sensors/{id}/data_bin` を使用
-- `platformio.ini`: `release` / `develop` env ともに `-D USE_MSGPACK` 有効（デフォルト）
-- `infra/iot.tf`: `sensors/+/data_bin` 用 Topic Rule `ingest_bin`（`encode(*,'base64')` 経由）+ Lambda permission 追加
-- `infra/lambda_src/ingest/index.py`: インライン msgpack デコーダ（stdlib のみ）+ `payload` キー分岐
-
-**効果（実測）**（バッテリーテレメトリ 1 件）:
-
-| 形式 | ペイロード |
-| --- | --- |
-| JSON + フィールド名短縮（旧） | ~96 bytes |
-| MessagePack + フィールド名短縮（現行） | **59 bytes**（約 38% 削減） |
-
-**確認済み**（2026-05-26）: `AT+SMPUB` バイナリ送信、Lambda でのデコード、管理画面でのデータ表示すべて正常動作。
+- `ingest` Lambda の `_save_corrupted` 呼び出し箇所（またはオフライン解析スクリプト）に訂正トライを追加
+- 既に `corrupted` バケットに溜まっている過去データにも遡って適用可能
+- Hamming/Reed-Solomon等の本格的なECCをファームに実装する案もあったが、テレメトリは5分おき送信で1件欠損の実害が小さいこと、実装コスト・新規依存追加のリスクを考えると見合わないため不採用
 
 ### TODO: ストリーミング OTA（塩漬け）
 
@@ -657,12 +559,6 @@ MQTT 通信経路上のフィールド名を短縮し、送信バイト数を削
 - `service/https.cpp` の download API を廃止し、ストリーミングコールバック API を追加
 - `AT+HTTPTOFS` → `AT+HTTPACTION` + `AT+HTTPREAD` に変更し、受信チャンクをそのまま uzlib へ渡す
 - SIM7080G の `AT+HTTPREAD` の最大チャンクサイズ（1460 bytes）に合わせてバッファを調整
-
-### ~~TODO: NimBLE ペリフェラル・ブロードキャスター無効化~~ **実装済み**
-
-`platformio.ini` の release env に `CONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED=1` / `CONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED=1` を追加。Flash **約16KB 削減**（696,693 → 680,165 bytes）。
-
-「BLE ダッシュボード表示器」「スマホ BLE 連携」TODO を実装する際は Peripheral が必要になるため、その時点で削除する。
 
 ### TODO: バッテリー上がりアラート（未着手）
 
@@ -703,6 +599,25 @@ SSM パスの例: `/car-iot/alert/{profile}/ah_low`
 - EventBridge Scheduler + 専用 Lambda + SNS：柔軟で既存コードと分離できるが、別 Lambda の実装コストがかかる
 
 **背景**: sub（LiFePO4）が深放電に至ると、v1.1.0基板のMOSFETボディダイオード経由でmain（鉛バッテリー）が12Vバスの負荷を供給し続け、mainが上がるリスクがある。梅雨期間の長期曇天でソーラー発電が途絶えた場合に現実的なリスクとなる。
+
+### TODO: OTA中のBLE無効化（IPCタスクスタックオーバーフロー対策・未着手）
+
+現状、OTA（`ota.handleJob()` → `apply()`）中も BLE（`blePeripheral` / `bleScanner`）は動いたまま。`esp_ota_write` によるフラッシュ書き込みとBLEスタックが同時に動くと、ESP32/ESP32-S3で知られる "IPC task has overflowed its stack" の要因になり得る。
+
+[CONTINUOUSモード中はOTAジョブを再チェックしない問題](CONTEXT_ARCHIVE.md#todo-continuousモード中はotaジョブを再チェックしない問題-対応済み)が対応済みになり、`CONTINUOUS`/`TIMED_CONTINUOUS`中も5分サイクルごとにOTAを検知するようになったため、このBLE無効化未対応リスクが顕在化する頻度は以前より上がっている。
+
+**実装方針**:
+
+- `blePeripheral.stop()`（`NimBLEDevice::stopAdvertising()` のみ、`device/ble_peripheral.cpp`）と
+  `bleScanner.deinit()`（Peripheral と共存するため no-op、`device/ble_scan.cpp`）は、
+  どちらも NimBLE ホストタスク・コントローラ自体は停止しないため、この対策には**使えない**（レビュー指摘済み）
+- 実際に BLE スタックを完全停止するには `NimBLEDevice::deinit(true)`（引数 true でコントローラも解放）を呼ぶ必要がある。
+  `service/ota.cpp` の `handleJob()` 冒頭（`jobsReport(job.id, "IN_PROGRESS")` 直後あたり）で呼ぶ想定
+- `NimBLEDevice::deinit(true)` の後に BLE を再開するには `BleScanner::setup()` 相当
+  （`NimBLEDevice::init()` からのアドバタイズコールバック再設定を含む）をやり直す必要がある。
+  現状の `setup()` は起動時 1 回のみの呼び出しを想定した作りのため、再入可能にする見直しが必要
+- OTA成功時は `esp_restart()` するため再開処理は不要。失敗時に呼び出し元へ処理が戻るケースでBLEを再開すべきか、
+  その場合の再初期化方法が検討課題として残る
 
 ### v2.0.0 基板 — 電源ボタン＋自己保持回路（ファームウェア側は実装済み、電源断ロジックは未着手）
 
@@ -770,3 +685,125 @@ Sub(+) 12-13V
 **目的**: DeepSleep では ESP32 の消費はほぼゼロになるが LM2596S は動き続けるため、ボディダイオード経由の電流パスが残る。完全電源断によって 12V バスへの消費を完全に止め、main バッテリーへの影響をゼロにする。
 
 **前提**: アラートが機能すれば main 12V 以下になる前に人が対処できる。この回路はアラートが届かなかった最悪ケースへの安全ネット。製造コスト上の制約から、BJT 化（ボディダイオード解消）と同一ロットで発注する。
+
+### TODO: SIM7080G AT コマンドの書き込み検証（コマンド化け対策・未着手）
+
+参考: [necobit/UWB-module-test の sleep-recovery.md](https://github.com/necobit/UWB-module-test/blob/master/docs/sleep-recovery.md)。
+REYAX RYUW122（UWBモジュール）で `AT+MODE=1` を送ったつもりが UART のビット化けで `AT+MODE=2`（スリープ）として受理され、
+フラッシュに永続化されて再起動後も無応答（文鎮化したように見える）になった事例。予防策として「読んでから書く（既に正しい値なら書き込みを省略）」
+「書いたら `?` 照会で読み戻して検証する」の2点が紹介されている。
+
+`device/lte.cpp` の `Lte::setup()` にある `sendCmd("AT+CSCLK=0")`（[lte.cpp:358](esp32_iot_gateway/src/device/lte.cpp#L358)、スリープ無効化）が同じ構造のリスクを持つ。
+`AT+CFUN` や `AT+CGDCONT` は後続の接続確認・SMS Ready 待ちが間接的な検証になっているが、CSCLK には化けを検知する後段のチェックが一切ない。
+化けて `AT+CSCLK=1`/`2` のまま通ると、走行中に SIM7080G が勝手にスリープして UART 無応答になり得る（原因究明が難しい）。
+
+**実装方針（案）**:
+
+- `Lte` に検証付き設定用のメソッドを追加（例: `ensureSleepDisabled()`）
+- `AT+CSCLK?` で現在値を照会 → 既に `+CSCLK: 0` ならスキップ
+- 異なれば `AT+CSCLK=0` を送信 → 再度 `AT+CSCLK?` で読み戻し確認
+- 一定回数（例: 3回）試行しても検証できなければログに警告を残す（現状ログのみ、リカバリー動作は未検討）
+
+**スコープ**: 他のコマンド（`AT+CGDCONT` 等）への拡張は、CSCLK での効果を見てから検討する。
+
+### TODO: mobileアプリのrelease署名を専用keystoreに切り替え（未着手）
+
+`mobile/android/app/build.gradle:36-41` の `release` ビルドタイプが `signingConfigs.getByName("debug")` を使っている（`flutter run --release` を通すための暫定対応、コード中のTODOコメント参照）。debugキーストア（`%USERPROFILE%\.android\debug.keystore`）はPCごとに自動生成される使い捨ての鍵のため、別PCでビルドしたAPKは署名が一致せず、端末への上書きインストール時に `INSTALL_FAILED_UPDATE_INCOMPATIBLE` が発生する（現状はflutter/adbが自動でアンインストール→再インストールするため実害はないが、ローカルデータは消える）。
+
+**実装方針（案）**:
+
+- `keytool` で専用のreleaseキーストアを新規作成
+- `key.properties`（`.gitignore` 対象、パス・パスワードを記載）を作成し、`build.gradle` の `signingConfigs.release` から参照する構成に変更
+- keystoreファイル自体はGitに含めず、USBやパスワードマネージャー等の安全な方法でPC間共有する
+
+### TODO: developビルドでOTA Jobsが「ジョブなし」を返し続けた原因不明のバグ（未解決・原因不明）
+
+2026-08-07、実車（develop ビルド、fw 1.20.0）に対する1.21.0のOTAジョブが、Restartを4回試しても毎回シリアルログに `[JOBS] ジョブなし` を出力して失敗し続けた。同一デバイスに `v1-release` env でビルドしたファームを書き込んだところ、初回起動で即座にジョブを受信し、AWS IoT Jobs側も成功（SUCCEEDED）した。
+
+**確認して除外した原因**:
+
+- AWS側のIoT Jobs Publish/Subscribe用IAMポリシー（`infra/iot.tf`）: `terraform plan` で差分なし、適用済みと確認
+- Thing Groupのターゲット対象: ジョブの「ターゲット」一覧にこのデバイスが含まれていることを確認済み
+- `getDeviceId()`（MACアドレスから `esp32-gw-{mac}` を生成、`config.cpp:17-28`）: 決定的な処理で develop/release 間で値が変わる要素がない
+- `DEBUG_MODE` マクロ: `main.cpp:59-63` の動作モード初期値以外どこにも影響しないことを確認済み（`jobsGetNext()`/`mqtt.cpp`/`getDeviceId()`のいずれも参照していない）
+- ログが `[JOBS] レスポンスなし`（タイムアウト）ではなく `[JOBS] ジョブなし`（`exec.isNull()`）だったため、MQTT subscribe自体は成功しAWSからの正規応答は受信できていた
+
+**未解決**: develop/releaseのコード差分は実質 `DEBUG_MODE` の有無（Jobs関連コードに無関係と確認済み）と最適化レベル（`-Os`有無、release env）のみで、`jobsGetNext()`自体のロジックは共通。にもかかわらず何が結果を変えたのか特定できていない。「developのまま再度Restartしたら直る可能性」も検証できておらず、develop固有の問題なのか、単なるタイミング/AWS側の一時的な状態だったのかも未確定（後者を裏付ける根拠はなく、憶測に留まる）。
+
+**次にできること**: 次回developビルドで同様の事象が起きたら、`pio device monitor`でログを見ながら同じdevelopビルドのまま複数回Restartして再現するか確認する。再現すれば develop 固有（`-Os`有無等のビルド差）を疑う根拠になる。
+
+### TODO: SPIFFSログ永続化が既知の未解決問題により無効化中（原因未特定・対応は無効化のみ）
+
+`logStorageWrite()`（[log_storage.cpp:98](esp32_iot_gateway/src/service/log_storage.cpp#L98)）の`SPIFFS.open(s_currentPath, FILE_APPEND)`が、`logStorageInit()`で一度`FILE_WRITE`モードで作成・closeした直後から毎回失敗し続ける事象を実機で確認（2026-08-09）。`[E][vfs_api.cpp:301] VFSFileImpl(): fopen(...) failed`がSerialに大量出力される。
+
+**調査結果**: ESP-IDF/arduino-esp32双方のリポジトリに同一症状の未解決issueが複数存在する（[esp-idf#1012](https://github.com/espressif/esp-idf/issues/1012) "File append not working with SPIFFS"、[esp-idf#9915](https://github.com/espressif/esp-idf/issues/9915)、[arduino-esp32#5250](https://github.com/espressif/arduino-esp32/issues/5250)）が、いずれも`Resolution: More info needed`のまま未解決で、根本原因（`spiffs_open()`内部の何が失敗しているか）は特定できていない。`vfs_api.cpp`のソース自体にもappendモード固有の特別扱いは無い。公式SPIFFSドキュメントにはappendモード特有の言及はないが、GC性能・電源断での破損リスク・利用効率75%程度という一般的な脆弱性は明記されている。
+
+**影響範囲（重要）**: この問題により`logStorageWrite()`は事実上ずっと機能しておらず、SPIFFS上のデバッグログファイルへの永続化が全て失敗していた可能性がある。シリアルモニタ接続時は`[E]`ログで気づけるが、実運用中（車載・モニタなし）は完全に不可視。**過去にSPIFFS上のログファイルを根拠にした調査結果があれば信頼できない**（他のTODOでは幸い`pio device monitor`でのシリアル直接確認を使っており、この問題の影響は受けていない）。
+
+**対応**: 原因が未解明のため修正は行わず、ビルドオプションで無効化した。`platformio.ini`の実機4env（v1/v2 × release/develop）に`-D LOG_STORAGE_DISABLED`を追加し、`log_storage.cpp`を`#ifdef LOG_STORAGE_DISABLED`で分岐させて`logStorageInit()`/`logStorageWrite()`/`logStorageClear()`全てをスタブ化した（元の実装は`#else`側にそのまま残してあり、削除していない）。`getDebugLogEnabled()`/Shadowの`debug_log`設定自体は残るが、現状は効果を持たない。原因が判明・修正されたら`platformio.ini`から`LOG_STORAGE_DISABLED`を外すだけで復元できる。
+
+### TODO: LIGHT_SLEEP モードの追加（実装済み・実機未検証）
+
+既存の `OperationMode`（`DEEP_SLEEP` / `CONTINUOUS` / `TIMED_CONTINUOUS`）に加え、CAN応答・BLE接続の有無でCONTINUOUSへの昇格を判定する新モード `LIGHT_SLEEP` を追加した。目的はエンジン始動・スマホ接続をESP32が素早く把握すること。DEEP_SLEEPは変更せず、LIGHT_SLEEPはメニューから手動選択する別モードとして追加した（`Continuous`の隣に`Light Sleep`項目）。
+
+**方式（当初案からの変更点）**: 検討段階ではESP32の light sleep API（`esp_light_sleep_start()`）でCPU/RAMを保持したまま10秒間隔ポーリングする案だったが、以下2点で不採用にした:
+
+- ESP-IDFのautomatic light sleep（`esp_pm_configure()`）はこのプロジェクトの `framework = arduino` では機能しない（[arduino-esp32#2240](https://github.com/espressif/arduino-esp32/issues/2240): プリビルド版コアで`CONFIG_FREERTOS_USE_TICKLESS_IDLE`が無効）
+- 手動 `esp_light_sleep_start()` はBLE(NimBLE)稼働中の安全性が文献だけでは確証を持てず、実機ソークテストなしに信頼できない
+
+代わりに、**既にDEEP_SLEEPで実績のある「`esp_deep_sleep_start()`で完全リブート」パターンをそのまま流用し、間隔だけ20秒に短縮する**方式を採用した。LTE・OLED・ADS1115・INA228の初期化はスキップし、CANとBLEだけ初期化して応答/接続を確認する。
+
+**実装**:
+
+- `main.cpp`の`setup()`冒頭（OLED/ADS/INA228/LTEより前）でCAN/BLEを初期化し、`lightSleepShortWakeGate()`（`service/mode_light_sleep.cpp`）を呼ぶ。RTC_DATA_ATTR変数（`s_lightSleepPeeking`/`s_lightSleepBoundaryWake`、deep sleepを跨いで保持）でピーク状態を管理し、検知なし・5分境界未到達ならその場で`esp_deep_sleep_start()`して戻らない（＝それ以降の初期化を毎回スキップ）
+- 検知ロジック（BLE接続 or CAN応答）は`DeepSleepModeHandler::beforeRun()`と共通化し、`mode_common.cpp`の`detectContinuousPromotionTrigger()`にまとめた。CAN生存確認は`obdPoll()`の29PID+DID調査ではなく、PID 0x0C単発の軽量版`obdCheckCanAlive()`を使う
+- CONTINUOUSへの昇格元（DEEP_SLEEP or LIGHT_SLEEP）を`OperationModeContext::promotedFromMode()`で記録し、復帰先（BLE切断・CAN無応答どちらも）を昇格元へ汎用化した。復帰条件はDEEP_SLEEP起源・LIGHT_SLEEP起源とも同じ「1回無応答/切断で即復帰」
+- GPIO hold（v2基板の自己保持回路・充電中のリレー制御ピン）＋起床設定＋`esp_deep_sleep_start()`は`mode_common.cpp`の`enterDeepSleepFor()`に共通化し、`DeepSleepModeHandler::run()`と両方から使う
+
+**実機未検証の項目**: 実際にエンジン始動・BLE接続からの昇格レイテンシ、5分境界での通常サイクルへの復帰、v2基板でのGPIO hold動作、CAN/BLEの20秒間隔リブートに対するハードウェア耐性（MCP2562FDトランシーバー・AO3401A電源スイッチの頻繁な電源断入）。
+
+### TODO: LIGHT_SLEEP昇格時、5分境界を待たずにフル送信が走ってしまう問題（未着手・回避策あり）
+
+LIGHT_SLEEPからCONTINUOUSへ昇格した直後（`lightSleepShortWakeGate()`が検知してフォールスルーした回）は、5分境界を待たずにLTE接続・`measure()`/`publishBattery()`・`shadowPublishConfig()`・OTAチェック等のフル送信が走ってしまう（`secsToNextBoundary()`による境界揃えが効くのはそれ以降のCONTINUOUSサイクルから）。DEEP_SLEEPは5分に1回しか昇格判定をしないため、この「境界からズレる」問題自体がこれまで表面化していなかった。
+
+**回避策（未実装）**: 境界外での昇格時はLTE接続・shadow同期・OTAチェックを伴うフル送信を行わず、ADS1115/INA228/OLED（CAN/BLEは`lightSleepShortWakeGate()`の時点で初期化済み）だけ用意して、`ContinuousModeHandlerBase::onTick()`相当（`obdPoll()` → `blePeripheral.notifyObd()`）とBLE notify（`blePeripheral.notify()`）だけのループにいきなり入る。LTEを一切使わないため、境界に達するまでは「境界を待たない送信」問題自体が発生しない。境界に達した時点で初めてLTE接続・フル送信の通常サイクルに入る。
+
+実装には`ContinuousModeHandlerBase`/`main.cpp`のsetup()フロー周りの構造変更が必要（LTE接続をCONTINUOUS突入と切り離し、境界到達まで遅延させる仕組みが要る）。
+
+### TODO: Shadow `desired.charging` が古い値のままクリアされず`charging`がチャタリングした障害（対症療法のみ・根本原因未特定）
+
+2026-09-02、DynamoDB `iot-monitor-shadow-events`テーブル（`esp32-gw-aca7043d0a8c`）で、`charging`が約290〜310秒間隔でtrueになり、その8〜9秒後にfalseへ戻る、という往復を繰り返しているのを発見した。エンジンはずっとOFF・スマホも車から離れておりCONTINUOUSへの自動昇格（BLE/CAN、`DeepSleepModeHandler::beforeRun()`）が起きる状況ではないことをユーザーに確認済み。
+
+**調査結果**: `aws iot-data get-thing-shadow`でShadow documentを直接確認したところ、以下の状態だった。
+
+```json
+"desired":{"charging":false, ...}   // metadata timestamp: 1788270664（発見時から11時間以上前）
+"reported":{"charging":true, ...}   // metadata timestamp: 1788310532（直近）
+"delta":{"charging":false}
+```
+
+`desired.charging=false`が11時間以上前のタイムスタンプのまま一切更新されていなかった。原因は次のループ:
+
+1. `updateChargingState()`（[mode_common.cpp:26](esp32_iot_gateway/src/service/mode_common.cpp#L26)）が電圧条件で`charging=true`と判定 → reportedをpublish
+2. `shadowPollDelta()`（[shadow.cpp:100](esp32_iot_gateway/src/service/shadow.cpp#L100)）が古い`desired.charging=false`由来のdeltaを受信 → `setCharging(false)`で強制的に上書き → `changed=true`により`shadowPublishConfig(true)`を呼び、reported=falseと`desired:null`を送る**はず**
+3. ところが`desired`のtimestampが更新されないことから、この`desired:null`によるクリアが実際には機能していなかった
+4. 300秒後、電圧条件で再びtrueに戻り1に戻る、を繰り返していた
+
+`"desired":null`をデバイス側から送るとdesiredセクション全体が削除されるのはAWS公式の仕様通り（[AWS re:Post](https://repost.aws/questions/QUBCgzSVvjSsi7l4K6q78adg/how-do-i-clear-device-shadow-desired-state-from-device)）で、`shadowPublishConfig(true)`のロジック自体の方向性は正しい。にもかかわらずクリアが効いていない理由は特定できていない。`shadowPollDelta()`のタイムアウト（デフォルト2000ms、[shadow.h:15](esp32_iot_gateway/src/service/shadow.h#L15)）内にdelta受信→`shadowPublishConfig(true)`のpublishが間に合っていないのか、mqtt.publish自体が何らかの理由で失敗しているのか、実機ログ（`[SHADOW] charging → ...`の出現タイミング）を見ないと切り分けられない。
+
+**行った対症療法**: AWS CLIでdesiredセクションを直接クリアし、チャタリングを即時停止した。
+
+```bash
+aws iot describe-endpoint --endpoint-type iot:Data-ATS --output text
+# → axtvlfoh71jez-ats.iot.ap-northeast-1.amazonaws.com
+
+echo '{"state":{"desired":null}}' > clear_desired.json
+aws iot-data update-thing-shadow --thing-name esp32-gw-aca7043d0a8c \
+  --endpoint-url https://axtvlfoh71jez-ats.iot.ap-northeast-1.amazonaws.com \
+  --cli-binary-format raw-in-base64-out \
+  --payload file://clear_desired.json update_result.json
+```
+
+実行後、`get-thing-shadow`でdesiredセクションが消え`delta`も無くなったことを確認済み。ただし根本原因は未解決のため、次に誰か（Web管理画面の`web/admin.html`保存操作等）が`desired.charging`をセットした場合、同じチャタリングが再発する可能性がある。
+
+**次にできること**: 再発したら実機シリアルログで`[SHADOW] charging → ...`（delta適用）と`[MAIN] auto charge ON/OFF ...`（電圧判定）の出現順序・間隔を突き合わせ、`shadowPublishConfig(true)`のpublishが実際に呼ばれているか・失敗していないかを確認する。`shadowPollDelta()`のタイムアウト延長も候補になりうる。

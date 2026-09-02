@@ -33,5 +33,13 @@ struct BoardPins
   uint8_t gp12Pin;    // v2のみ。J107 I2C拡張コネクタ（PIN_UNUSED = 非搭載）
 };
 
+#if BOARD_VERSION == 1
+#include "board_pins_v1.h"
+#elif BOARD_VERSION == 2
+#include "board_pins_v2.h"
+#else
+#error "BOARD_VERSION must be 1 or 2"
+#endif
+
 // 現在ビルド対象の基板バージョンに対応するピン配置を返す
-const BoardPins &boardPins();
+inline const BoardPins &boardPins() { return boardPinsData; }

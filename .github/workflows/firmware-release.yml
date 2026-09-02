@@ -7,7 +7,6 @@ on:
 
 env:
   AWS_REGION: ap-northeast-1
-  PIO_ENV: esp32-s3-devkitc-1-release
 
 jobs:
   release:
@@ -19,14 +18,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: タグからバージョンを抽出
+      - name: タグからバージョン・基板バージョンを抽出
         id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: config.h の FIRMWARE_VERSION を書き換え
         run: |
-          sed -i 's/#define FIRMWARE_VERSION "[^"]*"/#define FIRMWARE_VERSION "${{ steps.ver.outputs.version }}+"/' \
-            esp32_iot_gateway/src/config.h
+          VERSION=${GITHUB_REF_NAME#v}
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          if [ "$MAJOR" != "1" ] && [ "$MAJOR" != "2" ]; then
+            echo "::error::MAJORバージョンは基板シリーズを表す(1 or 2)。不正な値: $MAJOR (タグ: v$VERSION)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "board=$MAJOR" >> "$GITHUB_OUTPUT"
+
+      - name: config.h のバージョンとタグの一致を検証
+        run: |
+          MAJOR=${{ steps.ver.outputs.board }}
+          VERSION=${{ steps.ver.outputs.version }}
+          SOURCE_VERSION=$(grep "FIRMWARE_VERSION_V${MAJOR}" esp32_iot_gateway/src/config.h | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "$SOURCE_VERSION" != "$VERSION" ]; then
+            echo "::error::config.hのFIRMWARE_VERSION_BASE ($SOURCE_VERSION) とタグ (v$VERSION) が一致しない。config.hを更新してから再タグしてください"
+            exit 1
+          fi
+          echo "config.h バージョン確認OK: $SOURCE_VERSION"
 
       - uses: actions/setup-python@v5
         with:
@@ -43,15 +56,16 @@ jobs:
       - name: PlatformIO インストール
         run: pip install platformio
 
-      - name: ファームウェアビルド（release env）
-        run: pio run -e ${{ env.PIO_ENV }}
+      - name: ファームウェアビルド（v${{ steps.ver.outputs.board }}-release env）
+        run: pio run -e esp32-s3-devkitc-1-v${{ steps.ver.outputs.board }}-release
         working-directory: esp32_iot_gateway
 
       - name: firmware.bin.gz を生成
         run: |
-          gzip -k -9 esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin
-          BIN=$(stat -c%s esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin)
-          GZ=$(stat  -c%s esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz)
+          BUILD_DIR=esp32_iot_gateway/.pio/build/esp32-s3-devkitc-1-v${{ steps.ver.outputs.board }}-release
+          gzip -k -9 "$BUILD_DIR/firmware.bin"
+          BIN=$(stat -c%s "$BUILD_DIR/firmware.bin")
+          GZ=$(stat  -c%s "$BUILD_DIR/firmware.bin.gz")
           echo "Compressed: ${BIN} bytes -> ${GZ} bytes ($(( GZ * 100 / BIN ))%)"
 
       - uses: aws-actions/configure-aws-credentials@v4
@@ -62,23 +76,26 @@ jobs:
       - name: firmware.bin.gz を S3 にアップロード
         run: |
           VERSION=${{ steps.ver.outputs.version }}
+          BUILD_DIR=esp32_iot_gateway/.pio/build/esp32-s3-devkitc-1-v${{ steps.ver.outputs.board }}-release
           aws s3 cp \
-            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz \
+            "$BUILD_DIR/firmware.bin.gz" \
             "s3://${{ secrets.FIRMWARE_BUCKET }}/firmware/v${VERSION}.bin.gz"
 
       - name: IoT Job ドキュメントを S3 にアップロード
         run: |
           VERSION=${{ steps.ver.outputs.version }}
           FIRMWARE_URL="https://${{ secrets.FIRMWARE_BUCKET }}.s3.${{ env.AWS_REGION }}.amazonaws.com/firmware/v${VERSION}.bin.gz"
-          printf '{"operation":"ota","version":"%s","url":"%s"}' "$VERSION" "$FIRMWARE_URL" > job.json
+          printf '{"operation":"ota","version":"%s","board_version":%s,"url":"%s"}' \
+            "$VERSION" "${{ steps.ver.outputs.board }}" "$FIRMWARE_URL" > job.json
           aws s3 cp job.json "s3://${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
 
       - name: IoT OTA ジョブを作成
         run: |
           VERSION=${{ steps.ver.outputs.version }}
+          BOARD=${{ steps.ver.outputs.board }}
           JOB_ID="ota-v$(echo "$VERSION" | tr '.' '_')-$(date +%Y%m%d%H%M%S)"
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          GROUP_ARN="arn:aws:iot:${{ env.AWS_REGION }}:${ACCOUNT_ID}:thinggroup/ota-target-car-iot-gw"
+          GROUP_ARN="arn:aws:iot:${{ env.AWS_REGION }}:${ACCOUNT_ID}:thinggroup/ota-target-car-iot-gw-v${BOARD}"
 
           DOC_URL="https://s3.${{ env.AWS_REGION }}.amazonaws.com/${{ secrets.FIRMWARE_BUCKET }}/jobs/v${VERSION}.json"
           aws iot create-job \
@@ -94,6 +111,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin
-            esp32_iot_gateway/.pio/build/${{ env.PIO_ENV }}/firmware.bin.gz
+            esp32_iot_gateway/.pio/build/esp32-s3-devkitc-1-v${{ steps.ver.outputs.board }}-release/firmware.bin
+            esp32_iot_gateway/.pio/build/esp32-s3-devkitc-1-v${{ steps.ver.outputs.board }}-release/firmware.bin.gz
           generate_release_notes: true
