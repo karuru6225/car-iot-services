@@ -1,4 +1,15 @@
-# Athena が高いと思ったら、S3 の料金だった
+---
+title: "Athena が高いと思ったら、S3 の料金だった"
+emoji: "📉"
+type: "tech"
+topics:
+  - AWS
+  - S3
+  - Athena
+  - Lambda
+  - IoT
+published: false
+---
 
 ## 言いたいこと
 
