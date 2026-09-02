@@ -67,15 +67,15 @@ OTA は app スロットだけを入れ替えます。SPIFFS と NVS は残る�
 4. `provision` env の専用ファームを書いて起動させる。中身は SPIFFS / NVS へ書いて終わるだけ
 5. そのあと本番ファームを書く。本番ファームには個体情報は入っていない
 
-専用ファームを挟むのは、本番バイナリを汚さないためです。`provision_config.h` には秘密鍵が入るので、生成・フラッシュ・即削除までをスクリプトに閉じます。Actions の成果物や GitHub Release には載せません。
+専用ファームを挟むのは、PC から SPIFFS や NVS へ直接書き込む手段が、なぜか動かなかったからです。デバイス上の小さなプログラムに書かせる方が確実でした。`provision_config.h` には秘密鍵が入るので、生成・フラッシュ・即削除までをスクリプトに閉じます。Actions の成果物や GitHub Release には載せません。
 
-手作業です。今の台数なら回ります。回らなくなったときの話が次です。
+手作業です。自分一人しか使っていないので、手動キッティングでも回っています。回らなくなったときの話が次です。
 
 ---
 
 ## その先：Fleet Provisioning（未実装）
 
-量産で USB を1台ずつつなぐのが先に死にます。AWS IoT の [Fleet Provisioning](https://docs.aws.amazon.com/iot/latest/developerguide/iot-provision.html) に寄せたい、は検討中で、コードには入っていません。
+台数が増えると、USB を1台ずつつなぐ作業の方が先に破綻します。AWS IoT の [Fleet Provisioning](https://docs.aws.amazon.com/iot/latest/developerguide/iot-provision.html) に寄せたい、は検討中で、コードには入っていません。
 
 最初に見た「MAC から鍵を導出してサーバー側で事前登録」は捨てました。ESP32 の MAC は OUI が固定で、実質のエントロピーが小さく、アドバタイズでも見えます。秘密の種にしては公開情報です。
 
