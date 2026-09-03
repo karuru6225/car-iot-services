@@ -1,5 +1,6 @@
 import io
 import json
+from decimal import Decimal
 
 import pytest
 
@@ -127,6 +128,59 @@ def test_handle_shadow_updates_desired(admin, monkeypatch):
 def test_handle_shadow_rejects_empty_body(admin):
     resp = admin.handler(_event("PUT", "shadow/esp32-gw-abc123", body=json.dumps({})), None)
     assert resp["statusCode"] == 400
+
+
+# ---- handle_shadow_events ----
+
+
+def test_handle_shadow_events_returns_recent_first(admin):
+    admin.shadow_events_table.put_item(
+        Item={"device_id": "esp32-gw-abc123", "ts": 1700000000, "changes": {"charging": {"from": False, "to": True}}}
+    )
+    admin.shadow_events_table.put_item(
+        Item={"device_id": "esp32-gw-abc123", "ts": 1700000100, "changes": {"charging": {"from": True, "to": False}}}
+    )
+
+    resp = admin.handler(_event("GET", "shadow-events/esp32-gw-abc123"), None)
+    body = json.loads(resp["body"])
+
+    assert resp["statusCode"] == 200
+    assert [e["ts"] for e in body["events"]] == [1700000100, 1700000000]
+
+
+def test_handle_shadow_events_filters_by_device_id(admin):
+    admin.shadow_events_table.put_item(
+        Item={"device_id": "esp32-gw-abc123", "ts": 1700000000, "changes": {"charging": {"from": False, "to": True}}}
+    )
+    admin.shadow_events_table.put_item(
+        Item={"device_id": "esp32-gw-other", "ts": 1700000000, "changes": {"charging": {"from": False, "to": True}}}
+    )
+
+    resp = admin.handler(_event("GET", "shadow-events/esp32-gw-abc123"), None)
+    body = json.loads(resp["body"])
+
+    assert [e["device_id"] for e in body["events"]] == ["esp32-gw-abc123"]
+
+
+def test_handle_shadow_events_converts_decimal_for_json(admin):
+    admin.shadow_events_table.put_item(
+        Item={
+            "device_id": "esp32-gw-abc123",
+            "ts": 1700000000,
+            "changes": {"chg_start_v": {"from": Decimal("11.7"), "to": Decimal("12.5")}},
+        }
+    )
+
+    resp = admin.handler(_event("GET", "shadow-events/esp32-gw-abc123"), None)
+    body = json.loads(resp["body"])
+
+    assert body["events"][0]["changes"]["chg_start_v"] == {"from": 11.7, "to": 12.5}
+
+
+def test_handle_shadow_events_empty_for_unknown_device(admin):
+    resp = admin.handler(_event("GET", "shadow-events/esp32-gw-nobody"), None)
+    body = json.loads(resp["body"])
+    assert body["events"] == []
 
 
 # ---- handle_command ----
