@@ -769,3 +769,41 @@ LIGHT_SLEEPからCONTINUOUSへ昇格した直後（`lightSleepShortWakeGate()`�
 **回避策（未実装）**: 境界外での昇格時はLTE接続・shadow同期・OTAチェックを伴うフル送信を行わず、ADS1115/INA228/OLED（CAN/BLEは`lightSleepShortWakeGate()`の時点で初期化済み）だけ用意して、`ContinuousModeHandlerBase::onTick()`相当（`obdPoll()` → `blePeripheral.notifyObd()`）とBLE notify（`blePeripheral.notify()`）だけのループにいきなり入る。LTEを一切使わないため、境界に達するまでは「境界を待たない送信」問題自体が発生しない。境界に達した時点で初めてLTE接続・フル送信の通常サイクルに入る。
 
 実装には`ContinuousModeHandlerBase`/`main.cpp`のsetup()フロー周りの構造変更が必要（LTE接続をCONTINUOUS突入と切り離し、境界到達まで遅延させる仕組みが要る）。
+
+### TODO: Shadow `desired.charging` が古い値のままクリアされず`charging`がチャタリングした障害（対症療法のみ・根本原因未特定）
+
+2026-09-02、DynamoDB `iot-monitor-shadow-events`テーブル（`esp32-gw-aca7043d0a8c`）で、`charging`が約290〜310秒間隔でtrueになり、その8〜9秒後にfalseへ戻る、という往復を繰り返しているのを発見した。エンジンはずっとOFF・スマホも車から離れておりCONTINUOUSへの自動昇格（BLE/CAN、`DeepSleepModeHandler::beforeRun()`）が起きる状況ではないことをユーザーに確認済み。
+
+**調査結果**: `aws iot-data get-thing-shadow`でShadow documentを直接確認したところ、以下の状態だった。
+
+```json
+"desired":{"charging":false, ...}   // metadata timestamp: 1788270664（発見時から11時間以上前）
+"reported":{"charging":true, ...}   // metadata timestamp: 1788310532（直近）
+"delta":{"charging":false}
+```
+
+`desired.charging=false`が11時間以上前のタイムスタンプのまま一切更新されていなかった。原因は次のループ:
+
+1. `updateChargingState()`（[mode_common.cpp:26](esp32_iot_gateway/src/service/mode_common.cpp#L26)）が電圧条件で`charging=true`と判定 → reportedをpublish
+2. `shadowPollDelta()`（[shadow.cpp:100](esp32_iot_gateway/src/service/shadow.cpp#L100)）が古い`desired.charging=false`由来のdeltaを受信 → `setCharging(false)`で強制的に上書き → `changed=true`により`shadowPublishConfig(true)`を呼び、reported=falseと`desired:null`を送る**はず**
+3. ところが`desired`のtimestampが更新されないことから、この`desired:null`によるクリアが実際には機能していなかった
+4. 300秒後、電圧条件で再びtrueに戻り1に戻る、を繰り返していた
+
+`"desired":null`をデバイス側から送るとdesiredセクション全体が削除されるのはAWS公式の仕様通り（[AWS re:Post](https://repost.aws/questions/QUBCgzSVvjSsi7l4K6q78adg/how-do-i-clear-device-shadow-desired-state-from-device)）で、`shadowPublishConfig(true)`のロジック自体の方向性は正しい。にもかかわらずクリアが効いていない理由は特定できていない。`shadowPollDelta()`のタイムアウト（デフォルト2000ms、[shadow.h:15](esp32_iot_gateway/src/service/shadow.h#L15)）内にdelta受信→`shadowPublishConfig(true)`のpublishが間に合っていないのか、mqtt.publish自体が何らかの理由で失敗しているのか、実機ログ（`[SHADOW] charging → ...`の出現タイミング）を見ないと切り分けられない。
+
+**行った対症療法**: AWS CLIでdesiredセクションを直接クリアし、チャタリングを即時停止した。
+
+```bash
+aws iot describe-endpoint --endpoint-type iot:Data-ATS --output text
+# → axtvlfoh71jez-ats.iot.ap-northeast-1.amazonaws.com
+
+echo '{"state":{"desired":null}}' > clear_desired.json
+aws iot-data update-thing-shadow --thing-name esp32-gw-aca7043d0a8c \
+  --endpoint-url https://axtvlfoh71jez-ats.iot.ap-northeast-1.amazonaws.com \
+  --cli-binary-format raw-in-base64-out \
+  --payload file://clear_desired.json update_result.json
+```
+
+実行後、`get-thing-shadow`でdesiredセクションが消え`delta`も無くなったことを確認済み。ただし根本原因は未解決のため、次に誰か（Web管理画面の`web/admin.html`保存操作等）が`desired.charging`をセットした場合、同じチャタリングが再発する可能性がある。
+
+**次にできること**: 再発したら実機シリアルログで`[SHADOW] charging → ...`（delta適用）と`[MAIN] auto charge ON/OFF ...`（電圧判定）の出現順序・間隔を突き合わせ、`shadowPublishConfig(true)`のpublishが実際に呼ばれているか・失敗していないかを確認する。`shadowPollDelta()`のタイムアウト延長も候補になりうる。

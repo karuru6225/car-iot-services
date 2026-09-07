@@ -401,8 +401,9 @@ resource "aws_lambda_function" "admin" {
 
   environment {
     variables = {
-      IOT_ENDPOINT = "https://${data.aws_iot_endpoint.main.endpoint_address}"
-      ACCOUNT_ID   = data.aws_caller_identity.current.account_id
+      IOT_ENDPOINT        = "https://${data.aws_iot_endpoint.main.endpoint_address}"
+      ACCOUNT_ID          = data.aws_caller_identity.current.account_id
+      SHADOW_EVENTS_TABLE = aws_dynamodb_table.shadow_events.name
     }
   }
 }

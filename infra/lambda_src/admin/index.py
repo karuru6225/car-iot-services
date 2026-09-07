@@ -3,6 +3,7 @@ Admin API — admin グループユーザー専用
 
 GET  /admin/devices                    全 esp32-gw-* デバイス一覧 + Shadow + Thing Groups
 PUT  /admin/shadow/{device_id}         desired 部分更新
+GET  /admin/shadow-events/{device_id}  reported の変化履歴（直近分、shadow_events Lambdaが記録）
 POST /admin/command/{device_id}        IoT Job 作成（ah_reset / charge_start / charge_stop）
 PUT  /admin/groups/{device_id}         Thing Group メンバーシップ更新
 """
@@ -10,16 +11,21 @@ PUT  /admin/groups/{device_id}         Thing Group メンバーシップ更新
 import json
 import os
 import time
+from decimal import Decimal
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
-IOT_ENDPOINT = os.environ["IOT_ENDPOINT"]
-ACCOUNT_ID   = os.environ["ACCOUNT_ID"]
-REGION       = os.environ.get("AWS_REGION", "ap-northeast-1")
-THING_PREFIX = "esp32-gw-"
+IOT_ENDPOINT        = os.environ["IOT_ENDPOINT"]
+ACCOUNT_ID          = os.environ["ACCOUNT_ID"]
+REGION              = os.environ.get("AWS_REGION", "ap-northeast-1")
+SHADOW_EVENTS_TABLE = os.environ["SHADOW_EVENTS_TABLE"]
+THING_PREFIX        = "esp32-gw-"
+SHADOW_EVENTS_LIMIT = 30
 
-iot_data = boto3.client("iot-data", endpoint_url=IOT_ENDPOINT)
-iot      = boto3.client("iot")
+iot_data           = boto3.client("iot-data", endpoint_url=IOT_ENDPOINT)
+iot                = boto3.client("iot")
+shadow_events_table = boto3.resource("dynamodb").Table(SHADOW_EVENTS_TABLE)
 
 
 def _resp(status, body):
@@ -85,6 +91,26 @@ def handle_shadow(device_id, body):
     return _resp(200, {"ok": True})
 
 
+def _decimal_to_native(value):
+    if isinstance(value, Decimal):
+        return int(value) if value % 1 == 0 else float(value)
+    if isinstance(value, dict):
+        return {k: _decimal_to_native(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_decimal_to_native(v) for v in value]
+    return value
+
+
+def handle_shadow_events(device_id):
+    resp = shadow_events_table.query(
+        KeyConditionExpression=Key("device_id").eq(device_id),
+        ScanIndexForward=False,  # ts降順（新しい順）
+        Limit=SHADOW_EVENTS_LIMIT,
+    )
+    events = [_decimal_to_native(item) for item in resp.get("Items", [])]
+    return _resp(200, {"events": events})
+
+
 def handle_command(device_id, body):
     operation = body.get("operation")
     if operation not in ("ah_reset", "charge_start", "charge_stop"):
@@ -129,6 +155,8 @@ def handler(event, context):
             return handle_devices()
         elif segs[0] == "shadow" and len(segs) == 2 and method == "PUT":
             return handle_shadow(segs[1], json.loads(event.get("body") or "{}"))
+        elif segs[0] == "shadow-events" and len(segs) == 2 and method == "GET":
+            return handle_shadow_events(segs[1])
         elif segs[0] == "command" and len(segs) == 2 and method == "POST":
             return handle_command(segs[1], json.loads(event.get("body") or "{}"))
         elif segs[0] == "groups" and len(segs) == 2 and method == "PUT":
