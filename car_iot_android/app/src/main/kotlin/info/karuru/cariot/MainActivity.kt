@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +25,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -121,6 +124,16 @@ class MainActivity : ComponentActivity() {
       val instrumentStyle = when (selectedTheme) {
         AppTheme.GAUGE -> InstrumentStyle.ANALOG
         else -> InstrumentStyle.FLAT
+      }
+      // BLE接続中は運転中の一瞥用途を想定し、画面消灯を防ぐ（Activityが前面にある間のみ有効、
+      // Service常駐によるバックグラウンド接続では作用しない・意図通り）。
+      val connState by CarIotState.connState.collectAsState()
+      LaunchedEffect(connState) {
+        if (connState == ConnState.CONNECTED) {
+          window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+          window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
       }
       MaterialTheme(
           colorScheme = colorScheme,
