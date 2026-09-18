@@ -1,6 +1,7 @@
 #include "shadow.h"
 #include "mqtt.h"
 #include "mode_context.h"
+#include "mode_common.h"
 #include "../logger.h"
 #include "../config.h"
 #include "../domain/telemetry.h"
@@ -166,7 +167,7 @@ bool shadowPollDelta(uint32_t timeoutMs)
 
   if (state["charging"].is<bool>())
   {
-    setCharging(state["charging"].as<bool>());
+    applyCharging(state["charging"].as<bool>());
     logger.printf("[SHADOW] charging → %s\n", isCharging() ? "on" : "off");
     changed = true;
   }

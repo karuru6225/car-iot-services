@@ -23,6 +23,12 @@
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 
+void applyCharging(bool on)
+{
+  setCharging(on);
+  digitalWrite(boardPins().chgOnPin, on ? HIGH : LOW);
+}
+
 void updateChargingState()
 {
   float vMain = modeCtx.lastResult().reading.main.voltage;
@@ -34,8 +40,7 @@ void updateChargingState()
   if (shouldCharge == wasCharging)
     return;
 
-  setCharging(shouldCharge);
-  digitalWrite(boardPins().chgOnPin, shouldCharge ? HIGH : LOW);
+  applyCharging(shouldCharge);
   float diff = vSub - vMain;
   if (shouldCharge)
     logger.printf("[MAIN] auto charge ON  vMain=%.2fV < startV=%.2fV diff=%.2fV\n", vMain, th.startV, diff);

@@ -1,6 +1,11 @@
 #pragma once
 #include <stdint.h>
 
+// 充電状態フラグ（RTCメモリ）と充電リレー出力(chgOnPin)を揃えて切り替える。
+// フラグだけ変えるとShadow上は充電中なのに実際は充電していない不整合が起きるため、
+// 充電状態を変える箇所は必ずこれを使う
+void applyCharging(bool on);
+
 // 電圧に基づく充電制御（CONTINUOUS / DEEP_SLEEP 共通）。判定ロジック自体は
 // domain/charging.h の decideCharging()（ハードウェア非依存の純粋関数）に委譲する
 void updateChargingState();
