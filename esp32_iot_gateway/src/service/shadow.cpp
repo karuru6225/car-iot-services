@@ -75,10 +75,18 @@ void shadowPublishConfig(bool clearDesired)
   if (auto defaultMode = getDefaultMode())
     defaultModeReport = defaultModeName(*defaultMode);
 
-  char payload[256];
+  char payload[CONFIG_PAYLOAD_SIZE];
   int len = buildConfigPayload(payload, sizeof(payload), clearDesired, s_overrideNextModeReport,
                                untilTimeReport, defaultModeReport);
   s_overrideNextModeReport = nullptr; // ACK 送信後にリセット（通常時は null）
+
+  // 切り詰められたペイロードは壊れたJSONになりAWS側でrejectされるうえ、lenのまま送ると
+  // バッファ外まで読んでしまうため送信しない
+  if (len < 0 || (size_t)len >= sizeof(payload))
+  {
+    logger.printf("[SHADOW] config payload too long (%d bytes) → publish skipped\n", len);
+    return;
+  }
 
   if (mqtt.publish(topic, (const uint8_t *)payload, (size_t)len))
     logger.println("[SHADOW] config published");

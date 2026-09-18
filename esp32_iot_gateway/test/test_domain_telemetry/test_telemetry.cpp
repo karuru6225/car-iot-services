@@ -1,6 +1,7 @@
 #include <unity.h>
 #include <string>
 #include <cstring>
+#include <climits>
 #include "domain/telemetry.h"
 #include "config.h"
 
@@ -39,7 +40,7 @@ static void assertHasAllReportedFields(const char *json)
 
 static void test_build_config_payload_without_clear_desired_has_no_desired_key(void)
 {
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   int len = buildConfigPayload(buf, sizeof(buf), false, nullptr);
   TEST_ASSERT_GREATER_THAN(0, len);
   assertHasAllReportedFields(buf);
@@ -48,7 +49,7 @@ static void test_build_config_payload_without_clear_desired_has_no_desired_key(v
 
 static void test_build_config_payload_with_clear_desired_adds_desired_null(void)
 {
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   int len = buildConfigPayload(buf, sizeof(buf), true, nullptr);
   TEST_ASSERT_GREATER_THAN(0, len);
   assertHasAllReportedFields(buf);
@@ -57,42 +58,42 @@ static void test_build_config_payload_with_clear_desired_adds_desired_null(void)
 
 static void test_build_config_payload_reports_override_next_mode_as_quoted_string(void)
 {
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   buildConfigPayload(buf, sizeof(buf), false, "timed_continuous");
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"override_next_mode\":\"timed_continuous\""));
 }
 
 static void test_build_config_payload_reports_override_next_mode_null_by_default(void)
 {
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   buildConfigPayload(buf, sizeof(buf), false, nullptr);
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"override_next_mode\":null"));
 }
 
 static void test_build_config_payload_reports_continuous_until_time_as_number(void)
 {
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   buildConfigPayload(buf, sizeof(buf), false, "timed_continuous", (time_t)1700000000);
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"continuous_until_time\":1700000000"));
 }
 
 static void test_build_config_payload_reports_continuous_until_time_null_by_default(void)
 {
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   buildConfigPayload(buf, sizeof(buf), false, nullptr);
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"continuous_until_time\":null"));
 }
 
 static void test_build_config_payload_reports_default_mode_as_quoted_string(void)
 {
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   buildConfigPayload(buf, sizeof(buf), false, nullptr, std::nullopt, "light_sleep");
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"default_mode\":\"light_sleep\""));
 }
 
 static void test_build_config_payload_reports_default_mode_null_by_default(void)
 {
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   buildConfigPayload(buf, sizeof(buf), false, nullptr);
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"default_mode\":null"));
 }
@@ -103,12 +104,33 @@ static void test_build_config_payload_reflects_current_config_values(void)
   testSetChgStartV(11.5f);
   setCharging(true);
 
-  char buf[256];
+  char buf[CONFIG_PAYLOAD_SIZE];
   buildConfigPayload(buf, sizeof(buf), false, nullptr);
 
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"ah_offset\":-42"));
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"chg_start_v\":11.50"));
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"charging\":true"));
+}
+
+// 最長ケース（desired:null付き・全nullable項目が非null・数値が最大桁）でも
+// CONFIG_PAYLOAD_SIZEに収まることを縛る。溢れるとshadow.cppは送信をスキップするため、
+// reportedへのフィールド追加でここが落ちたらCONFIG_PAYLOAD_SIZEを見直すこと
+static void test_build_config_payload_longest_case_fits_buffer(void)
+{
+  testSetAhOffset(INT32_MIN);
+  testSetChgStartV(99.99f);
+  testSetChgStopV(99.99f);
+  testSetChgMinDiffV(99.99f);
+  testSetDebugLogEnabled(false);
+  setCharging(false);
+
+  char buf[CONFIG_PAYLOAD_SIZE];
+  int len = buildConfigPayload(buf, sizeof(buf), true, "timed_continuous",
+                               (time_t)2147483647, "light_sleep");
+
+  TEST_ASSERT_GREATER_THAN(0, len);
+  TEST_ASSERT_LESS_THAN((int)sizeof(buf), len);
+  TEST_ASSERT_NOT_NULL(strstr(buf, "\"desired\":null}}"));
 }
 
 // ─── ITelemetryEncoder（JSON版のみ。MsgPack版はesp_rom_crc32_leがESP-IDF依存で対象外）───
@@ -165,6 +187,7 @@ int main(int argc, char **argv)
   RUN_TEST(test_build_config_payload_reports_default_mode_as_quoted_string);
   RUN_TEST(test_build_config_payload_reports_default_mode_null_by_default);
   RUN_TEST(test_build_config_payload_reflects_current_config_values);
+  RUN_TEST(test_build_config_payload_longest_case_fits_buffer);
   RUN_TEST(test_json_encoder_encodes_battery);
   RUN_TEST(test_json_encoder_encodes_thermometer);
   RUN_TEST(test_json_encoder_topic_suffix);

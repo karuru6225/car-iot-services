@@ -8,11 +8,19 @@
 #include "thermometer.h"
 #include "co2meter.h"
 
+// buildConfigPayload() の出力を受けるバッファサイズ。最長ケース（desired:null付き・
+// override_next_mode/continuous_until_time/default_mode すべて非null）で約300バイト。
+// 以前の256バイトでは default_mode 追加後に desired:null 付きペイロードが溢れ、壊れたJSONを
+// 送って desired のクリアが失敗し続けていた。reportedへフィールドを足したら
+// test_telemetry.cpp の最長ケーステストで収まることを確認すること
+static const size_t CONFIG_PAYLOAD_SIZE = 512;
+
 // Shadow reported 向けデバイス設定ペイロードを組み立てる
 // clearDesired=true のとき "desired":null を付加して desired をクリアする
 // overrideNextMode: "timed_continuous" を渡すと ACK として報告、nullptr で null 報告（通常時）
 // continuousUntilTime: TIMED_CONTINUOUS中の継続期限（絶対UNIX時刻）。std::nulloptでnull報告
 // defaultMode: NVSに設定済みのデフォルトモード名（"light_sleep"等）。nullptrでnull報告（未設定時）
+// 戻り値はsnprintfと同じく「切り詰めなしで必要だった長さ」。size以上なら切り詰められている
 int buildConfigPayload(char *buf, size_t size, bool clearDesired = false,
                        const char *overrideNextMode = nullptr,
                        std::optional<time_t> continuousUntilTime = std::nullopt,
