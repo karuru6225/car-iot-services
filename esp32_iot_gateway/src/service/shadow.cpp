@@ -1,6 +1,7 @@
 #include "shadow.h"
 #include "mqtt.h"
 #include "mode_context.h"
+#include "mode_common.h"
 #include "../logger.h"
 #include "../config.h"
 #include "../domain/telemetry.h"
@@ -75,10 +76,18 @@ void shadowPublishConfig(bool clearDesired)
   if (auto defaultMode = getDefaultMode())
     defaultModeReport = defaultModeName(*defaultMode);
 
-  char payload[256];
+  char payload[CONFIG_PAYLOAD_SIZE];
   int len = buildConfigPayload(payload, sizeof(payload), clearDesired, s_overrideNextModeReport,
                                untilTimeReport, defaultModeReport);
   s_overrideNextModeReport = nullptr; // ACK 送信後にリセット（通常時は null）
+
+  // 切り詰められたペイロードは壊れたJSONになりAWS側でrejectされるうえ、lenのまま送ると
+  // バッファ外まで読んでしまうため送信しない
+  if (len < 0 || (size_t)len >= sizeof(payload))
+  {
+    logger.printf("[SHADOW] config payload too long (%d bytes) → publish skipped\n", len);
+    return;
+  }
 
   if (mqtt.publish(topic, (const uint8_t *)payload, (size_t)len))
     logger.println("[SHADOW] config published");
@@ -158,7 +167,7 @@ bool shadowPollDelta(uint32_t timeoutMs)
 
   if (state["charging"].is<bool>())
   {
-    setCharging(state["charging"].as<bool>());
+    applyCharging(state["charging"].as<bool>());
     logger.printf("[SHADOW] charging → %s\n", isCharging() ? "on" : "off");
     changed = true;
   }
