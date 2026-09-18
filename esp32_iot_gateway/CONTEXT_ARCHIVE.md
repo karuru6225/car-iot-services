@@ -2,6 +2,50 @@
 
 `CONTEXT.md` の「作業中・引き継ぎ事項」セクションから、実装済み/対応済みになったTODO、および対応しない方針に決めたTODOをここに移した。現在進行中のTODOは `CONTEXT.md` を参照。
 
+### ~~TODO: Shadow `desired.charging` が古い値のままクリアされず`charging`がチャタリングした障害~~ **v1.25.0 / v2.3.0 で根本修正済み**
+
+2026-09-02、DynamoDB `iot-monitor-shadow-events`テーブル（`esp32-gw-aca7043d0a8c`）で、`charging`が約290〜310秒間隔でtrueになり、その8〜9秒後にfalseへ戻る、という往復を繰り返しているのを発見した。エンジンはずっとOFF・スマホも車から離れておりCONTINUOUSへの自動昇格（BLE/CAN、`DeepSleepModeHandler::beforeRun()`）が起きる状況ではないことをユーザーに確認済み。
+
+**調査結果**: `aws iot-data get-thing-shadow`でShadow documentを直接確認したところ、以下の状態だった。
+
+```json
+"desired":{"charging":false, ...}   // metadata timestamp: 1788270664（発見時から11時間以上前）
+"reported":{"charging":true, ...}   // metadata timestamp: 1788310532（直近）
+"delta":{"charging":false}
+```
+
+`desired.charging=false`が11時間以上前のタイムスタンプのまま一切更新されていなかった。原因は次のループ:
+
+1. `updateChargingState()`（[mode_common.cpp:26](esp32_iot_gateway/src/service/mode_common.cpp#L26)）が電圧条件で`charging=true`と判定 → reportedをpublish
+2. `shadowPollDelta()`（[shadow.cpp:100](esp32_iot_gateway/src/service/shadow.cpp#L100)）が古い`desired.charging=false`由来のdeltaを受信 → `setCharging(false)`で強制的に上書き → `changed=true`により`shadowPublishConfig(true)`を呼び、reported=falseと`desired:null`を送る**はず**
+3. ところが`desired`のtimestampが更新されないことから、この`desired:null`によるクリアが実際には機能していなかった
+4. 300秒後、電圧条件で再びtrueに戻り1に戻る、を繰り返していた
+
+`"desired":null`をデバイス側から送るとdesiredセクション全体が削除されるのはAWS公式の仕様通り（[AWS re:Post](https://repost.aws/questions/QUBCgzSVvjSsi7l4K6q78adg/how-do-i-clear-device-shadow-desired-state-from-device)）で、`shadowPublishConfig(true)`のロジック自体の方向性は正しい。にもかかわらずクリアが効いていない理由は特定できていない。`shadowPollDelta()`のタイムアウト（デフォルト2000ms、[shadow.h:15](esp32_iot_gateway/src/service/shadow.h#L15)）内にdelta受信→`shadowPublishConfig(true)`のpublishが間に合っていないのか、mqtt.publish自体が何らかの理由で失敗しているのか、実機ログ（`[SHADOW] charging → ...`の出現タイミング）を見ないと切り分けられない。
+
+**行った対症療法**: AWS CLIでdesiredセクションを直接クリアし、チャタリングを即時停止した。
+
+```bash
+aws iot describe-endpoint --endpoint-type iot:Data-ATS --output text
+# → axtvlfoh71jez-ats.iot.ap-northeast-1.amazonaws.com
+
+echo '{"state":{"desired":null}}' > clear_desired.json
+aws iot-data update-thing-shadow --thing-name esp32-gw-aca7043d0a8c \
+  --endpoint-url https://axtvlfoh71jez-ats.iot.ap-northeast-1.amazonaws.com \
+  --cli-binary-format raw-in-base64-out \
+  --payload file://clear_desired.json update_result.json
+```
+
+実行後、`get-thing-shadow`でdesiredセクションが消え`delta`も無くなったことを確認済み。ただし根本原因は未解決のため、次に誰か（Web管理画面の`web/admin.html`保存操作等）が`desired.charging`をセットした場合、同じチャタリングが再発する可能性がある。
+
+**次にできること**: 再発したら実機シリアルログで`[SHADOW] charging → ...`（delta適用）と`[MAIN] auto charge ON/OFF ...`（電圧判定）の出現順序・間隔を突き合わせ、`shadowPublishConfig(true)`のpublishが実際に呼ばれているか・失敗していないかを確認する。`shadowPollDelta()`のタイムアウト延長も候補になりうる。
+
+**根本原因（2026-09-18 特定・PR #52）**: `shadowPublishConfig()`の送信バッファが256バイトだったのに対し、`default_mode`追加（a531c77）以降`"desired":null`付きのreportedペイロードが約264バイトになっていた。`snprintf`が末尾を切り詰めたうえ、戻り値（切り詰め前の長さ）をそのままpublish長に使っていたため、`..."desire`で途切れた壊れたJSON＋バッファ外の数バイトを送信し、AWS側でrejectされていた。desired:nullを含まない通常のreported（約240バイト）は収まっていたため、reportedの更新だけは通り「desiredだけが消えない」症状になった。2026-09-18にも`desired.charging=true`で同じチャタリングが再発している。
+
+**修正内容**:
+- バッファを`CONFIG_PAYLOAD_SIZE`（512、[telemetry.h](esp32_iot_gateway/src/domain/telemetry.h)）に拡大し、切り詰めが起きる場合はpublishせずログを出すようにした。最長ケースが収まることをユニットテストで縛っている
+- delta適用時にRTCのフラグだけ更新して`chgOnPin`を駆動していなかったため、reportedは充電中でも実際は充電していない不整合があった。フラグとピン出力を`applyCharging()`（[mode_common.cpp](esp32_iot_gateway/src/service/mode_common.cpp)）にまとめた
+
 ### ~~TODO: compaction後データの行単位削除対応~~ **対応済み（簡易実装）**
 
 コミット `e520c8e`（2026-08-01「S3 rawデータの定期compaction Lambdaを追加」）で、compaction Lambda追加と同時に対応済みだった。`infra/lambda_src/delete/index.py` の `_parse_records()`/`_delete_from_partition()` が単一JSON→NDJSON（マージ済み`_merged.json`）の順にパースを試みるようになっている。
