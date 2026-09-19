@@ -9,8 +9,9 @@
 
 ## 0. 現状まとめ
 
-**①を実装済み**（`car_mcp/`、ブランチ `feat/car-mcp`）。実AWSでの動作確認と、ネモ側への組み込み（④）はまだ。
-使い方・ネモ側で要る4点（起動方法・ポート・ツール名・トークンの渡し方）は `car_mcp/README.md` にまとめた。
+**①を実装済み**（API Gateway → Lambda `iot-monitor-car-mcp`、ブランチ `feat/car-mcp`）。
+`terraform apply` と実AWSでの動作確認、ネモ側への組み込み（④）はまだ。
+ネモ側で接続を始めるときに要ること（URL・認証・ツール名・トークンの取り方）は **8章** にまとめた。
 
 | 段階 | 内容 | 担当 |
 |---|---|---|
@@ -47,11 +48,11 @@ Home Assistant 接続部分、`apps/orchestrator/src/mcp-client.ts`）。
 
 - **トランスポート**: MCP の **Streamable HTTP**（`@modelcontextprotocol/sdk` の `StreamableHTTPClientTransport`）。
   SSE だけのサーバや stdio には繋がらない
-- **認証**: `Authorization: Bearer <token>` を付けられる。ネモの compose 内部でしか公開しない前提でも、トークンは付ける
-- **起動順**: ネモは起動時に2回試して繋がらなければ、車の道具が無い状態で動き続ける（落ちない）。
-  MCP サーバの起動が遅いと道具が出ないので、healthcheck を用意すること
-- **配置**: ネモの `docker/docker-compose.yml` にサービスとして加える想定。イメージはこのリポジトリからビルドする。
-  ポートはホストへ出さず、compose ネットワーク内だけで公開する
+- **認証**: `Authorization: Bearer <token>` を付けられる。`StreamableHTTPClientTransport` に `fetch` を渡せば
+  リクエストごとにトークンを差し替えられる（期限のあるトークンを使える。8章）
+- **起動順**: ネモは起動時に2回試して繋がらなければ、車の道具が無い状態で動き続ける（落ちない）
+- **配置**: 当初はネモの compose にサービスとして加える案だったが、AWS を読むための長期アクセスキーを手で
+  発行して渡す必要が出るため、**API Gateway → Lambda に載せる形に変えた**（6章）。ネモは URL を向けるだけ
 - **ツール名**: ネモ側の許可リスト（環境変数、カンマ区切り）にそのまま書くので、**一度決めたら変えない**。
   `car_` を接頭辞にする
 
@@ -110,17 +111,15 @@ car_events(since: ISO 8601) -> [{
 
 ## 3. AWS へのアクセス
 
-API Gateway の既存ルートは Cognito の JWT（Hosted UI 前提）なので、常駐サーバから使うには向かない。
-**MCP サーバから AWS へ直接、読み取り専用の IAM で行く**ことを推奨する。AWS 側に新しい公開の口を開けずに済む。
-
-許可する範囲の目安:
+MCP サーバは Lambda で動き、**Lambda の実行ロール**で AWS を読む。ネモ側に AWS の認証情報は置かない。
+実行ロールに付けているのは読み取りだけ（`infra/car_mcp.tf`）:
 
 - Athena: ワークグループ `iot-monitor` でのクエリ実行と結果の取得
-- Glue: `iot_monitor` データベースのテーブル定義の読み取り
-- S3: データバケットの読み取り（`raw/`、`obd/`、`rollup/`、`trip-analysis/`）と、Athena 結果の置き場への書き込み
-- IoT: `iot:GetThingShadow`（`car_status` で使う場合）
+- Glue: `iot_monitor` データベースと `sensor_data` テーブルの定義の読み取り
+- S3: データバケットの `raw/`・`rollup/`・`trip-analysis/` の読み取りと、Athena 結果の置き場（`athena-results/`）への書き込み
+- IoT: 対象デバイス1台の `iot:GetThingShadow` だけ
 
-IAM ユーザーを作るか、既存の認証情報を流用するかは**未決定**（6章）。Terraform で管理するなら `infra/` に足す。
+ネモから Lambda への呼び出しは、Cognito の client_credentials で取ったトークンで認証する（8章）。
 
 ---
 
@@ -142,8 +141,8 @@ OBD の行に付いている lat/lon と、逆ジオコーディングした地�
 Claude API へ送られる。
 
 - **座標は返さない**
-- 地名を返すかどうかは**未決定**（6章）。返さない場合でも、距離・所要時間は返してよい
-- 返すなら環境変数で切り替えられるようにし、既定は「返さない」にする
+- 地名は渡してよい（6章）。ただし Terraform 変数 `car_mcp_expose_location`（既定 `false`）で切り替え、既定は「返さない」
+- 返さない場合でも、距離・所要時間は返す
 
 ---
 
@@ -151,11 +150,16 @@ Claude API へ送られる。
 
 決定済み（2026-09-19）:
 
-1. **AWS の認証**: 読み取り専用の IAM ユーザー `iot-monitor-car-mcp` を新しく作る（`infra/car_mcp.tf`）。
-   アクセスキーは tfstate に残さないため CLI で発行する。ネモ→MCPサーバの Bearer トークンとは別物
-2. **位置情報**: 地名は渡してよい。ただし 5章のとおり環境変数 `CAR_EXPOSE_LOCATION` で切り替え、既定は「返さない」
-3. **実装言語と依存**: Python。MCP 公式 Python SDK `mcp`（2.x）を新しい依存として追加した
-4. **置き場所**: リポジトリ直下の `car_mcp/`（`mcp/` だと SDK のパッケージ名と衝突するため避けた）
+1. **AWS の認証と配置**: MCP サーバを API Gateway → Lambda に載せ、Lambda の実行ロールで読む。
+   最初はネモの compose に常駐させて読み取り専用の IAM ユーザーのアクセスキーを渡す形で作ったが、キーを手で発行して
+   渡す作業が要り、長期のキーも残るため作り直した。調べた範囲でも、AWS 自身が勧めるリモート MCP の形は
+   「Lambda＋API Gateway＋OAuth（Cognito）」だった（awslabs/run-model-context-protocol-servers-with-aws-lambda）。
+   AWS 側に新しい口は開くが、既存の API Gateway にルートを1本足すだけで、専用の JWT Authorizer とスコープで守る
+2. **位置情報**: 地名は渡してよい。ただし 5章のとおり切り替え式にし、既定は「返さない」
+3. **実装言語と依存**: Python。**MCP の SDK は使わず、必要な範囲（initialize / ping / tools/list / tools/call）を手書き**した。
+   SDK を Lambda に同梱すると pydantic_core 等のネイティブ依存を Linux 向けにビルドする必要があり、他の Lambda と同じ
+   `archive_file` だけのデプロイができなくなるため。新しい依存は無い
+4. **置き場所**: `infra/lambda_src/car_mcp/`（他の Lambda と同じ場所）
 
 未決定:
 
@@ -165,11 +169,106 @@ Claude API へ送られる。
 
 ## 7. ネモ側で後からやること（参考。このリポジトリの作業ではない）
 
-- `docker/docker-compose.yml` に MCP サーバのサービスを足す。環境変数 `CAR_MCP_URL`・`CAR_MCP_TOKEN`・`CAR_TOOLS`（許可リスト）を追加
-- orchestrator で Home Assistant と同じように接続し、許可リストで絞る
+- 環境変数 `CAR_MCP_URL`・`CAR_MCP_TOKEN_ENDPOINT`・`CAR_MCP_CLIENT_ID`・`CAR_MCP_CLIENT_SECRET`・`CAR_TOOLS`（許可リスト）を追加。
+  値は 8章のとおり `terraform output` で取り出せる
+- orchestrator で Home Assistant と同じように接続し、許可リストで絞る。ただし Home Assistant と違ってトークンに期限（1時間）が
+  あるので、固定の `headers` ではなく、トークンを取り直す `fetch` を渡す（8章のコード）
 - watcher に `car` アダプタを足す。`car_events` を定期的に呼んで、`kind` を固定の顕著性へ対応させるだけの薄いアダプタにする
   （規則で判定する。LLM は使わない）
 - ネモの `docs/manual/`（会話モデルが自分の機能を説明するための文書）に車の道具を追記する
 
-ネモ側で接続を始めるときに要るのは、**サービスの起動方法・ポート・ツール名・トークンの渡し方**の4点。
-①ができたら、このファイルにそれを追記しておくと引き継ぎが速い。
+---
+
+## 8. ①の実装: 接続のしかたと道具の中身
+
+### 接続情報
+
+`infra/` で `terraform apply` した後、次で取り出す（手で発行するものは無い）:
+
+```bash
+terraform output -raw car_mcp_url             # https://xxxx.execute-api.ap-northeast-1.amazonaws.com/mcp
+terraform output -raw car_mcp_token_endpoint  # https://iot-monitor-<アカウントID>.auth.ap-northeast-1.amazoncognito.com/oauth2/token
+terraform output -raw car_mcp_scope           # car-mcp/read
+terraform output -raw car_mcp_client_id
+terraform output -raw car_mcp_client_secret
+```
+
+| 項目 | 値 |
+|---|---|
+| トランスポート | Streamable HTTP。**ステートレス**（セッションIDを発行しない）で、応答は常に `application/json`。GET/DELETE には 405 を返す |
+| 認証 | Cognito の client_credentials で取ったアクセストークンを `Authorization: Bearer` に付ける。有効期限は1時間 |
+| ツール名 | `car_status`, `car_battery_history`, `car_trips`, `car_trip_detail`（**変えない**） |
+| プロトコル版 | `2025-11-25` / `2025-06-18` / `2025-03-26` に対応。ネモの SDK 1.30.0 とは `2025-11-25` で合意する |
+
+Web・モバイル用のトークンでは `/mcp` を呼べず、このクライアントのトークンでは `/data` 等の既存ルートを呼べない
+（Authorizer をネモ専用に分けてある）。
+
+### ネモ側でのトークンの付け方
+
+`connectMcpTools` は固定の `headers` を渡す作りなので、期限切れに備えて `fetch` を差し替える。
+リクエストごとに `fetch` でトークンを付ける形で、ネモの SDK 1.30.0 から接続・一覧・呼び出しが通ることを確認済み
+（Cognito と API Gateway の代わりに固定トークンで通す検証用の中継で確認。実 Cognito では未確認）:
+
+```ts
+const tokenEndpoint = process.env.CAR_MCP_TOKEN_ENDPOINT!;
+const basic = Buffer.from(`${process.env.CAR_MCP_CLIENT_ID}:${process.env.CAR_MCP_CLIENT_SECRET}`).toString('base64');
+let cached: { token: string; expiresAt: number } | undefined;
+
+async function carToken(): Promise<string> {
+  if (cached && Date.now() < cached.expiresAt - 60_000) return cached.token;
+  const res = await fetch(tokenEndpoint, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'client_credentials', scope: 'car-mcp/read' }),
+  });
+  if (!res.ok) throw new Error(`Cognitoのトークン取得に失敗: ${res.status}`);
+  const body = (await res.json()) as { access_token: string; expires_in: number };
+  cached = { token: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 };
+  return cached.token;
+}
+
+const transport = new StreamableHTTPClientTransport(new URL(process.env.CAR_MCP_URL!), {
+  fetch: async (url, init = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${await carToken()}`);
+    return fetch(url, { ...init, headers });
+  },
+});
+```
+
+トークンのキャッシュは必須。Cognito の M2M はトークン要求の回数で課金される（1000件あたり $0.00225。
+1時間に1回なら月 $0.002 程度）。
+
+### 道具の中身
+
+| 道具 | 引数 | 返すもの | データ源 |
+|---|---|---|---|
+| `car_status` | なし | 最新のメイン/サブ電圧・サブ電流・積算Ah、最終受信時刻と経過時間、エンジン稼働/駐車中の推定、直近6件の推移、充電リレーの状態と自動充電の閾値 | Athena `sensor_data`（直近24時間）、IoT Shadow |
+| `car_battery_history` | `start_date`, `end_date`（JSTの暦日 `YYYY-MM-DD`、最大92日） | 日ごとのメイン/サブ電圧の最低・最高、受信件数、サブバッテリーの充電量・放電量 | Athena `sensor_data`、S3 `rollup/` |
+| `car_trips` | `start_date`, `end_date`（同上） | 期間内のトリップ一覧（出発/到着時刻・所要時間・距離・燃料・燃費）と、記録の限界・未分析の範囲の注意書き | S3 `trip-analysis/` |
+| `car_trip_detail` | `trip_id`（`car_trips` が返したID） | 上記に加え LTFT/STFT 平均、触媒温度・ブースト圧の最高値、冷却水温の変化、OBD記録件数 | S3 `trip-analysis/` |
+
+返り値は日本語のキーと、単位・意味を添えた値の JSON テキスト。データが無い日は「受信データが無い」と明示し、
+トリップには「一覧に無いことは走っていないことを意味しない」「分析は○○までしか済んでいない」を必ず添える。
+引数の誤りや AWS 側の失敗は、会話モデルが読める文で `isError: true` の結果として返す。
+
+判定に使っている値:
+
+| 値 | 場所 | 根拠 |
+|---|---|---|
+| エンジン稼働の推定: メイン電圧 13.2V 以上 | `carmcp/battery.py` `ENGINE_RUNNING_MIN_V` | 鉛バッテリーの一般的な目安（オルタネーター発電中の電圧帯）。**この車両の実測では未検証**。サブ→メイン充電中は推定しない |
+| 計測が古いとみなす: 900秒 | `carmcp/battery.py` `STALE_AFTER_SEC` | DEEP_SLEEP の送信間隔 300秒の3回分 |
+| 燃費を参考外とする: 走行 1km 未満 | `carmcp/trips.py` `ECONOMY_MIN_DISTANCE_KM` | 短距離は燃料流量の積分誤差が支配的 |
+| 燃費をありえない値とする: 40km/L 超 | `carmcp/trips.py` `ECONOMY_MAX_PLAUSIBLE_KM_L` | 通信断で燃料が過小積算された実例（372km/L）がある |
+
+### コードとテスト
+
+- `infra/lambda_src/car_mcp/index.py` — Lambda の入口（スコープ確認・HTTPメソッド・道具の定義）
+- `carmcp/protocol.py` — MCP の JSON-RPC 処理 / `battery.py`・`trips.py` — 道具の中身 / `aws.py` — Athena・S3・Shadow の読み取り
+- テストは他の Lambda と同じ Docker の仕組みで AWS に繋がずに回る（`infra/lambda_src/TESTING.md`）。AWS への読み取りは
+  `AwsGateway` に集めてあり、テストでは `tests/car_mcp_fakes.py` の偽物に差し替える
+
+```bash
+# infra/lambda_src/ で実行
+docker compose -f docker-compose.test.yml run --build --rm test pytest car_mcp -v
+```
