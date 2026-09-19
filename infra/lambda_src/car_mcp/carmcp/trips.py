@@ -5,7 +5,7 @@
 （year/monthはsession_endのUTC。詳細はHANDOFF_trip_analysis.md）
 
 座標はファイルに入っていないので返しようがない。開始/終了地点の地名は、
-CAR_EXPOSE_LOCATION=trueのときだけ返す（HANDOFF_mnemosyne.md 5章）。"""
+環境変数EXPOSE_LOCATION=true（Terraform変数car_mcp_expose_location）のときだけ返す（HANDOFF_mnemosyne.md 5章）。"""
 
 import json
 import re
