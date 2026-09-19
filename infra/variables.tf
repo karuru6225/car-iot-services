@@ -46,3 +46,14 @@ variable "home_lon" {
   type        = number
   sensitive   = true
 }
+
+variable "car_mcp_device_id" {
+  description = "car_mcpが対象にするIoT Thing名（esp32-gw-{MAC12桁}）"
+  default     = "esp32-gw-aca7043d0a8c"
+}
+
+variable "car_mcp_expose_location" {
+  description = "car_mcpがトリップの出発/到着の地名を会話モデルへ渡すか（座標はどの設定でも渡さない）"
+  type        = bool
+  default     = false
+}
