@@ -19,6 +19,10 @@
 │  IoT Jobs → OTA 更新ジョブ管理 → デバイス → S3(firmware) DL  │
 │  API GW → Lambda(query/delete) → Athena → S3                 │
 │  CloudFront → S3(web) → Web 管理画面                          │
+├──────────────────────────────────────────────────────────────┤
+│  外部連携                                                      │
+│  car_mcp/  読み取り専用 MCP サーバ（mnemosyne の compose 上）  │
+│    専用 IAM ユーザーで Athena・S3・Shadow を直接読む          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -45,6 +49,7 @@ Terraform で管理。主要リソース：
 | API Gateway HTTP API | `GET /data`, `DELETE /data` |
 | S3 バケット（Web 用） + CloudFront + Route53 | カスタムドメインで管理画面ホスティング |
 | ACM 証明書（us-east-1） | CloudFront 用 TLS 証明書 |
+| IAM ユーザー `iot-monitor-car-mcp` | car_mcp（mnemosyne 向け MCP サーバ）の読み取り専用アクセス。アクセスキーは CLI で発行（`car_mcp/README.md`） |
 
 ## Web 管理画面（web/index.html）
 
