@@ -1,11 +1,5 @@
-import sys
-from pathlib import Path
-
-import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from carmcp.config import Config  # noqa: E402
+"""car_mcpのテスト用の偽物。conftest.pyに置くと、他のLambdaのconftest.pyと
+--import-mode=importlibの下で名前が衝突して import できないため別モジュールにする。"""
 
 
 class FakeGateway:
@@ -37,19 +31,3 @@ class FakeGateway:
 
     def get_shadow(self, thing_name: str) -> dict | None:
         return self.shadow
-
-
-@pytest.fixture
-def cfg() -> Config:
-    return Config(
-        device_id="esp32-gw-aabbccddeeff",
-        obd_device_id="car-iot-aabbcc",
-        s3_bucket="bucket",
-        athena_database="iot_monitor",
-        athena_workgroup="iot-monitor",
-        iot_endpoint="https://example-ats.iot.ap-northeast-1.amazonaws.com",
-        expose_location=False,
-        token="t" * 32,
-        allowed_hosts=("localhost:*", "127.0.0.1:*"),
-        port=8000,
-    )

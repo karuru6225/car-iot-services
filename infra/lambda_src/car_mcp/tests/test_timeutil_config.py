@@ -52,36 +52,32 @@ def test_derive_obd_device_id_はMAC上位6桁を使う():
 def _env(**overrides):
     env = {
         "CAR_DEVICE_ID": "esp32-gw-aabbccddeeff",
-        "CAR_S3_BUCKET": "bucket",
-        "CAR_IOT_ENDPOINT": "example-ats.iot.ap-northeast-1.amazonaws.com",
-        "CAR_MCP_TOKEN": "x" * 32,
+        "S3_BUCKET": "bucket",
+        "ATHENA_DATABASE": "iot_monitor",
+        "ATHENA_WORKGROUP": "iot-monitor",
+        "IOT_ENDPOINT": "https://example-ats.iot.ap-northeast-1.amazonaws.com",
     }
     env.update(overrides)
     return {k: v for k, v in env.items() if v is not None}
 
 
-def test_load_config_の既定値():
+def test_load_config_はOBDの識別子を導出し地名は既定で渡さない():
     cfg = load_config(_env())
     assert cfg.obd_device_id == "car-iot-aabbcc"
-    assert cfg.iot_endpoint == "https://example-ats.iot.ap-northeast-1.amazonaws.com"
-    assert cfg.athena_database == "iot_monitor"
-    assert cfg.athena_workgroup == "iot-monitor"
     assert cfg.expose_location is False
-    assert "car-mcp:*" in cfg.allowed_hosts
 
 
 def test_load_config_は地名の公開を明示したときだけ有効にする():
-    assert load_config(_env(CAR_EXPOSE_LOCATION="true")).expose_location is True
-    assert load_config(_env(CAR_EXPOSE_LOCATION="yes")).expose_location is False
+    assert load_config(_env(EXPOSE_LOCATION="true")).expose_location is True
+    assert load_config(_env(EXPOSE_LOCATION="yes")).expose_location is False
 
 
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"CAR_MCP_TOKEN": None}, "CAR_MCP_TOKEN"),
-        ({"CAR_MCP_TOKEN": "short"}, "32文字以上"),
+        ({"CAR_DEVICE_ID": None}, "CAR_DEVICE_ID"),
         ({"CAR_DEVICE_ID": "esp32-gw-x' OR '1'='1"}, "使えない文字"),
-        ({"CAR_S3_BUCKET": ""}, "CAR_S3_BUCKET"),
+        ({"S3_BUCKET": ""}, "S3_BUCKET"),
     ],
 )
 def test_load_config_は不備があれば起動させない(overrides, message):

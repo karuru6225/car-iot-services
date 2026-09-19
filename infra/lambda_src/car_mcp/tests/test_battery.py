@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from carmcp import battery
-from conftest import FakeGateway
+from car_mcp_fakes import FakeGateway
 
 NOW = datetime(2026, 9, 19, 3, 0, tzinfo=timezone.utc)  # JST 12:00
 

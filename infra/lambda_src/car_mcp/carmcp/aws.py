@@ -1,9 +1,9 @@
 """AWSへの読み取りアクセスをまとめた層。道具（battery.py・trips.py）はこのクラスの
 メソッドだけを使い、テストでは同じメソッドを持つ偽物に差し替える。
 
-Athenaの実行〜ポーリング〜結果のパースはinfra/lambda_src/battery_rollup/index.py等の
-_run_athena_query・_parse_athena_resultsと同じ手順。Lambdaとはデプロイ先が違い
-コードを共有する仕組みも無いため、ここでも重複を許容する。"""
+Athenaの実行〜ポーリング〜結果のパースはbattery_rollup/index.py等の
+_run_athena_query・_parse_athena_resultsと同じ手順。このリポジトリにLambda Layer等の
+共有機構が無いため、他のLambdaと同じく重複を許容する。"""
 
 import json
 import time
@@ -15,9 +15,9 @@ from botocore.exceptions import ClientError
 from .config import Config
 
 ATHENA_POLL_INTERVAL_SEC = 1.0
-# 会話の途中で呼ばれるため、Lambdaのバッチ（600秒）より大幅に短くする。
-# 対象期間に上限を設けているので、通常は数秒で終わる
-ATHENA_POLL_TIMEOUT_SEC = 60
+# API Gatewayの統合タイムアウト（最大30秒）の中で、S3の読み取りと応答の組み立てまで
+# 終える必要がある。対象期間に上限を設けているので、通常は数秒で終わる
+ATHENA_POLL_TIMEOUT_SEC = 20
 
 
 class AthenaError(RuntimeError):
