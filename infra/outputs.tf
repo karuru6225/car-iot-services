@@ -72,3 +72,8 @@ output "cognito_domain" {
   description = "Cognito Hosted UI ドメイン（Google Cloud ConsoleのリダイレクトURI設定に使用。AppAuthのissuerには使えない、cognito_user_pool_idベースのissuer URLを使うこと）"
   value       = local.cognito_domain_base
 }
+
+output "car_mcp_user_name" {
+  description = "car_mcp（mnemosyne向け読み取り専用MCPサーバ）のIAMユーザー名。アクセスキーはCLIで発行する"
+  value       = aws_iam_user.car_mcp.name
+}
