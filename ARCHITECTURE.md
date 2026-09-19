@@ -19,6 +19,10 @@
 │  IoT Jobs → OTA 更新ジョブ管理 → デバイス → S3(firmware) DL  │
 │  API GW → Lambda(query/delete) → Athena → S3                 │
 │  CloudFront → S3(web) → Web 管理画面                          │
+├──────────────────────────────────────────────────────────────┤
+│  外部連携（mnemosyne 向け 読み取り専用 MCP サーバ）            │
+│  API GW(/mcp) → Lambda(car_mcp) → Athena・S3・Shadow           │
+│    Cognito M2M トークン＋専用 JWT Authorizer で認証           │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -45,6 +49,7 @@ Terraform で管理。主要リソース：
 | API Gateway HTTP API | `GET /data`, `DELETE /data` |
 | S3 バケット（Web 用） + CloudFront + Route53 | カスタムドメインで管理画面ホスティング |
 | ACM 証明書（us-east-1） | CloudFront 用 TLS 証明書 |
+| Lambda `car_mcp` + Cognito M2M クライアント | mnemosyne（個人用AIアシスタント）向けの読み取り専用 MCP サーバ（`ANY /mcp`、専用 JWT Authorizer）。詳細は `HANDOFF_mnemosyne.md` 8章 |
 
 ## Web 管理画面（web/index.html）
 

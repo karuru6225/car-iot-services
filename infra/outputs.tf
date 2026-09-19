@@ -72,3 +72,29 @@ output "cognito_domain" {
   description = "Cognito Hosted UI ドメイン（Google Cloud ConsoleのリダイレクトURI設定に使用。AppAuthのissuerには使えない、cognito_user_pool_idベースのissuer URLを使うこと）"
   value       = local.cognito_domain_base
 }
+
+# ─── car_mcp（mnemosyne向けMCPサーバ）への接続情報。mnemosyne側の設定にそのまま使う ───
+
+output "car_mcp_url" {
+  description = "car_mcpのMCPエンドポイント（Streamable HTTP）"
+  value       = "${aws_apigatewayv2_api.main.api_endpoint}/mcp"
+}
+
+output "car_mcp_token_endpoint" {
+  description = "mnemosyneがclient_credentialsでアクセストークンを取るCognitoのトークンエンドポイント"
+  value       = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com/oauth2/token"
+}
+
+output "car_mcp_scope" {
+  description = "トークン要求時に指定するスコープ"
+  value       = local.car_mcp_scope
+}
+
+output "car_mcp_client_id" {
+  value = aws_cognito_user_pool_client.car_mcp.id
+}
+
+output "car_mcp_client_secret" {
+  value     = aws_cognito_user_pool_client.car_mcp.client_secret
+  sensitive = true
+}

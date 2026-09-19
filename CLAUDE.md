@@ -122,6 +122,7 @@ AWS CLI の `--` オプションのパースエラーや presigned URL の生成
 - `esp32_iot_gateway/DUAL_CORE.md` — デュアルコア活用の実装計画（未実装・設計検討のみ）
 - `car_iot_android/DESIGN.md` — **UI を触る前に読む**。デザインの指針、3回作り直した失敗の記録、WCAG 検証とダミー値注入の作法
 - `car_iot_android/CONTEXT.md` — Android アプリの実装状態・実機検証メモ・UIデザインの設計判断
+- `HANDOFF_mnemosyne.md` — mnemosyne（個人用AIアシスタント）連携の方針・段階。8章に読み取り専用MCPサーバ（Lambda `car_mcp`）の接続方法・道具の中身
 - `docs/car_iot_android_plan.md` — Android アプリの全体設計・アーキテクチャ方針・フェーズ0〜9のロードマップ
 - `m5atom_power_adc/HARDWARE.md` — PCB 基板設計メモ（BOM・回路・PCB レイアウト）
 - `m5atom_power_adc/CIRCUIT.md` — 回路仕様（ブロック図・接続図）
