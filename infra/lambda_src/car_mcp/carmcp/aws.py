@@ -13,11 +13,9 @@ import boto3
 from botocore.exceptions import ClientError
 
 from .config import Config
+from .thresholds import ATHENA_POLL_TIMEOUT_SEC
 
 ATHENA_POLL_INTERVAL_SEC = 1.0
-# API Gatewayの統合タイムアウト（最大30秒）の中で、S3の読み取りと応答の組み立てまで
-# 終える必要がある。対象期間に上限を設けているので、通常は数秒で終わる
-ATHENA_POLL_TIMEOUT_SEC = 20
 
 
 class AthenaError(RuntimeError):

@@ -13,17 +13,10 @@ from datetime import datetime, timedelta, timezone
 
 from .aws import AwsGateway
 from .config import Config
+from .thresholds import ECONOMY_MAX_PLAUSIBLE_KM_L, ECONOMY_MIN_DISTANCE_KM, TRIPS_MAX_COUNT, TRIPS_MAX_DAYS
 from .timeutil import JST, describe_duration, iso_jst, jst_day_start, validate_period
 
 TRIP_PREFIX = "trip-analysis"
-TRIPS_MAX_DAYS = 92
-TRIPS_MAX_COUNT = 100
-
-# 燃費の妥当性判定。1km未満の走行は燃料流量の積分誤差が支配的で燃費に意味が無く、
-# 40km/Lを超える値は通信断で燃料消費が過小に積算されたとみなす（実データで372km/Lが出た）
-ECONOMY_MIN_DISTANCE_KM = 1.0
-ECONOMY_MAX_PLAUSIBLE_KM_L = 40.0
-
 _TRIP_FILENAME_RE = re.compile(r"^(\d{10})_(\d{10})_v(\d+)_(\d+)\.json$")
 _TRIP_ID_RE = re.compile(r"^(\d{10})_(\d{10})$")
 
@@ -79,7 +72,7 @@ def _describe_economy(trip: dict) -> str:
     if economy is None:
         return "算出できない（燃料消費が記録されていない）"
     if distance < ECONOMY_MIN_DISTANCE_KM:
-        return f"{economy:.1f} km/L（走行距離が{ECONOMY_MIN_DISTANCE_KM:.0f}km未満のため参考にならない）"
+        return f"{economy:.1f} km/L（走行距離が{ECONOMY_MIN_DISTANCE_KM:g}km未満のため参考にならない）"
     if economy > ECONOMY_MAX_PLAUSIBLE_KM_L:
         return (
             f"{economy:.1f} km/L（物理的にありえない値。OBDの通信断で燃料消費が少なく積算された"

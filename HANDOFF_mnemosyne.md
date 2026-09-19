@@ -252,14 +252,14 @@ const transport = new StreamableHTTPClientTransport(new URL(process.env.CAR_MCP_
 トリップには「一覧に無いことは走っていないことを意味しない」「分析は○○までしか済んでいない」を必ず添える。
 引数の誤りや AWS 側の失敗は、会話モデルが読める文で `isError: true` の結果として返す。
 
-判定に使っている値:
+判定に使っている値（しきい値・期間の上限などは **`infra/lambda_src/car_mcp/carmcp/thresholds.py` の1ファイルにまとめてある**。変えるときはそこだけを直す）:
 
-| 値 | 場所 | 根拠 |
+| 値 | 定数 | 根拠 |
 |---|---|---|
-| エンジン稼働の推定: メイン電圧 13.2V 以上 | `carmcp/battery.py` `ENGINE_RUNNING_MIN_V` | 鉛バッテリーの一般的な目安（オルタネーター発電中の電圧帯）。**この車両の実測では未検証**。サブ→メイン充電中は推定しない |
-| 計測が古いとみなす: 900秒 | `carmcp/battery.py` `STALE_AFTER_SEC` | DEEP_SLEEP の送信間隔 300秒の3回分 |
-| 燃費を参考外とする: 走行 1km 未満 | `carmcp/trips.py` `ECONOMY_MIN_DISTANCE_KM` | 短距離は燃料流量の積分誤差が支配的 |
-| 燃費をありえない値とする: 40km/L 超 | `carmcp/trips.py` `ECONOMY_MAX_PLAUSIBLE_KM_L` | 通信断で燃料が過小積算された実例（372km/L）がある |
+| エンジン稼働の推定: メイン電圧 13.2V 以上 | `ENGINE_RUNNING_MIN_V` | 鉛バッテリーの一般的な目安（オルタネーター発電中の電圧帯）。**この車両の実測では未検証**。サブ→メイン充電中は推定しない |
+| 計測が古いとみなす: 900秒 | `STALE_AFTER_SEC` | DEEP_SLEEP の送信間隔 300秒の3回分 |
+| 燃費を参考外とする: 走行 1km 未満 | `ECONOMY_MIN_DISTANCE_KM` | 短距離は燃料流量の積分誤差が支配的 |
+| 燃費をありえない値とする: 40km/L 超 | `ECONOMY_MAX_PLAUSIBLE_KM_L` | 通信断で燃料が過小積算された実例（372km/L）がある |
 
 ### コードとテスト
 

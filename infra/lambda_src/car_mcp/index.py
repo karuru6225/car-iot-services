@@ -24,6 +24,7 @@ from carmcp import battery, trips
 from carmcp.aws import AthenaError, AwsGateway
 from carmcp.config import load_config
 from carmcp.protocol import PARSE_ERROR, INVALID_REQUEST, Tool, ToolError, error, handle
+from carmcp.thresholds import HISTORY_MAX_DAYS, SEND_INTERVAL_SEC, TRIPS_MAX_DAYS
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -32,7 +33,7 @@ REQUIRED_SCOPE = "car-mcp/read"
 
 INSTRUCTIONS = (
     "車（メイン/サブの2系統のバッテリーを持つ車両）の計測データを読むための道具。"
-    "バッテリーの計測値は車載装置がLTE経由で通常5分ごとに送る。"
+    f"バッテリーの計測値は車載装置がLTE経由で通常{SEND_INTERVAL_SEC // 60}分ごとに送る。"
     "トリップ（走行記録）はスマートフォンが車内にあるときだけOBD-II経由で記録される。"
     "時刻はすべて日本時間（+09:00）で返す。"
 )
@@ -69,7 +70,8 @@ TOOLS = [
         name="car_battery_history",
         description=(
             "期間を指定して、日ごとのバッテリーの記録を返す。メイン/サブバッテリーの電圧の最低・最高、"
-            "サブバッテリーの充電量・放電量（Ah）、受信件数。受信が無かった日はそうと分かる形で返す。期間は最大92日。"
+            "サブバッテリーの充電量・放電量（Ah）、受信件数。受信が無かった日はそうと分かる形で返す。"
+            f"期間は最大{HISTORY_MAX_DAYS}日。"
         ),
         properties={
             "start_date": {**_DATE_PROPERTY, "description": "開始日（日本時間の暦日、YYYY-MM-DD）"},
@@ -81,7 +83,8 @@ TOOLS = [
         name="car_trips",
         description=(
             "期間を指定して、走行記録（トリップ）の一覧を返す。出発/到着時刻、所要時間、走行距離、燃料消費、燃費。"
-            "記録はスマートフォンが車内にあった走行だけなので、一覧に無いことは走っていないことを意味しない。期間は最大92日。"
+            "記録はスマートフォンが車内にあった走行だけなので、一覧に無いことは走っていないことを意味しない。"
+            f"期間は最大{TRIPS_MAX_DAYS}日。"
         ),
         properties={
             "start_date": {**_DATE_PROPERTY, "description": "開始日（日本時間の暦日、YYYY-MM-DD）"},

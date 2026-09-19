@@ -9,6 +9,14 @@ from datetime import date, datetime, timedelta, timezone
 
 from .aws import AwsGateway, partition_filters
 from .config import Config
+from .thresholds import (
+    ENGINE_RUNNING_MIN_V,
+    HISTORY_MAX_DAYS,
+    SEND_INTERVAL_SEC,
+    STALE_AFTER_SEC,
+    STATUS_LOOKBACK_HOURS,
+    STATUS_RECENT_ROWS,
+)
 from .timeutil import (
     JST,
     date_range,
@@ -19,19 +27,6 @@ from .timeutil import (
     sensor_ts,
     validate_period,
 )
-
-STATUS_LOOKBACK_HOURS = 24
-STATUS_RECENT_ROWS = 6
-
-# DEEP_SLEEPの送信間隔（esp32_iot_gateway/src/config.hのSLEEP_INTERVAL_SEC=300）の3回分。
-# これより古い計測は「今の状態」として扱わない
-STALE_AFTER_SEC = 900
-
-# メイン電圧がこれ以上なら、オルタネーターが発電している（エンジン稼働中）と推定する。
-# 鉛バッテリーの一般的な目安による経験則で、この車両の実測では検証していない
-ENGINE_RUNNING_MIN_V = 13.2
-
-HISTORY_MAX_DAYS = 92
 
 ROLLUP_PREFIX = "rollup/"
 
@@ -91,7 +86,7 @@ def _describe_shadow(shadow: dict | None) -> dict:
 def _infer_state(latest: dict, age_sec: float, charging: bool | None) -> str:
     if age_sec > STALE_AFTER_SEC:
         return (
-            "不明（最新の計測から通常の送信間隔5分を大きく超えて時間が経っている。"
+            f"不明（最新の計測から通常の送信間隔{SEND_INTERVAL_SEC // 60}分を大きく超えて時間が経っている。"
             "装置の停止・圏外・電源断の可能性がある）"
         )
     if charging:
@@ -240,6 +235,7 @@ def car_battery_history(
         "日ごとの記録": days,
         "読み方": [
             "充電量・放電量は、サブバッテリーの積算電荷量の増減を日ごとに足し合わせた値",
-            "受信件数は通常5分に1件（1日で約288件）。少ない日は装置が止まっていた時間がある",
+            f"受信件数は通常{SEND_INTERVAL_SEC // 60}分に1件（1日で約{86400 // SEND_INTERVAL_SEC}件）。"
+            "少ない日は装置が止まっていた時間がある",
         ],
     }
