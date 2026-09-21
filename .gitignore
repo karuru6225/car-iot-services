@@ -42,3 +42,6 @@ m5atom_power_adc/pcb_analysis.json
 
 # OBDトリップAI分析の一時検証（実車の位置情報等を含むため非公開、esp32_iot_gateway/CONTEXT.mdのTODO参照）
 experiments/trip-analysis-ai-poc/
+
+# Codex のローカル設定（MCPサーバのパスが環境固有）
+.codex/
