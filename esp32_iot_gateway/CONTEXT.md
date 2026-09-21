@@ -770,24 +770,56 @@ LIGHT_SLEEPからCONTINUOUSへ昇格した直後（`lightSleepShortWakeGate()`�
 
 実装には`ContinuousModeHandlerBase`/`main.cpp`のsetup()フロー周りの構造変更が必要（LTE接続をCONTINUOUS突入と切り離し、境界到達まで遅延させる仕組みが要る）。
 
-### TODO: ah_offset を mAh 単位にして小数精度を持たせる（未着手）
+### TODO: 電源断をまたいで積算電荷量を引き継ぐ（ah_offset の小数精度対応を含む・未着手）
 
-`ah_offset`（NVS `battery/ah_offset`）は `int32_t` で保持しており（`config.cpp` の
-`getAhOffset()`/`setAhOffset()`）、整数 Ah 単位でしか設定できない。送信される `ah` は
-`ina228.readCharge() + (float)getAhOffset()` なので、offset を設定し直すたびに小数部が
-切り捨てられ、その端数がそのまま積算値のズレとしてクラウド側のデータに残る。
+INA228 の CHARGE レジスタは本体の電源が完全に切れると 0 にリセットされる。送信している
+`ah` は `ina228.readCharge() + (float)getAhOffset()` なので（`service/monitor.cpp`・
+`service/mode_continuous_base.cpp`）、電源断のあと `ah` は「その時点の ah_offset の値
+そのもの」に飛ぶ。クラウド側の `battery_rollup` は隣接行の ah 差分を充放電量とみなす
+ため、このジャンプがまるごと偽の充電量・放電量として日次集計に乗る。
 
-**実際に起きた事象（2026-09-20）**: 車載ボードの電源を完全に OFF にしたことで INA228 の
-CHARGE レジスタが 0 にリセットされ、`ah` が「offset の値そのもの」に飛んだ
-（UTC 08:59:55 に 79.178 → 199.999）。その後 UTC 10:20:32 に offset を 200 から
-リセット前の値 79.17813 へ戻そうとしたが、int32 のため 79 として保存され、0.17813 Ah の
-ズレが残った。S3 の `raw/` 側は該当区間の `ah` から 121（= offset 200 と 79 の差）を
-引いて系列を連結し、`battery_rollup` を対象日指定で再実行して復旧済み
-（元データは `s3://iot-monitor-369403882068/backup/2026-09-20-ah-fix/` に退避）。
-0.17813 Ah 分は実在のズレなので、そのまま放電量として残している。
+**実際に起きた事象（2026-09-20）**: 車載ボードの電源を完全に OFF にしたことで CHARGE が
+リセットされ、`ah` が UTC 08:59:55 に 79.178 → 199.999（当時の ah_offset = 200）へ
+ジャンプした。その後 UTC 10:20:32 に offset をリセット前の値 79.17813 へ戻そうとしたが、
+`ah_offset` は `int32_t` のため 79 として保存され、0.17813 Ah のズレが残った。
+S3 の `raw/` 側は該当区間（UTC 08:59:55〜10:15:56 の 19 レコード）の `ah` から 121
+（= offset 200 と 79 の差）を引いて系列を連結し、`battery_rollup` を対象日指定で
+再実行して復旧済み。元データは
+`s3://iot-monitor-369403882068/backup/2026-09-20-ah-fix/` に退避してある。
+0.17813 Ah 分は実在のズレなのでそのまま放電量として残した。
 
-**対応方針**: NVS のキーを mAh 単位の `int32_t`（例 `ah_offset_mah`）に変え、
-`getAhOffset()` は `float`（Ah）を返す形にする。既存キーからの移行が必要
+**対応方針**: 最新の `ah`（= `readCharge() + ah_offset`）を NVS の別キー `last_ah` へ
+定期保存し、電源断を検知した起動時にだけ `ah_offset` へ反映する。`ah_offset` を直接
+上書きしないのは、(1) メニュー・BLE・Shadow から人が設定した値を自動保存値が潰して
+しまう、(2) DeepSleep 復帰では INA228 の電源は入ったままで CHARGE が保持されており、
+そこで offset を上書きすると保持分が二重に乗る、の 2 点による。
+
+**電源断の検知条件（AND で取る）**:
+
+- RTC メモリに置いた magic が消えている（`service/pubqueue.cpp` の `RTC_MAGIC` と同じ手法）
+- かつ `ina228.readCharge()` が ≈ 0（|CHARGE| < 0.01 Ah 程度）
+
+RTC メモリ単独では不十分。EN pin リセット・ブラウンアウト・WDT でも RTC メモリは
+クリアされるが、その場合 INA228 の電源は切れておらず CHARGE は生きている
+（`service/pubqueue.cpp` 冒頭コメント参照）。2026-09-20 の実データでも、電源断後の
+最初のレコード（UTC 08:59:55）の CHARGE は -0.00076 Ah だった。
+
+**保存頻度と NVS 摩耗**: 送信と同じ 5 分間隔（CONTINUOUS も `secsToNextBoundary()` で
+5 分境界に揃っている）で書いて問題ない。ESP-IDF の NVS は 4096 B ページ = ヘッダ 32 B +
+エントリ状態ビットマップ 32 B + 126 エントリ × 32 B で、同一キーの更新は追記
+（append-only）・旧エントリは erased マークのみ。フラッシュ消去はページが埋まって
+コンパクションが走るときだけなので、消去回数 ≒ 書き込み回数 ÷ 126 になる。
+5 分ごと（288 回/日）なら 10 年で書き込み 1,051,200 回 → 消去 8,343 回で、典型寿命
+10 万消去の 8.3%。nvs パーティションは 0x5000 = 5 ページ（`partitions_two_ota.csv`）
+あるため実際はさらに複数セクタへ分散する。
+出典: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/storage/nvs_flash.html>
+
+残る誤差は最後の保存から電源断までの最大 5 分ぶん（走行中 -3.3 A なら約 0.28 Ah）。
+
+**あわせて ah_offset に小数精度を持たせる**: 上記の 0.17813 Ah のズレは `ah_offset` が
+`int32_t` で整数 Ah 単位しか扱えないことに起因する。`last_ah` を持たせる際に、
+`ah_offset` も mAh 単位の `int32_t`（例 `ah_offset_mah`）か、既存の `nvsSetFloat()`
+と同じ float ビットパターン保存に変える。既存キーからの移行が必要
 （`ah_offset` が残っていたら 1000 倍して新キーへ書き、旧キーを消す）。
 
 **影響する呼び出し元**:
