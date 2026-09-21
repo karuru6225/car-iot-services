@@ -769,3 +769,30 @@ LIGHT_SLEEPからCONTINUOUSへ昇格した直後（`lightSleepShortWakeGate()`�
 **回避策（未実装）**: 境界外での昇格時はLTE接続・shadow同期・OTAチェックを伴うフル送信を行わず、ADS1115/INA228/OLED（CAN/BLEは`lightSleepShortWakeGate()`の時点で初期化済み）だけ用意して、`ContinuousModeHandlerBase::onTick()`相当（`obdPoll()` → `blePeripheral.notifyObd()`）とBLE notify（`blePeripheral.notify()`）だけのループにいきなり入る。LTEを一切使わないため、境界に達するまでは「境界を待たない送信」問題自体が発生しない。境界に達した時点で初めてLTE接続・フル送信の通常サイクルに入る。
 
 実装には`ContinuousModeHandlerBase`/`main.cpp`のsetup()フロー周りの構造変更が必要（LTE接続をCONTINUOUS突入と切り離し、境界到達まで遅延させる仕組みが要る）。
+
+### TODO: ah_offset を mAh 単位にして小数精度を持たせる（未着手）
+
+`ah_offset`（NVS `battery/ah_offset`）は `int32_t` で保持しており（`config.cpp` の
+`getAhOffset()`/`setAhOffset()`）、整数 Ah 単位でしか設定できない。送信される `ah` は
+`ina228.readCharge() + (float)getAhOffset()` なので、offset を設定し直すたびに小数部が
+切り捨てられ、その端数がそのまま積算値のズレとしてクラウド側のデータに残る。
+
+**実際に起きた事象（2026-09-20）**: 車載ボードの電源を完全に OFF にしたことで INA228 の
+CHARGE レジスタが 0 にリセットされ、`ah` が「offset の値そのもの」に飛んだ
+（UTC 08:59:55 に 79.178 → 199.999）。その後 UTC 10:20:32 に offset を 200 から
+リセット前の値 79.17813 へ戻そうとしたが、int32 のため 79 として保存され、0.17813 Ah の
+ズレが残った。S3 の `raw/` 側は該当区間の `ah` から 121（= offset 200 と 79 の差）を
+引いて系列を連結し、`battery_rollup` を対象日指定で再実行して復旧済み
+（元データは `s3://iot-monitor-369403882068/backup/2026-09-20-ah-fix/` に退避）。
+0.17813 Ah 分は実在のズレなので、そのまま放電量として残している。
+
+**対応方針**: NVS のキーを mAh 単位の `int32_t`（例 `ah_offset_mah`）に変え、
+`getAhOffset()` は `float`（Ah）を返す形にする。既存キーからの移行が必要
+（`ah_offset` が残っていたら 1000 倍して新キーへ書き、旧キーを消す）。
+
+**影響する呼び出し元**:
+
+- `service/menu.cpp` の `tickAhOffset()` — 小数第 3 位まで編集できる UI が要る
+- `device/ble_peripheral.cpp` の `CfgAhOffsetCb` — characteristic の値の型・バイト長
+- `service/shadow.cpp` — Shadow desired の `ah_offset` を float で受ける
+- `domain/telemetry.cpp` — `"ah_offset":%d` のフォーマット指定子
