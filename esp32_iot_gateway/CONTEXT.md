@@ -180,6 +180,36 @@ ESP32-S3-MINI-1
 - **CRC不一致時**: `raw/`（Athenaスキーマ）には保存せず、生バイナリのまま専用バケット（`corrupted`、30日で自動削除）に退避する。`ingest` Lambda のログに `[CORRUPT]` として理由を出力
 - S3保存JSONには検出したフォーマットバージョンを `"ver"`（0=旧形式、1=新形式）として追加する
 
+### 診断テレメトリ（sensors/{device_id}/data_bin、`t:"diag"`）
+
+シリアルにしか出ていなかった「デバイス自身の状態」をクラウドに時系列で残す。データ欠測時に
+電源断・再起動ループ（ブラウンアウト/WDT/パニック）・圏外・オフラインキュー溢れを切り分けるのが目的。
+
+- **送信タイミング**: `loop()` の1サイクルにつき1回（DEEP_SLEEPなら起床ごと、CONTINUOUSなら5分境界ごと）。バッテリーテレメトリの直後に `publishDiagnostics()`（`service/diagnostics.cpp`）がオフラインキューへ積む
+- **専用トピックを作らない理由**: 既存の `data_bin` に載せればCRC検証・圏外時のSPIFFS退避・IoTポリシー/ルールをそのまま使える。`ingest` は `type` を問わず `raw/` に保存し、query/battery_rollup 等の下流は `type` で絞っているため混在しても影響しない
+- **オフラインキュー容量**: 1サイクルあたりのエントリが1件増えるため、圏外時にバッテリー/BLEデータを保持できるサイクル数はその分減る（`OFFLINE_BUFFER_MAX`=200件共有）
+- **`/buffer.bin` 互換**: `DiagData` は `QueueEntry` union にそのまま載る。`BatteryEntry`（28バイト）を超えると保存形式が変わるため、`pubqueue.h` の `static_assert` で縛っている
+
+```json
+{"t":"diag","ts":1746143400,"rr":1,"wc":4,"bc":12,"up":35,"hf":151234,"hm":120456,"csq":18,"ql":2,"qd":0,"md":"DEEP_SLEEP","fw":"2.3.0+abc1234"}
+```
+
+| 通信上のキー | S3 保存キー | 型 | 内容 |
+| --- | --- | --- | --- |
+| `t` | `type` | string | `"diag"` 固定 |
+| `ts` | `ts` | int | UNIX タイムスタンプ（秒） |
+| `rr` | `reset_reason` | int | `esp_reset_reason()`。1=POWERON, 3=SW, 4=PANIC, 5=INT_WDT, 6=TASK_WDT, 7=WDT, 8=DEEPSLEEP, 9=BROWNOUT |
+| `wc` | `wakeup_cause` | int | `esp_sleep_get_wakeup_cause()`。0=UNDEFINED（DeepSleep以外からの起動）, 4=TIMER 等 |
+| `bc` | `boot_count` | int | 起動回数（RTCメモリ保持。電源投入・ブラウンアウト等でリセット）。LIGHT_SLEEPの短周期ピークは数えない |
+| `up` | `uptime` | int | 起動からの経過秒（DeepSleep運用では1サイクルの所要時間に相当） |
+| `hf` | `heap_free` | int | 空きヒープ（バイト） |
+| `hm` | `heap_min` | int | 起動以降の空きヒープ最小値（バイト） |
+| `csq` | `csq` | int | AT+CSQ（0〜31、99=不明/取得失敗） |
+| `ql` | `queue_len` | int | 計測時点のオフラインキュー滞留件数 |
+| `qd` | `queue_dropped` | int | キュー溢れで捨てた件数の累計（RTCメモリ保持、飽和カウンタ） |
+| `md` | `mode` | string | 動作モード（`operationModeName()`） |
+| `fw` | `fw` | string | ファームウェアバージョン |
+
 ### Shadow 設定値（reported / desired）
 
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
