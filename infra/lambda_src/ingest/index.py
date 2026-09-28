@@ -40,6 +40,10 @@ _SHORT_TO_FULL = {
     "t": "type", "m": "main", "s": "sub", "i": "current",
     "p": "power", "tp": "temp", "a": "addr", "h": "humidity",
     "bt": "battery", "rs": "rssi",
+    # t:"diag"（デバイス診断。esp32_iot_gateway/src/domain/diag.h 参照）
+    "rr": "reset_reason", "wc": "wakeup_cause", "bc": "boot_count",
+    "up": "uptime", "hf": "heap_free", "hm": "heap_min",
+    "ql": "queue_len", "qd": "queue_dropped", "md": "mode",
 }
 
 

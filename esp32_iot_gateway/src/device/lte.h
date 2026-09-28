@@ -34,6 +34,9 @@ public:
   // GPRS 接続中か確認
   bool isConnected();
 
+  // AT+CSQ で電波品質を取得する（0〜31、99=不明）
+  int signalQuality();
+
   // AT+CCLK? で ESP32 RTC を UTC に同期
   bool syncTime();
 

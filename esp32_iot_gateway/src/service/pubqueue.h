@@ -4,8 +4,9 @@
 #include "../domain/thermometer.h"
 #include "../domain/co2meter.h"
 #include "../domain/telemetry.h"
+#include "../domain/diag.h"
 
-enum class EntryType : uint8_t { Battery = 0, Thermometer = 1, Co2 = 2 };
+enum class EntryType : uint8_t { Battery = 0, Thermometer = 1, Co2 = 2, Diag = 3 };
 
 struct BatteryEntry {
   float    main, sub, current, power, temp, ah;
@@ -35,8 +36,14 @@ struct QueueEntry {
     BatteryEntry     battery;
     ThermometerEntry thermo;
     Co2Entry         co2;
+    DiagData         diag;
   };
 };
+
+// QueueEntry は SPIFFS(/buffer.bin) に生バイト列で保存される。union が BatteryEntry より
+// 大きくなると sizeof(QueueEntry) が変わり、OTA直後に旧形式の保存ファイルを読み違える
+static_assert(sizeof(DiagData) <= sizeof(BatteryEntry),
+              "DiagData must not grow QueueEntry (breaks /buffer.bin compatibility)");
 
 class PubQueue {
 public:
@@ -49,6 +56,7 @@ public:
   void pushBattery(const SensorReading &r);
   void pushThermometer(const ThermometerData &d);
   void pushCo2(const Co2MeterData &d);
+  void pushDiag(const DiagData &d);
 
   // LTE 接続中であればキューを MQTT へ送出する
   void flush();
@@ -62,6 +70,9 @@ public:
 
   int  size()  const;
   bool empty() const;
+
+  // キュー溢れで捨てた件数の累計（RTCメモリ保持。電源投入・ブラウンアウト等で0に戻る）
+  uint16_t droppedCount() const;
 
 private:
   void push(const QueueEntry &e);

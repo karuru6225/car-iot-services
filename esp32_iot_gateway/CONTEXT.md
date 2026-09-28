@@ -180,6 +180,36 @@ ESP32-S3-MINI-1
 - **CRC不一致時**: `raw/`（Athenaスキーマ）には保存せず、生バイナリのまま専用バケット（`corrupted`、30日で自動削除）に退避する。`ingest` Lambda のログに `[CORRUPT]` として理由を出力
 - S3保存JSONには検出したフォーマットバージョンを `"ver"`（0=旧形式、1=新形式）として追加する
 
+### 診断テレメトリ（sensors/{device_id}/data_bin、`t:"diag"`）
+
+シリアルにしか出ていなかった「デバイス自身の状態」をクラウドに時系列で残す。データ欠測時に
+電源断・再起動ループ（ブラウンアウト/WDT/パニック）・圏外・オフラインキュー溢れを切り分けるのが目的。
+
+- **送信タイミング**: `loop()` の1サイクルにつき1回（DEEP_SLEEPなら起床ごと、CONTINUOUSなら5分境界ごと）。バッテリーテレメトリの直後に `publishDiagnostics()`（`service/diagnostics.cpp`）がオフラインキューへ積む
+- **専用トピックを作らない理由**: 既存の `data_bin` に載せればCRC検証・圏外時のSPIFFS退避・IoTポリシー/ルールをそのまま使える。`ingest` は `type` を問わず `raw/` に保存し、query/battery_rollup 等の下流は `type` で絞っているため混在しても影響しない
+- **オフラインキュー容量**: 1サイクルあたりのエントリが1件増えるため、圏外時にバッテリー/BLEデータを保持できるサイクル数はその分減る（`OFFLINE_BUFFER_MAX`=200件共有）
+- **`/buffer.bin` 互換**: `DiagData` は `QueueEntry` union にそのまま載る。`BatteryEntry`（28バイト）を超えると保存形式が変わるため、`pubqueue.h` の `static_assert` で縛っている
+
+```json
+{"t":"diag","ts":1746143400,"rr":1,"wc":4,"bc":12,"up":35,"hf":151234,"hm":120456,"csq":18,"ql":2,"qd":0,"md":"DEEP_SLEEP","fw":"2.3.0+abc1234"}
+```
+
+| 通信上のキー | S3 保存キー | 型 | 内容 |
+| --- | --- | --- | --- |
+| `t` | `type` | string | `"diag"` 固定 |
+| `ts` | `ts` | int | UNIX タイムスタンプ（秒） |
+| `rr` | `reset_reason` | int | `esp_reset_reason()`。1=POWERON, 3=SW, 4=PANIC, 5=INT_WDT, 6=TASK_WDT, 7=WDT, 8=DEEPSLEEP, 9=BROWNOUT |
+| `wc` | `wakeup_cause` | int | `esp_sleep_get_wakeup_cause()`。0=UNDEFINED（DeepSleep以外からの起動）, 4=TIMER 等 |
+| `bc` | `boot_count` | int | 起動回数（RTCメモリ保持。電源投入・ブラウンアウト等でリセット）。LIGHT_SLEEPの短周期ピークは数えない |
+| `up` | `uptime` | int | 起動からの経過秒（DeepSleep運用では1サイクルの所要時間に相当） |
+| `hf` | `heap_free` | int | 空きヒープ（バイト） |
+| `hm` | `heap_min` | int | 起動以降の空きヒープ最小値（バイト） |
+| `csq` | `csq` | int | AT+CSQ（0〜31、99=不明/取得失敗） |
+| `ql` | `queue_len` | int | 計測時点のオフラインキュー滞留件数 |
+| `qd` | `queue_dropped` | int | キュー溢れで捨てた件数の累計（RTCメモリ保持、飽和カウンタ） |
+| `md` | `mode` | string | 動作モード（`operationModeName()`） |
+| `fw` | `fw` | string | ファームウェアバージョン |
+
 ### Shadow 設定値（reported / desired）
 
 `$aws/things/{device_id}/shadow/update` に reported として publish する。
@@ -787,6 +817,17 @@ S3 の `raw/` 側は該当区間（UTC 08:59:55〜10:15:56 の 19 レコード�
 再実行して復旧済み。元データは
 `s3://iot-monitor-369403882068/backup/2026-09-20-ah-fix/` に退避してある。
 0.17813 Ah 分は実在のズレなのでそのまま放電量として残した。
+
+**同じレコードの main=0.0618V について（実測値・後から上書き済み）**: UTC 08:59:55 の
+レコードは `main` も 0.0618 V になっていたが、これは作業中にメインバッテリーと繋がる
+コネクタを外していたための実測値であり、ADS1115 や起動シーケンスの不具合ではない
+（分圧前換算で約 1.94 mV = 2 LSB 相当）。同じレコードの `sub` は 13.13 V、INA228 の
+`power` / `current` から逆算した電圧も 13.125 V で正常。main（ADS1115 の AIN0/AIN1、
+J104）と sub（AIN2/AIN3、J103）は別系統のため食い違って見えていた。
+グラフ上のスパイクを消すため、`main` は直後 UTC 09:05:23 の値 12.610074 で上書きした
+（書き換え前は `s3://iot-monitor-369403882068/backup/2026-09-20-main-fix/` に退避）。
+このため S3 の生データからはコネクタを外していた事実が読み取れなくなっている。
+`battery_rollup` は `ah` しか参照しないので日次集計への影響はない。
 
 **対応方針**: 最新の `ah`（= `readCharge() + ah_offset`）を NVS の別キー `last_ah` へ
 定期保存し、電源断を検知した起動時にだけ `ah_offset` へ反映する。`ah_offset` を直接

@@ -121,6 +121,27 @@ size_t ITelemetryEncoder::encodeCo2(uint8_t *buf, size_t cap,
   return serialize(doc, buf, cap);
 }
 
+size_t ITelemetryEncoder::encodeDiag(uint8_t *buf, size_t cap,
+                                     const DiagData &d, const char *modeName)
+{
+  // キーは既存の短縮キー（ingest Lambdaの_SHORT_TO_FULL: t/m/s/i/p/tp/a/h/bt/rs）と衝突させない
+  JsonDocument doc;
+  doc["t"]   = "diag";
+  doc["ts"]  = d.ts;
+  doc["rr"]  = d.resetReason;
+  doc["wc"]  = d.wakeupCause;
+  doc["bc"]  = d.bootCount;
+  doc["up"]  = d.uptimeSec;
+  doc["hf"]  = d.heapFree;
+  doc["hm"]  = d.heapMin;
+  doc["csq"] = d.csq;
+  doc["ql"]  = d.queueLen;
+  doc["qd"]  = d.queueDropped;
+  doc["md"]  = modeName;
+  doc["fw"]  = FIRMWARE_VERSION;
+  return serialize(doc, buf, cap);
+}
+
 // ─── 派生クラス：serialize のみ ───────────────────────────────────────────────
 
 size_t JsonTelemetryEncoder::serialize(JsonDocument &doc, uint8_t *buf, size_t cap)

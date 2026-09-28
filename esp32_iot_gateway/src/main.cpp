@@ -53,6 +53,7 @@
 #include "service/menu.h"
 #include "service/pubqueue.h"
 #include "service/log_storage.h"
+#include "service/diagnostics.h"
 
 #include "service/operation_mode.h"
 #include "service/mode_context.h"
@@ -121,6 +122,9 @@ void setup()
 #endif
 
   lightSleepShortWakeGate(); // LIGHT_SLEEPの短周期ピーク中はここで検知なしのままdeep sleepへ戻り、戻らないことがある
+
+  // 短周期ピークまで起動回数に数えないよう、ゲート通過後（=フルサイクルの起動）でのみ呼ぶ
+  diagnosticsInit(g_wakeupCause);
 
   oledInit();
   if (!adsInit())
@@ -220,6 +224,7 @@ void loop()
   modeCtx.setLastResult(measure());
   modeCtx.setBlePending(true); // BLE分はpollBleCollect()/DeepSleepModeHandler::run()側で非同期に収集する
   publishBattery(modeCtx.lastResult().reading);
+  publishDiagnostics();
   queue.flush();
   // flush()はRTCメモリのみ操作しSPIFFSには触れない。ここでも同期しておかないと、
   // 圏内復帰でflush()がRTCキューを空にした直後にCONTINUOUSへ昇格した場合、
