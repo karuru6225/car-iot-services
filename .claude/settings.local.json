@@ -12,5 +12,9 @@
     "deny": [
       "Read(m5stamp_iot_gateway/certs.h)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "kicad-mcp",
+    "kicad-mcp-server"
+  ]
 }
