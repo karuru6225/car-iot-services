@@ -4,6 +4,7 @@
 #include "../device/lte.h"
 #include "../config.h"
 #include "../domain/telemetry.h"
+#include "mode_context.h"
 #include <SPIFFS.h>
 #include <esp_sleep.h>
 #include <stdio.h>
@@ -33,6 +34,7 @@ RTC_DATA_ATTR static QueueEntry g_buf[OFFLINE_BUFFER_MAX];
 RTC_DATA_ATTR static int g_head = 0;
 RTC_DATA_ATTR static int g_tail = 0;
 RTC_DATA_ATTR static int g_count = 0;
+RTC_DATA_ATTR static uint16_t g_dropped = 0; // 飽和カウンタ（UINT16_MAXで止める）
 
 // ─── 内部ユーティリティ ───────────────────────────────────────────────────────
 
@@ -91,6 +93,8 @@ static size_t buildPayload(const QueueEntry &e, uint8_t *buf, size_t cap,
     d.mfHex[0] = '\0';
     return enc->encodeCo2(buf, cap, d);
   }
+  case EntryType::Diag:
+    return enc->encodeDiag(buf, cap, e.diag, operationModeName((OperationMode)e.diag.mode));
   }
   return 0;
 }
@@ -106,6 +110,8 @@ void PubQueue::push(const QueueEntry &e)
     // 上限超え: 最古エントリを捨てる
     g_head = (g_head + 1) % OFFLINE_BUFFER_MAX;
     g_count--;
+    if (g_dropped < UINT16_MAX)
+      g_dropped++;
   }
   g_buf[g_tail] = e;
   g_tail = (g_tail + 1) % OFFLINE_BUFFER_MAX;
@@ -151,6 +157,14 @@ void PubQueue::pushCo2(const Co2MeterData &d)
   push(e);
 }
 
+void PubQueue::pushDiag(const DiagData &d)
+{
+  QueueEntry e;
+  e.type = EntryType::Diag;
+  e.diag = d;
+  push(e);
+}
+
 void PubQueue::flush()
 {
   if (!_encoder || empty() || !lte.isConnected())
@@ -187,6 +201,7 @@ void PubQueue::load()
 
   // 電源投入: RTC 初期化
   g_head = g_tail = g_count = 0;
+  g_dropped = 0;
   g_magic = RTC_MAGIC;
 
   if (!_useSpiffs)
@@ -254,3 +269,4 @@ void PubQueue::save()
 
 int PubQueue::size() const { return g_count; }
 bool PubQueue::empty() const { return g_count == 0; }
+uint16_t PubQueue::droppedCount() const { return g_dropped; }

@@ -102,6 +102,11 @@ void Lte::powerOff()
   digitalWrite(LTE_EN_PIN, LOW);
 }
 
+int Lte::signalQuality()
+{
+  return _modem.getSignalQuality();
+}
+
 bool Lte::isConnected()
 {
   return _modem.isGprsConnected();
