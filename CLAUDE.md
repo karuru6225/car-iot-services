@@ -46,32 +46,10 @@ Cookie・初期設定を全消去してしまった失敗がある。他アプ�
 認証セッションを切りたいだけならアプリ側のサインアウトや Cognito Hosted UI の logout
 エンドポイントで足りる。ブラウザのデータ全消去は代替手段ですらない。
 
-## esp32_iot_gateway ソース構造
+## esp32_iot_gateway 固有の規約
 
-3層アーキテクチャ（詳細は `esp32_iot_gateway/ARCHITECTURE.md`）:
-
-```text
-src/
-├── main.cpp / config.h / config.cpp   # エントリポイント・全層共通定数・NVS
-├── logger.h/.cpp                      # 全層から参照可能なシリアルデバッグ出力（横断的関心事）
-├── device/   # ハードウェアドライバ（lte, ads, ina228, oled, speaker）
-├── domain/   # ビジネスロジック（measurement.h, telemetry）
-└── service/  # ユースケース（mqtt, ota, log_storage）
-```
-
-include パスは `src/` 基準で書く:
-
-- main.cpp から: `"device/lte.h"` / `"service/mqtt.h"` / `"domain/measurement.h"`
-- service/ から: `"../device/lte.h"` / `"../config.h"`
-- device/ 内 .cpp から: `"lte.h"`（同ディレクトリ相対）
-
-## コーディング規約（Arduino C++）
-
-- インデント: スペース 2 つ
-- 変数名: `camelCase`
-- 定数: `UPPER_SNAKE_CASE`
-- `delay()` よりノンブロッキング処理（`millis()` 利用）を優先する
-- ピン番号は定数化する（デバイス層: `static const uint8_t`、アプリ層: `#define`）
+include パス・コーディング規約・開発フロー上の制約（ビルド確認とコミット粒度等）は `esp32_iot_gateway/CLAUDE.md` にある
+（esp32_iot_gateway 配下のファイルを扱うときに読み込まれる）。レイヤー構成は `esp32_iot_gateway/ARCHITECTURE.md`。
 
 ## KiCad ファイル編集禁止
 
@@ -83,23 +61,9 @@ include パスは `src/` 基準で書く:
 
 - **「todo を更新/追記して」** → `esp32_iot_gateway/CONTEXT.md` の `### TODO:` セクション（プロジェクトバックログ）を編集すること。会話内の内部タスクリストだけ更新して終わりにしない。TODOが実装済み/対応済みになったら `esp32_iot_gateway/CONTEXT_ARCHIVE.md` へ移し、CONTEXT.md側は未完了のものだけを保つ。
 
-## 開発フロー上の制約
+## ハードウェア情報の裏取り
 
-このエディタ（Claude Code）でコードを編集し、PlatformIO でビルド・書き込みを行う。
-
-- **コンパイル確認不可**: 構文エラーや型の不一致を見逃しやすいため、コードの正確性に特に注意する
-- **ビルド確認とコミット粒度**: ファイル移動・include 変更・構造変更の後は `/pio` でビルドが通ることを確認してからコミットする。まとめてやらず「1つの論理的な変更 → ビルド確認 → コミット」のサイクルで進める
-- **ライブラリの存在を仮定しない**: 新たなライブラリを追加する際は明示的にユーザーへ伝え、PlatformIO 側でのインストールを促す
-- **シリアルモニタは別ツール**: `Serial.print()` によるデバッグコードを追加する際はその旨をコメントで残し、不要になったら削除するよう提案する
-- **書き込み後の動作検証は不可**: 不確かな変更はその旨を明示してユーザーに判断を委ねる
 - **データシート由来の主張は裏取りする**: レジスタのビット配置・電圧閾値・タイミング仕様など、コードを読むだけでは検証できずデータシート等の一次情報に依存する事実は、Claude の内部知識のみで断定しない。指摘・修正提案に含める前に WebSearch/WebFetch で公式データシートか信頼できる参照実装（活発にメンテされている OSS ライブラリ等）を最低1つ確認する。裏取りできなかった場合は「内部知識ベースの未検証情報」であることを最初から明示する
-
-## PowerShell スクリプト（ops/）
-
-`ops/` 配下の `.ps1` スクリプトを新規作成・修正する際は、必ず `ops/POWERSHELL.md` を参照する。
-AWS CLI の `--` オプションのパースエラーや presigned URL の生成方法など、ハマりやすい点をまとめてある。
-
-新たに気づいたハマりポイントや回避策が出た場合は、`ops/POWERSHELL.md` に追記する。
 
 ## プロジェクト参照
 
