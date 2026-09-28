@@ -206,6 +206,31 @@ def test_handler_expands_short_keys(ingest):
     assert payload["main"] == 1.1
 
 
+def test_handler_expands_diag_short_keys(ingest):
+    event = {
+        "device_id": "dev1", "t": "diag", "ts": 1772359200,
+        "rr": 9, "wc": 4, "bc": 12, "up": 35, "hf": 150000, "hm": 120000,
+        "csq": 18, "ql": 2, "qd": 0, "md": "DEEP_SLEEP", "fw": "2.3.0+abc",
+    }
+
+    ingest.handler(event, None)
+
+    key = _keys(ingest.BUCKET, "raw/")[0]
+    payload = json.loads(_body(ingest.BUCKET, key))
+    assert payload["type"] == "diag"
+    assert payload["reset_reason"] == 9
+    assert payload["wakeup_cause"] == 4
+    assert payload["boot_count"] == 12
+    assert payload["uptime"] == 35
+    assert payload["heap_free"] == 150000
+    assert payload["heap_min"] == 120000
+    assert payload["csq"] == 18
+    assert payload["queue_len"] == 2
+    assert payload["queue_dropped"] == 0
+    assert payload["mode"] == "DEEP_SLEEP"
+    assert payload["fw"] == "2.3.0+abc"
+
+
 def test_handler_skips_payload_without_type(ingest):
     event = {"device_id": "dev1", "ts": "2026-03-01T10:00:00Z"}
 

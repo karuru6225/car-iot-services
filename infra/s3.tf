@@ -249,6 +249,47 @@ resource "aws_glue_catalog_table" "sensor_data" {
       name = "ah"
       type = "double"
     }
+    # ─── t:"diag"（デバイス診断。esp32_iot_gateway/src/domain/diag.h 参照）───
+    columns {
+      name = "reset_reason"
+      type = "int"
+    }
+    columns {
+      name = "wakeup_cause"
+      type = "int"
+    }
+    columns {
+      name = "boot_count"
+      type = "bigint"
+    }
+    columns {
+      name = "uptime"
+      type = "bigint"
+    }
+    columns {
+      name = "heap_free"
+      type = "bigint"
+    }
+    columns {
+      name = "heap_min"
+      type = "bigint"
+    }
+    columns {
+      name = "csq"
+      type = "int"
+    }
+    columns {
+      name = "queue_len"
+      type = "int"
+    }
+    columns {
+      name = "queue_dropped"
+      type = "int"
+    }
+    columns {
+      name = "mode"
+      type = "string"
+    }
   }
 
   partition_keys {
