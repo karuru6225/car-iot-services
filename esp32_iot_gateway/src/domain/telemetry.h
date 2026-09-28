@@ -7,6 +7,7 @@
 #include "measurement.h"
 #include "thermometer.h"
 #include "co2meter.h"
+#include "diag.h"
 
 // buildConfigPayload() の出力を受けるバッファサイズ。最長ケース（desired:null付き・
 // override_next_mode/continuous_until_time/default_mode すべて非null）で約300バイト。
@@ -40,6 +41,8 @@ public:
                        const PowerReading &pwr, time_t ts);
   size_t encodeThermometer(uint8_t *buf, size_t cap, const ThermometerData &d);
   size_t encodeCo2(uint8_t *buf, size_t cap, const Co2MeterData &d);
+  // modeName: operationModeName() の戻り値（domain層はservice層のモード定義に依存しないため呼び出し側で変換して渡す）
+  size_t encodeDiag(uint8_t *buf, size_t cap, const DiagData &d, const char *modeName);
 
   virtual const char *topicSuffix() const = 0;
 

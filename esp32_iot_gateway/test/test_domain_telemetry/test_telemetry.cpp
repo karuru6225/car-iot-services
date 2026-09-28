@@ -167,6 +167,56 @@ static void test_json_encoder_encodes_thermometer(void)
   TEST_ASSERT_NOT_NULL(strstr(json.c_str(), "\"a\":\"AA:BB:CC:DD:EE:FF\""));
 }
 
+static void test_json_encoder_encodes_diag(void)
+{
+  JsonTelemetryEncoder enc;
+  DiagData d = {};
+  d.ts = 1700000000;
+  d.resetReason = 9; // ESP_RST_BROWNOUT
+  d.bootCount = 42;
+  d.csq = 18;
+  d.queueDropped = 3;
+
+  uint8_t buf[PAYLOAD_SENSOR_SIZE];
+  size_t len = enc.encodeDiag(buf, sizeof(buf), d, "deep_sleep");
+
+  TEST_ASSERT_GREATER_THAN(0, (int)len);
+  std::string json((char *)buf, len);
+  TEST_ASSERT_NOT_NULL(strstr(json.c_str(), "\"t\":\"diag\""));
+  TEST_ASSERT_NOT_NULL(strstr(json.c_str(), "\"rr\":9"));
+  TEST_ASSERT_NOT_NULL(strstr(json.c_str(), "\"bc\":42"));
+  TEST_ASSERT_NOT_NULL(strstr(json.c_str(), "\"csq\":18"));
+  TEST_ASSERT_NOT_NULL(strstr(json.c_str(), "\"qd\":3"));
+  TEST_ASSERT_NOT_NULL(strstr(json.c_str(), "\"md\":\"deep_sleep\""));
+}
+
+// 全数値フィールドが最大桁・最長モード名でも pubqueue の送信バッファ（PAYLOAD_SENSOR_SIZE）に
+// 収まることを縛る。溢れるとserializeJsonが途中で切れた壊れたJSONを送ってしまう
+static void test_json_encoder_diag_longest_case_fits_buffer(void)
+{
+  JsonTelemetryEncoder enc;
+  DiagData d;
+  d.ts = UINT32_MAX;
+  d.bootCount = UINT32_MAX;
+  d.uptimeSec = UINT32_MAX;
+  d.heapFree = UINT32_MAX;
+  d.heapMin = UINT32_MAX;
+  d.queueDropped = UINT16_MAX;
+  d.resetReason = UINT8_MAX;
+  d.wakeupCause = UINT8_MAX;
+  d.csq = UINT8_MAX;
+  d.queueLen = UINT8_MAX;
+  d.mode = UINT8_MAX;
+
+  // 収まらない場合を検出できるよう、バッファは1バイト余分に取って書き込み長を比べる
+  uint8_t buf[PAYLOAD_SENSOR_SIZE + 1];
+  size_t len = enc.encodeDiag(buf, sizeof(buf), d, "timed_continuous");
+
+  TEST_ASSERT_GREATER_THAN(0, (int)len);
+  TEST_ASSERT_LESS_THAN(PAYLOAD_SENSOR_SIZE, (int)len);
+  TEST_ASSERT_EQUAL('}', buf[len - 1]);
+}
+
 static void test_json_encoder_topic_suffix(void)
 {
   JsonTelemetryEncoder enc;
@@ -190,6 +240,8 @@ int main(int argc, char **argv)
   RUN_TEST(test_build_config_payload_longest_case_fits_buffer);
   RUN_TEST(test_json_encoder_encodes_battery);
   RUN_TEST(test_json_encoder_encodes_thermometer);
+  RUN_TEST(test_json_encoder_encodes_diag);
+  RUN_TEST(test_json_encoder_diag_longest_case_fits_buffer);
   RUN_TEST(test_json_encoder_topic_suffix);
   return UNITY_END();
 }
