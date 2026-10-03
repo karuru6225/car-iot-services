@@ -82,6 +82,22 @@ material3 1.4.0+が必要で本プロジェクトは1.3.2（compose-bom 2025.09.
   ビルド成功を再確認した。**次回実機接続時に、BLE接続中の自動PiP遷移と実データ表示を
   確認すること**
 
+### ログイン切れの扱い（2026/10/03）
+
+refresh_token（Cognito mobileクライアント、当時30日）が失効しても、アップロードは
+`Log.w` を出して黙って止まるだけで、画面は端末に残った失効済みトークンを根拠に
+「ログイン: …」と表示し続けていた。9/27〜10/3 の走行データ約1800件が端末に滞留し、
+Web のトリップ分析が出ないことで初めて気づいた。対策:
+
+- `AuthStore.getValidAccessToken()` は `AccessTokenResult` を返し、トークンエンドポイントの
+  `invalid_grant`（失効）と通信エラー等の一時失敗を区別する
+- `CarIotUploadService` は `AUTH_REQUIRED`（失効・未ログイン・401）を受けたら
+  `authStore.clear()` でログアウト状態にし（画面に「未ログイン」とログインボタンが出る）、
+  `SessionExpiredNotifier` で未送信件数つきの通知を出す。ログイン成功時に通知を消す
+- `uploadOnce()` は失敗時も true を返していて、`while` が同じバッチを即再送し続ける
+  バグがあった。送信成功時のみ続行するように修正
+- refresh_token の有効期限は `infra/mobile_auth.tf` で 365 日に延ばした
+
 ### 実機テスト結果（2026/08/28、Pixel 10a + fakeobd env）
 
 エミュレータでは確認できなかった宿題を実機で全消化した。ESP32 は fakeobd ファームが
@@ -306,6 +322,8 @@ info/karuru/cariot/
 │   ├── AuthResultActivity.kt       # 認可フロー完了後の実処理（トークン交換・保存）
 │   ├── CognitoConfig.kt            # OIDC discovery取得の共通ヘルパー
 │   ├── ExpiryCheck.kt / JwtClaims.kt  # 純粋ロジック、TDD済み
+│   ├── AccessTokenResult.kt        # トークン取得結果（有効/セッション失効/一時失敗）
+│   ├── SessionExpiredNotifier.kt   # ログイン切れ通知（未送信件数つき）
 ├── db/
 │   ├── CarIotDatabase.kt           # RoomDatabase定義
 │   ├── PendingObdReading.kt        # アップロード待ちOBDデータ（Entity+Dao、@Serializable兼用）
