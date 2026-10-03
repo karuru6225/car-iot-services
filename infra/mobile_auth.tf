@@ -54,9 +54,13 @@ resource "aws_cognito_user_pool_client" "mobile" {
     id_token      = "hours"
     refresh_token = "days"
   }
-  access_token_validity  = 1
-  id_token_validity      = 1
-  refresh_token_validity = 30
+  access_token_validity = 1
+  id_token_validity     = 1
+  # refresh_tokenはログイン時点から固定の寿命で、使っても延長されない。30日だと月1回の
+  # 再ログインを忘れた時点でOBDアップロードが黙って止まる（2026-09〜10に約1週間分が
+  # 端末に滞留した）。個人利用で端末内は暗号化保存のため、長めの365日にする。
+  # 変更は新しく発行されるトークンにのみ効く（既存のトークンは発行時の寿命のまま）
+  refresh_token_validity = 365
 
   prevent_user_existence_errors = "ENABLED"
 }
