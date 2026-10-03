@@ -9,7 +9,7 @@
 
 **実装済み・`main`にマージ済み・実運用中**（PR #35、他に燃料列/期間フィルタ追加のPRあり）。
 
-- バックエンド: `infra/lambda_src/trip_analysis/index.py`（Lambda 1本、テスト83件）
+- バックエンド: `infra/lambda_src/trip_analysis/index.py`（Lambda 1本、テスト90件）
 - インフラ: `infra/trip_analysis.tf`（Lambda・API Gateway・IAM・AWS Location Service）
 - Web管理画面: `web/trip-analysis.html`（トリップ一覧はアコーディオン形式）
 - **開始/終了地点の表示も実装済み**。AWS Location Service（Here）で逆ジオコーディングし、
@@ -51,13 +51,18 @@
 ### 2.1 API（Lambda 1本、`handler()`が薄いルーター）
 
 - `POST /trip-analysis {device_id}` → `_handle_start()`
-  - 前回`session_end`（無ければ`obd/`パーティションの最古タイムスタンプ）から
-    `min(now, start+14日)`までのジョブを作成し、**自分自身をLambda self-invoke**
+  - 前回`session_end`の直後（無ければ0）以降で、そのデバイスのOBDデータが存在する最初の
+    hour（`_next_obd_ts()`）を開始点とし、`min(now, start+14日)`までのジョブを作成し、**自分自身をLambda self-invoke**
     （`InvocationType="Event"`）した直後にレスポンスを返す。
   - **API Gatewayの29秒固定タイムアウト制約を避けるため**、重い処理（Athenaクエリ〜
     トリップ分割〜集計〜複数S3書き込み）は自己呼び出し側（`_process_job`）で
     `timeout=600`秒まで自由に使う。
   - レスポンス: `{job_id, status, range, trips_saved, has_more, error}`
+  - 開始点をOBDデータの有無で決めるのは、データが無い期間が14日を超えたときに毎回同じ
+    空の区間を分析して`trips_saved=0`で終わり、永久に先へ進めなくなるのを防ぐため
+    （進捗はトリップ結果からしか逆算しないので、空振りしても開始点が動かない）。
+    なお「14日窓の中身が30秒未満のノイズだけで、その後14日以上データが無い」場合は
+    同じ理由で進めなくなる。実害が出るまでは許容している
 - `GET /trip-analysis?device_id=&job_id=` → `_handle_get()` でジョブ状態をポーリング用に返す
 - `GET /trip-analysis?device_id=` → `_handle_get()` でトリップ一覧を返す（`job_id`省略時）。
   各トリップには`_load_trips()`が付与する`analysis_key`（S3キー）が含まれ、下記location APIが
@@ -182,7 +187,7 @@ trip-analysis-jobs/{device_id}/{started_at:010d}_{job_id}.json
 
 ## 5. テスト（`infra/lambda_src/trip_analysis/tests/`）
 
-t-wada式TDD（Red→Green→Refactor）で全関数を実装、**83テスト**（moto + pytest + Docker）。
+t-wada式TDD（Red→Green→Refactor）で全関数を実装、**90テスト**（moto + pytest + Docker）。
 
 ```bash
 cd infra/lambda_src

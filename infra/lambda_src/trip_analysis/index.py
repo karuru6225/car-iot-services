@@ -250,26 +250,44 @@ def _list_partition_values(prefix: str, key_name: str) -> list[str]:
     return sorted(values)
 
 
-def _earliest_obd_ts() -> int | None:
-    """obd/パーティションから最古のタイムスタンプ（epoch秒）を返す。
-    query/index.pyの_get_data_range内の_earliestと同種のロジック。"""
-    obd_prefix = "obd/"
-    years = _list_partition_values(obd_prefix, "year")
-    if not years:
-        return None
-    year = years[0]
-    months = _list_partition_values(f"{obd_prefix}year={year}/", "month")
-    if not months:
-        return None
-    month = months[0]
-    days = _list_partition_values(f"{obd_prefix}year={year}/month={month}/", "day")
-    if not days:
-        return None
-    day = days[0]
-    hours = _list_partition_values(f"{obd_prefix}year={year}/month={month}/day={day}/", "hour")
-    hour = hours[0] if hours else "00"
-    dt = datetime(int(year), int(month), int(day), int(hour), tzinfo=timezone.utc)
-    return int(dt.timestamp())
+def _next_obd_ts(device_id: str, from_ts: int) -> int | None:
+    """from_ts以降で、device_idのOBDデータが存在する最初の時刻（epoch秒）を返す。
+    obd/のhourパーティションを古い順に辿り、from_tsより後まで続くhourのうち
+    {device_id}-で始まるオブジェクトを持つ最初のものを探す（hour単位の粒度なので
+    返り値はmax(from_ts, そのhourの開始時刻)）。見つからなければNone。
+
+    分析開始点をこれで決めるのは、OBDデータが無い期間をジョブの対象から飛ばすため。
+    前回session_endの直後をそのまま開始点にすると、データが無い期間がMAX_WINDOW_HOURSを
+    超えた場合にジョブが毎回同じ空の区間を分析してtrips_saved=0で終わり、
+    （進捗をトリップ結果からしか逆算しないため）永久に先へ進めなくなる。"""
+    from_dt = datetime.fromtimestamp(from_ts, tz=timezone.utc)
+
+    for year in _list_partition_values("obd/", "year"):
+        y = int(year)
+        if datetime(y + 1, 1, 1, tzinfo=timezone.utc) <= from_dt:
+            continue
+        year_prefix = f"obd/year={year}/"
+        for month in _list_partition_values(year_prefix, "month"):
+            m = int(month)
+            month_end = datetime(y + 1, 1, 1, tzinfo=timezone.utc) if m == 12 else datetime(y, m + 1, 1, tzinfo=timezone.utc)
+            if month_end <= from_dt:
+                continue
+            month_prefix = f"{year_prefix}month={month}/"
+            for day in _list_partition_values(month_prefix, "day"):
+                day_start = datetime(y, m, int(day), tzinfo=timezone.utc)
+                if day_start + timedelta(days=1) <= from_dt:
+                    continue
+                day_prefix = f"{month_prefix}day={day}/"
+                for hour in _list_partition_values(day_prefix, "hour"):
+                    hour_start = day_start + timedelta(hours=int(hour))
+                    if hour_start + timedelta(hours=1) <= from_dt:
+                        continue
+                    resp = s3.list_objects_v2(
+                        Bucket=S3_BUCKET, Prefix=f"{day_prefix}hour={hour}/{device_id}-", MaxKeys=1
+                    )
+                    if resp.get("KeyCount", 0) > 0:
+                        return max(from_ts, int(hour_start.timestamp()))
+    return None
 
 
 def _write_job_status(device_id: str, job_id: str, started_at: int, status: dict) -> None:
@@ -317,7 +335,7 @@ def _handle_start(event: dict) -> dict:
         return _resp(200, running)
 
     last_end = _latest_session_end(device_id)
-    start_ts = (last_end + 1) if last_end is not None else _earliest_obd_ts()
+    start_ts = _next_obd_ts(device_id, (last_end + 1) if last_end is not None else 0)
     now = int(time.time())
     if start_ts is None or start_ts >= now:
         return _resp(200, {"status": "SUCCEEDED", "trips_saved": 0, "has_more": False})
