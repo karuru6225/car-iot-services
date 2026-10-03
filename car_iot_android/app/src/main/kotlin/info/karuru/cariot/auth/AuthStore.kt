@@ -41,19 +41,19 @@ class AuthStore(private val context: Context) {
   fun clear() = secureStore.clear()
 
   // 期限内ならキャッシュ済みaccess_tokenをそのまま返し、切れていればrefresh_tokenで
-  // リフレッシュしてから返す。失敗（refresh_token失効等）時はnull。
-  suspend fun getValidAccessToken(): String? {
+  // リフレッシュしてから返す。
+  suspend fun getValidAccessToken(): AccessTokenResult {
     val cachedToken = secureStore.getString(KEY_ACCESS_TOKEN)
     val expiresAt = secureStore.getString(KEY_EXPIRES_AT)?.toLongOrNull()
     if (cachedToken != null && expiresAt != null && isStillValid(expiresAt, System.currentTimeMillis())) {
-      return cachedToken
+      return AccessTokenResult.Valid(cachedToken)
     }
     return refresh()
   }
 
-  private suspend fun refresh(): String? {
-    val refreshToken = secureStore.getString(KEY_REFRESH_TOKEN) ?: return null
-    val config = fetchCognitoServiceConfig() ?: return null
+  private suspend fun refresh(): AccessTokenResult {
+    val refreshToken = secureStore.getString(KEY_REFRESH_TOKEN) ?: return AccessTokenResult.SessionExpired
+    val config = fetchCognitoServiceConfig() ?: return AccessTokenResult.Unavailable
     val request = TokenRequest.Builder(config, AppConfig.COGNITO_CLIENT_ID)
         .setGrantType(GrantTypeValues.REFRESH_TOKEN)
         .setRefreshToken(refreshToken)
@@ -63,19 +63,23 @@ class AuthStore(private val context: Context) {
     val authService = AuthorizationService(context)
     return try {
       suspendCancellableCoroutine { cont ->
-        authService.performTokenRequest(request) { response, _ ->
-          if (response != null) {
+        authService.performTokenRequest(request) { response, ex ->
+          val accessToken = response?.accessToken
+          if (accessToken != null) {
             saveTokens(
-                accessToken = response.accessToken,
+                accessToken = accessToken,
                 idToken = response.idToken,
                 refreshToken = response.refreshToken ?: refreshToken,
                 expiresAtEpochMillis = response.accessTokenExpirationTime,
                 email = getEmail(),
             )
-            cont.resumeWith(Result.success(response.accessToken))
+            cont.resumeWith(Result.success(AccessTokenResult.Valid(accessToken)))
+          } else if (isSessionExpiredError(ex?.error)) {
+            // refresh_token自体が失効している。再ログインしない限り回復しない
+            cont.resumeWith(Result.success(AccessTokenResult.SessionExpired))
           } else {
-            // refresh_token自体が失効している場合等。呼び出し側で再ログインへ誘導する。
-            cont.resumeWith(Result.success(null))
+            // 通信エラー等の一時的な失敗。refresh_tokenはまだ使える可能性がある
+            cont.resumeWith(Result.success(AccessTokenResult.Unavailable))
           }
         }
       }
