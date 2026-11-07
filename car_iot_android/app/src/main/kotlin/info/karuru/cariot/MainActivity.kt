@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Icon
@@ -47,9 +48,12 @@ import info.karuru.cariot.obd.GaugeStyle
 import info.karuru.cariot.service.ACTION_CONNECT
 import info.karuru.cariot.service.ACTION_DISCONNECT
 import info.karuru.cariot.service.CarIotForegroundService
+import info.karuru.cariot.service.CarIotUploadService
+import info.karuru.cariot.service.EXTRA_MANUAL_UPLOAD
 import info.karuru.cariot.state.CarIotState
 import info.karuru.cariot.ui.battery.BatteryScreen
 import info.karuru.cariot.ui.connection.ConnectionScreen
+import info.karuru.cariot.ui.data.DataScreen
 import info.karuru.cariot.ui.meter.MeterScreen
 import info.karuru.cariot.ui.obd.ObdScreen
 import info.karuru.cariot.ui.pip.PipContent
@@ -62,6 +66,7 @@ import info.karuru.cariot.ui.theme.GaugePanelColorScheme
 import info.karuru.cariot.ui.theme.InstrumentStyle
 import info.karuru.cariot.ui.theme.LocalInstrumentStyle
 import info.karuru.cariot.ui.theme.ThemeStore
+import info.karuru.cariot.upload.UploadStatusStore
 import kotlinx.coroutines.launch
 
 // BLE接続・OBD受信の実処理はCarIotForegroundServiceが担当し、ここは状態(CarIotState)の
@@ -112,6 +117,7 @@ class MainActivity : ComponentActivity() {
     if (authStore.hasRefreshToken()) {
       CarIotState.setUserEmail(authStore.getEmail())
     }
+    CarIotState.setUploadStatus(UploadStatusStore(applicationContext).loadStatus())
 
     setContent {
       // タイポグラフィ・角丸は計器盤の体系として2テーマ共通。差分は配色のみ。
@@ -174,6 +180,12 @@ class MainActivity : ComponentActivity() {
                       icon = { Icon(Icons.Filled.DashboardCustomize, contentDescription = null) },
                       label = { Text("メーター") },
                   )
+                  NavigationBarItem(
+                      selected = tabIndex == 4,
+                      onClick = { tabIndex = 4 },
+                      icon = { Icon(Icons.Filled.CloudUpload, contentDescription = null) },
+                      label = { Text("データ") },
+                  )
                 }
               },
           ) { innerPadding ->
@@ -203,7 +215,8 @@ class MainActivity : ComponentActivity() {
                 )
                 1 -> BatteryScreen()
                 2 -> ObdScreen()
-                else -> MeterScreen()
+                3 -> MeterScreen()
+                else -> DataScreen(onUploadNow = { startManualUpload() })
               }
             }
           }
@@ -298,6 +311,13 @@ class MainActivity : ComponentActivity() {
   private fun signOut() {
     authStore.clear()
     CarIotState.setUserEmail(null)
+  }
+
+  // 自動送信はBLE接続中しか起動しないため、未接続のまま溜まったデータを送る手段として
+  // データタブから明示的に起動する。
+  private fun startManualUpload() {
+    val intent = Intent(this, CarIotUploadService::class.java).putExtra(EXTRA_MANUAL_UPLOAD, true)
+    ContextCompat.startForegroundService(this, intent)
   }
 
   private fun startBleService(action: String) {
