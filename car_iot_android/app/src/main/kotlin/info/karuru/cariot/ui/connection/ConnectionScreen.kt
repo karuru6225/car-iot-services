@@ -1,7 +1,6 @@
 package info.karuru.cariot.ui.connection
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -14,9 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import info.karuru.cariot.ble.ConnState
 import info.karuru.cariot.meter.MeterSlot
 import info.karuru.cariot.state.CarIotState
+import info.karuru.cariot.ui.common.SectionCard
 import info.karuru.cariot.ui.meter.MeterSettingsSheet
 import info.karuru.cariot.ui.theme.AppTheme
 import info.karuru.cariot.ui.theme.ClusterButtonShape
@@ -156,27 +154,5 @@ fun ConnectionScreen(
         },
         title = "PiP表示項目を編集",
     )
-  }
-}
-
-@Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-  OutlinedCard(
-      modifier = Modifier
-          .fillMaxWidth()
-          .padding(vertical = 8.dp),
-  ) {
-    Column(modifier = Modifier.padding(16.dp)) {
-      // 見出しはアクセント色ではなく前景色。小さな文字(11sp)にアクセント色を使うと
-      // テーマによってWCAGの4.5:1を満たせず、実際の計器も区画名は白で刻印されていて
-      // 色が乗るのは針の方であるため。
-      Text(
-          title,
-          style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.onSurface,
-      )
-      Spacer(Modifier.height(12.dp))
-      content()
-    }
   }
 }
