@@ -340,7 +340,15 @@ def _handle_start(event: dict) -> dict:
     if start_ts is None or start_ts >= now:
         return _resp(200, {"status": "SUCCEEDED", "trips_saved": 0, "has_more": False})
 
-    end_ts = min(now, start_ts + MAX_WINDOW_HOURS * 3600)
+    window_end = start_ts + MAX_WINDOW_HOURS * 3600
+    # _next_obd_tsはhour粒度のため、前回トリップの末尾と同じhourにデータがあるとstart_tsは
+    # last_end+1のまま進まない。その先の空白がMAX_WINDOW_HOURSを超えると毎回同じ空の区間を
+    # 分析してtrips_saved=0で終わり、永久に先へ進めなくなる。start_tsのhourより後で次に
+    # データがあるhourがwindow外なら、そこを起点にwindowを取り直す。
+    next_ts = _next_obd_ts(device_id, start_ts - start_ts % 3600 + 3600)
+    if next_ts is not None and next_ts >= window_end:
+        window_end = next_ts + MAX_WINDOW_HOURS * 3600
+    end_ts = min(now, window_end)
     job_id = uuid.uuid4().hex
     status = {
         "job_id": job_id,

@@ -801,6 +801,46 @@ def test_handle_start_skips_period_without_obd_data(trip_analysis, monkeypatch):
     assert body["range"]["start_ts"] == resumed_hour
 
 
+def test_handle_start_window_reaches_data_after_gap_when_last_trip_hour_has_data(trip_analysis, monkeypatch):
+    # 前回トリップの末尾と同じhourパーティションにはデータが入っている（hour粒度のため）。
+    # そのためstart_tsはlast_end+1のまま進まない。window終端をstart_ts+MAX_WINDOW_HOURSに
+    # すると、次のデータがそれより後にある場合は毎回同じ空の区間を分析しtrips_saved=0で
+    # 終わり、永久に先へ進めなくなる（2026-10-18のトリップ後、11-07のデータが分析されなかった）。
+    last_end = _ts(2026, 10, 18, 11, 0, 2)
+    trip_analysis._save_trip("dev1", last_end - 3600, last_end, {}, row_count=1)
+    _put_obd_object(datetime(2026, 10, 18, 11, tzinfo=timezone.utc))
+    resumed = _ts(2026, 11, 7, 3, 19)
+    _put_obd_object(datetime.fromtimestamp(resumed, tz=timezone.utc))
+    monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: _ts(2026, 11, 7, 8))
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["range"]["start_ts"] == last_end + 1
+    assert body["range"]["end_ts"] >= resumed
+    assert body["has_more"] is False
+
+
+def test_handle_start_window_after_gap_is_clamped_from_next_data(trip_analysis, monkeypatch):
+    # 空白の先のデータまで伸ばしたwindowも、そこからMAX_WINDOW_HOURSで打ち切る
+    last_end = _ts(2026, 10, 18, 11, 0, 2)
+    trip_analysis._save_trip("dev1", last_end - 3600, last_end, {}, row_count=1)
+    _put_obd_object(datetime(2026, 10, 18, 11, tzinfo=timezone.utc))
+    resumed_hour = _ts(2026, 11, 7, 3)
+    _put_obd_object(datetime.fromtimestamp(resumed_hour, tz=timezone.utc))
+    monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: resumed_hour + trip_analysis.MAX_WINDOW_HOURS * 3600 * 2)
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["range"]["end_ts"] == resumed_hour + trip_analysis.MAX_WINDOW_HOURS * 3600
+    assert body["has_more"] is True
+
+
 def test_handle_start_no_obd_data_after_last_end_returns_succeeded(trip_analysis, monkeypatch):
     trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
     _put_obd_object(datetime.fromtimestamp(1700000000 - 3600, tz=timezone.utc))  # 分析済みのhourのみ
