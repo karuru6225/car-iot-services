@@ -476,7 +476,7 @@ def test_latest_session_end_ignores_other_devices(trip_analysis):
     assert trip_analysis._latest_session_end("dev1") == 1700001800
 
 
-# ---- _earliest_obd_ts ----
+# ---- _next_obd_ts ----
 
 
 def _put_obd_object(dt: datetime, device_id="dev1"):
@@ -484,18 +484,48 @@ def _put_obd_object(dt: datetime, device_id="dev1"):
     _s3().put_object(Bucket=os.environ["S3_BUCKET"], Key=key, Body=b"{}")
 
 
-def test_earliest_obd_ts_returns_none_when_no_data(trip_analysis):
-    assert trip_analysis._earliest_obd_ts() is None
+def _ts(*args):
+    return int(datetime(*args, tzinfo=timezone.utc).timestamp())
 
 
-def test_earliest_obd_ts_returns_earliest_partition(trip_analysis):
+def test_next_obd_ts_returns_none_when_no_data(trip_analysis):
+    assert trip_analysis._next_obd_ts("dev1", 0) is None
+
+
+def test_next_obd_ts_from_zero_returns_earliest_partition(trip_analysis):
     _put_obd_object(datetime(2026, 3, 15, 10, tzinfo=timezone.utc))
     _put_obd_object(datetime(2026, 1, 5, 3, tzinfo=timezone.utc))
     _put_obd_object(datetime(2026, 2, 20, 18, tzinfo=timezone.utc))
 
-    ts = trip_analysis._earliest_obd_ts()
-    expected = int(datetime(2026, 1, 5, 3, tzinfo=timezone.utc).timestamp())
-    assert ts == expected
+    assert trip_analysis._next_obd_ts("dev1", 0) == _ts(2026, 1, 5, 3)
+
+
+def test_next_obd_ts_skips_partitions_before_from_ts(trip_analysis):
+    _put_obd_object(datetime(2026, 1, 5, 3, tzinfo=timezone.utc))
+    _put_obd_object(datetime(2026, 2, 20, 18, tzinfo=timezone.utc))
+
+    assert trip_analysis._next_obd_ts("dev1", _ts(2026, 1, 6)) == _ts(2026, 2, 20, 18)
+
+
+def test_next_obd_ts_returns_from_ts_when_inside_data_hour(trip_analysis):
+    _put_obd_object(datetime(2026, 1, 5, 3, tzinfo=timezone.utc))
+    from_ts = _ts(2026, 1, 5, 3, 40)
+
+    assert trip_analysis._next_obd_ts("dev1", from_ts) == from_ts
+
+
+def test_next_obd_ts_ignores_other_devices(trip_analysis):
+    _put_obd_object(datetime(2026, 1, 5, 3, tzinfo=timezone.utc), device_id="other")
+    _put_obd_object(datetime(2026, 1, 9, 8, tzinfo=timezone.utc))
+
+    assert trip_analysis._next_obd_ts("dev1", 0) == _ts(2026, 1, 9, 8)
+
+
+def test_next_obd_ts_does_not_match_device_id_prefix(trip_analysis):
+    # "dev1"の検索で"dev10-..."を拾わない（Prefixに区切りの"-"まで含める）
+    _put_obd_object(datetime(2026, 1, 5, 3, tzinfo=timezone.utc), device_id="dev10")
+
+    assert trip_analysis._next_obd_ts("dev1", 0) is None
 
 
 # ---- _write_job_status / _read_job_status / _find_recent_running_job ----
@@ -715,6 +745,7 @@ def test_handle_start_first_time_uses_earliest_obd_ts(trip_analysis, monkeypatch
 
 def test_handle_start_second_time_uses_latest_session_end(trip_analysis, monkeypatch):
     trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    _put_obd_object(datetime.fromtimestamp(1700001801, tz=timezone.utc))
     monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
     monkeypatch.setattr(trip_analysis.time, "time", lambda: 1700100000)
 
@@ -727,6 +758,7 @@ def test_handle_start_second_time_uses_latest_session_end(trip_analysis, monkeyp
 
 def test_handle_start_clamps_to_max_window(trip_analysis, monkeypatch):
     trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    _put_obd_object(datetime.fromtimestamp(1700001801, tz=timezone.utc))
     monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
     far_future = 1700001800 + trip_analysis.MAX_WINDOW_HOURS * 3600 * 10
     monkeypatch.setattr(trip_analysis.time, "time", lambda: far_future)
@@ -743,6 +775,79 @@ def test_handle_start_clamps_to_max_window(trip_analysis, monkeypatch):
 def test_handle_start_no_new_data_returns_succeeded_immediately(trip_analysis, monkeypatch):
     trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
     monkeypatch.setattr(trip_analysis.time, "time", lambda: 1700001800)  # last_end+1 >= now
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["status"] == "SUCCEEDED"
+    assert body["trips_saved"] == 0
+
+
+def test_handle_start_skips_period_without_obd_data(trip_analysis, monkeypatch):
+    # 前回session_endからMAX_WINDOW_HOURSを超えてデータが無い期間があっても、
+    # 次にデータがあるhourから開始する（毎回同じ空の区間を分析して進めなくなるのを防ぐ）
+    trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    resumed = 1700001800 + trip_analysis.MAX_WINDOW_HOURS * 3600 * 2
+    resumed_hour = resumed - resumed % 3600
+    _put_obd_object(datetime.fromtimestamp(resumed, tz=timezone.utc))
+    monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: resumed + 86400)
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["range"]["start_ts"] == resumed_hour
+
+
+def test_handle_start_window_reaches_data_after_gap_when_last_trip_hour_has_data(trip_analysis, monkeypatch):
+    # 前回トリップの末尾と同じhourパーティションにはデータが入っている（hour粒度のため）。
+    # そのためstart_tsはlast_end+1のまま進まない。window終端をstart_ts+MAX_WINDOW_HOURSに
+    # すると、次のデータがそれより後にある場合は毎回同じ空の区間を分析しtrips_saved=0で
+    # 終わり、永久に先へ進めなくなる（2026-10-18のトリップ後、11-07のデータが分析されなかった）。
+    last_end = _ts(2026, 10, 18, 11, 0, 2)
+    trip_analysis._save_trip("dev1", last_end - 3600, last_end, {}, row_count=1)
+    _put_obd_object(datetime(2026, 10, 18, 11, tzinfo=timezone.utc))
+    resumed = _ts(2026, 11, 7, 3, 19)
+    _put_obd_object(datetime.fromtimestamp(resumed, tz=timezone.utc))
+    monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: _ts(2026, 11, 7, 8))
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["range"]["start_ts"] == last_end + 1
+    assert body["range"]["end_ts"] >= resumed
+    assert body["has_more"] is False
+
+
+def test_handle_start_window_after_gap_is_clamped_from_next_data(trip_analysis, monkeypatch):
+    # 空白の先のデータまで伸ばしたwindowも、そこからMAX_WINDOW_HOURSで打ち切る
+    last_end = _ts(2026, 10, 18, 11, 0, 2)
+    trip_analysis._save_trip("dev1", last_end - 3600, last_end, {}, row_count=1)
+    _put_obd_object(datetime(2026, 10, 18, 11, tzinfo=timezone.utc))
+    resumed_hour = _ts(2026, 11, 7, 3)
+    _put_obd_object(datetime.fromtimestamp(resumed_hour, tz=timezone.utc))
+    monkeypatch.setattr(trip_analysis.lambda_client, "invoke", lambda **kw: None)
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: resumed_hour + trip_analysis.MAX_WINDOW_HOURS * 3600 * 2)
+
+    event = {"body": json.dumps({"device_id": "dev1"})}
+    resp = trip_analysis._handle_start(event)
+
+    body = json.loads(resp["body"])
+    assert body["range"]["end_ts"] == resumed_hour + trip_analysis.MAX_WINDOW_HOURS * 3600
+    assert body["has_more"] is True
+
+
+def test_handle_start_no_obd_data_after_last_end_returns_succeeded(trip_analysis, monkeypatch):
+    trip_analysis._save_trip("dev1", 1700000000, 1700001800, {}, row_count=1)
+    _put_obd_object(datetime.fromtimestamp(1700000000 - 3600, tz=timezone.utc))  # 分析済みのhourのみ
+    monkeypatch.setattr(
+        trip_analysis.lambda_client, "invoke", lambda **kw: pytest.fail("should not invoke a new job")
+    )
+    monkeypatch.setattr(trip_analysis.time, "time", lambda: 1700100000)
 
     event = {"body": json.dumps({"device_id": "dev1"})}
     resp = trip_analysis._handle_start(event)
