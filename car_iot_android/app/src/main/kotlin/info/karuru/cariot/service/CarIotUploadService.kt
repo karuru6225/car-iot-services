@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import info.karuru.cariot.auth.AuthStore
+import info.karuru.cariot.auth.SessionExpiredNotifier
 import info.karuru.cariot.db.CarIotDatabase
 import info.karuru.cariot.db.SERVICE_KIND_FOREGROUND
 import info.karuru.cariot.db.SERVICE_KIND_UPLOAD
@@ -20,6 +21,7 @@ import info.karuru.cariot.state.CarIotState
 import info.karuru.cariot.upload.ObdUploader
 import info.karuru.cariot.upload.RuntimeSegment
 import info.karuru.cariot.upload.RuntimeSegmentThrottle
+import info.karuru.cariot.upload.UploadResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -89,10 +91,22 @@ class CarIotUploadService : Service() {
 
     val deviceId = CarIotState.deviceName.value
     if (deviceId.isNotEmpty()) {
-      val uploader = ObdUploader(db.pendingObdReadingDao(), AuthStore(applicationContext))
-      while (uploader.uploadOnce(deviceId)) {
-        // nextBatch()の上限(100件)を超えるバッファが残っていた場合に備え、
-        // 送信対象が尽きるまで繰り返す。
+      val pendingDao = db.pendingObdReadingDao()
+      val authStore = AuthStore(applicationContext)
+      val uploader = ObdUploader(pendingDao, authStore)
+      // nextBatch()の上限(100件)を超えるバッファが残っていた場合に備え、送信に成功している
+      // 間は送信対象が尽きるまで繰り返す。失敗したら同じバッチを即再送せず次回の起動に任せる。
+      var result: UploadResult
+      do {
+        result = uploader.uploadOnce(deviceId)
+      } while (result == UploadResult.SENT)
+
+      if (result == UploadResult.AUTH_REQUIRED) {
+        // 失効したトークンを残すと画面は「ログイン: ...」のまま送信だけ止まり続けるため、
+        // ログアウトと同じ状態にして画面にも「未ログイン」とログインボタンを出す
+        authStore.clear()
+        CarIotState.setUserEmail(null)
+        SessionExpiredNotifier.notify(applicationContext, pendingDao.count())
       }
     }
 

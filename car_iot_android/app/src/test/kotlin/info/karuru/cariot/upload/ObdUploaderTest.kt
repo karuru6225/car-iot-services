@@ -98,4 +98,22 @@ class ObdUploaderTest {
     val reading = Json.parseToJsonElement(body).jsonObject["readings"]!!.jsonArray[0].jsonObject
     assertFalse(reading.containsKey("id"))
   }
+
+  @Test
+  fun `2xxは送信成功`() {
+    assertEquals(UploadResult.SENT, ObdUploader.classifyResponse(200))
+    assertEquals(UploadResult.SENT, ObdUploader.classifyResponse(204))
+  }
+
+  @Test
+  fun `401は再ログインが必要`() {
+    assertEquals(UploadResult.AUTH_REQUIRED, ObdUploader.classifyResponse(401))
+  }
+
+  @Test
+  fun `403や5xxは一時的な失敗として次回リトライ`() {
+    assertEquals(UploadResult.FAILED, ObdUploader.classifyResponse(403))
+    assertEquals(UploadResult.FAILED, ObdUploader.classifyResponse(500))
+    assertEquals(UploadResult.FAILED, ObdUploader.classifyResponse(400))
+  }
 }

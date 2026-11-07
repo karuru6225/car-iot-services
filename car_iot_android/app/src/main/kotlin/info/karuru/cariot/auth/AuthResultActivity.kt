@@ -46,6 +46,7 @@ class AuthResultActivity : Activity() {
             email = email,
         )
         CarIotState.setUserEmail(email)
+        SessionExpiredNotifier.cancel(applicationContext)
       }
       authService.dispose()
       finish()
