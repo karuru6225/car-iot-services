@@ -74,6 +74,10 @@ class ObdUploader(private val dao: PendingObdReadingDao, private val authStore: 
       .writeTimeout(8, TimeUnit.SECONDS)
       .build()
 
+  // このインスタンスで送信に成功した件数の累計（データタブの「最終送信」表示用）。
+  var sentCount = 0
+    private set
+
   // 1バッチ分を送信する。
   suspend fun uploadOnce(deviceId: String): UploadResult {
     val batch = dao.nextBatch(MAX_BATCH_SIZE)
@@ -104,6 +108,7 @@ class ObdUploader(private val dao: PendingObdReadingDao, private val authStore: 
           val result = classifyResponse(response.code)
           if (result == UploadResult.SENT) {
             dao.deleteByIds(batch.map { it.id })
+            sentCount += batch.size
             Log.i(TAG, "OBDアップロード成功: ${batch.size}件")
           } else {
             Log.w(TAG, "OBDアップロード失敗 (${response.code})、次回リトライ")
