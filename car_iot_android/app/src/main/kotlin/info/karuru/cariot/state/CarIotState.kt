@@ -5,6 +5,7 @@ import info.karuru.cariot.ble.Measurement
 import info.karuru.cariot.obd.ObdMetric
 import info.karuru.cariot.obd.ObdReading
 import info.karuru.cariot.obd.obdMetricMeta
+import info.karuru.cariot.upload.UploadStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +36,22 @@ object CarIotState {
   // サインイン中のユーザーのメールアドレス（表示用）。未サインインならnull。
   private val _userEmail = MutableStateFlow<String?>(null)
   val userEmail: StateFlow<String?> = _userEmail.asStateFlow()
+
+  // 最後のアップロード結果（データタブ表示用）。起動時にUploadStatusStoreから復元する。
+  private val _uploadStatus = MutableStateFlow<UploadStatus?>(null)
+  val uploadStatus: StateFlow<UploadStatus?> = _uploadStatus.asStateFlow()
+
+  // CarIotUploadServiceが送信処理中か。手動送信ボタンの多重押下防止と表示に使う。
+  private val _uploading = MutableStateFlow(false)
+  val uploading: StateFlow<Boolean> = _uploading.asStateFlow()
+
+  fun setUploadStatus(v: UploadStatus?) {
+    _uploadStatus.value = v
+  }
+
+  fun setUploading(v: Boolean) {
+    _uploading.value = v
+  }
 
   fun setUserEmail(v: String?) {
     _userEmail.value = v

@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
 import info.karuru.cariot.obd.ObdReading
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -105,6 +106,9 @@ data class PendingObdReading(
   }
 }
 
+// データタブ表示用の未送信データ集計。tsはESP32由来のUNIX秒。0件ならoldestTs/newestTsはnull。
+data class PendingSummary(val count: Int, val oldestTs: Long?, val newestTs: Long?)
+
 @Dao
 interface PendingObdReadingDao {
   @Insert
@@ -118,6 +122,10 @@ interface PendingObdReadingDao {
 
   @Query("SELECT COUNT(*) FROM pending_obd_reading")
   suspend fun count(): Int
+
+  // 挿入・送信成功による削除のたびに再発行される（Room の Flow 監視）
+  @Query("SELECT COUNT(*) AS count, MIN(ts) AS oldestTs, MAX(ts) AS newestTs FROM pending_obd_reading")
+  fun observeSummary(): Flow<PendingSummary>
 
   @Query("SELECT id FROM pending_obd_reading ORDER BY id ASC LIMIT :limit")
   suspend fun oldestIds(limit: Int): List<Long>

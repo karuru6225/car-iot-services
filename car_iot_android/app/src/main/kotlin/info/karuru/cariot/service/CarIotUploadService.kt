@@ -21,7 +21,10 @@ import info.karuru.cariot.state.CarIotState
 import info.karuru.cariot.upload.ObdUploader
 import info.karuru.cariot.upload.RuntimeSegment
 import info.karuru.cariot.upload.RuntimeSegmentThrottle
+import info.karuru.cariot.upload.UploadOutcome
 import info.karuru.cariot.upload.UploadResult
+import info.karuru.cariot.upload.UploadStatus
+import info.karuru.cariot.upload.UploadStatusStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,6 +35,9 @@ private const val TAG = "CarIotUploadService"
 private const val CHANNEL_ID = "car_iot_upload_service"
 private const val NOTIFICATION_ID = 2
 private const val RUNTIME_WINDOW_MS = 24 * 60 * 60 * 1000L
+
+// データタブの「今すぐ送信」から起動されたことを示すIntent extra。
+const val EXTRA_MANUAL_UPLOAD = "info.karuru.cariot.extra.MANUAL_UPLOAD"
 
 // OBDアップロードのみを担当するdataSync型Foreground Service。BLE接続を維持する
 // CarIotForegroundService（connectedDevice型）とは責務・型を分離する（docs/car_iot_android_plan.md:
@@ -48,7 +54,8 @@ class CarIotUploadService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    scope.launch { runUpload(startId) }
+    val manual = intent?.getBooleanExtra(EXTRA_MANUAL_UPLOAD, false) ?: false
+    scope.launch { runUpload(startId, manual) }
     return START_NOT_STICKY
   }
 
@@ -70,16 +77,30 @@ class CarIotUploadService : Service() {
     super.onDestroy()
   }
 
-  private suspend fun runUpload(startId: Int) {
+  private suspend fun runUpload(startId: Int, manual: Boolean) {
+    CarIotState.setUploading(true)
+    try {
+      runUploadInner(startId, manual)
+    } finally {
+      CarIotState.setUploading(false)
+    }
+  }
+
+  private suspend fun runUploadInner(startId: Int, manual: Boolean) {
     val db = CarIotDatabase.getInstance(applicationContext)
+    val statusStore = UploadStatusStore(applicationContext)
     val segmentDao = db.serviceRuntimeSegmentDao()
     val now = System.currentTimeMillis()
     val windowStart = now - RUNTIME_WINDOW_MS
 
     val uploadRuntimeMs = runtimeMs(segmentDao, SERVICE_KIND_UPLOAD, windowStart, now)
     val foregroundRuntimeMs = runtimeMs(segmentDao, SERVICE_KIND_FOREGROUND, windowStart, now)
-    if (RuntimeSegmentThrottle.shouldSkipUpload(uploadRuntimeMs, foregroundRuntimeMs)) {
+    // 手動送信はユーザーが画面を見ながら1回押すものなので比率判定をかけない。BLE未接続中は
+    // FOREGROUND側の稼働が0になり、比率判定では必ず見送りになってしまうため。
+    // 6時間上限のフェイルセーフ(onTimeout)は手動送信でも効く。
+    if (!manual && RuntimeSegmentThrottle.shouldSkipUpload(uploadRuntimeMs, foregroundRuntimeMs)) {
       Log.w(TAG, "アップロード見送り: 直近24時間の稼働時間比率が閾値を超過")
+      recordStatus(statusStore, UploadOutcome.THROTTLED, 0)
       stopSelf(startId)
       return
     }
@@ -89,8 +110,15 @@ class CarIotUploadService : Service() {
         ServiceRuntimeSegment(kind = SERVICE_KIND_UPLOAD, startTs = now, endTs = null),
     )
 
-    val deviceId = CarIotState.deviceName.value
-    if (deviceId.isNotEmpty()) {
+    // BLE接続中はそのデバイス名を使い、次回の未接続時の手動送信用に保存しておく。
+    // 未接続（手動送信）なら最後に接続したデバイス名を使う。
+    val connectedName = CarIotState.deviceName.value
+    statusStore.saveDeviceId(connectedName)
+    val deviceId = connectedName.ifEmpty { statusStore.lastDeviceId() }
+    if (deviceId.isEmpty()) {
+      Log.w(TAG, "アップロード不可: 送信先device_idが不明（ESP32に一度も接続していない）")
+      recordStatus(statusStore, UploadOutcome.NO_DEVICE, 0)
+    } else {
       val pendingDao = db.pendingObdReadingDao()
       val authStore = AuthStore(applicationContext)
       val uploader = ObdUploader(pendingDao, authStore)
@@ -108,10 +136,22 @@ class CarIotUploadService : Service() {
         CarIotState.setUserEmail(null)
         SessionExpiredNotifier.notify(applicationContext, pendingDao.count())
       }
+      val outcome = when (result) {
+        UploadResult.AUTH_REQUIRED -> UploadOutcome.AUTH_REQUIRED
+        UploadResult.FAILED -> UploadOutcome.FAILED
+        else -> UploadOutcome.DONE
+      }
+      recordStatus(statusStore, outcome, uploader.sentCount)
     }
 
     segmentDao.close(segmentId, System.currentTimeMillis())
     stopSelf(startId)
+  }
+
+  private fun recordStatus(store: UploadStatusStore, outcome: UploadOutcome, sentCount: Int) {
+    val status = UploadStatus(System.currentTimeMillis(), outcome, sentCount)
+    store.saveStatus(status)
+    CarIotState.setUploadStatus(status)
   }
 
   private suspend fun runtimeMs(
